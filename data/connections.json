@@ -1,29 +1,5 @@
 [
   {
-    "place": "Dachau, Germany",
-    "survivorA": "dawang-elie",
-    "survivorB": "leipciger-nate",
-    "overlap_window": "1945",
-    "note": "Both public summaries mention Dachau around 1945 (unverified — not a claim that they met).",
-    "verified": false
-  },
-  {
-    "place": "Dachau, Germany",
-    "survivorA": "dawang-elie",
-    "survivorB": "yermus-helen",
-    "overlap_window": "1945",
-    "note": "Both public summaries mention Dachau around 1945 (unverified — not a claim that they met).",
-    "verified": false
-  },
-  {
-    "place": "Dachau, Germany",
-    "survivorA": "leipciger-nate",
-    "survivorB": "yermus-helen",
-    "overlap_window": "1945",
-    "note": "Both public summaries mention Dachau around 1945 (unverified — not a claim that they met).",
-    "verified": false
-  },
-  {
     "place": "Lodz Ghetto, Poland",
     "survivorA": "cohen-israel",
     "survivorB": "fox-george",

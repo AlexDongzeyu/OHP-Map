@@ -1,23 +1,24 @@
-# Crestwood OHP — Survivor Journeys
+# Crestwood OHP — Journeys
 
-An interactive memorial map of Holocaust survivor journeys from the **Crestwood Oral
-History Project** (`ohp.crestwood.on.ca`). It turns 200+ testimonies that are stored
-alphabetically — and so hide their own patterns — into three lenses on one dataset: a
-**Guided** scrollytelling intro, a free **Explore** map, and a **Patterns** view that
-surfaces where journeys may cross. A **time scrubber** (1933–1950) lets you watch dots
-converge on the same camp in the same year.
+An interactive memorial map of the whole **Crestwood Oral History Project**
+(`ohp.crestwood.on.ca`) — the life journeys of **Holocaust survivors, war veterans,
+community members, and others** whom Crestwood students have interviewed. It turns
+hundreds of testimonies that are stored alphabetically — and so hide their own patterns —
+into one living map: a **Guided** scrollytelling story, a free **Explore** map (search,
+filter by community, click anyone), and a **Patterns** view with all journeys at once,
+a **time scrubber**, and a **density** layer ("the darker the country, the more lives
+began there").
 
-**Live data:** the map is populated with **221 real survivors** scraped from the public
-OHP archive, their journeys auto-extracted from each public bio.
-**Live site:** https://ohpmap.alexdong0414.workers.dev/
+**Live data:** the map is populated with **real people across the archive's six
+categories**, scraped from the public OHP listings and auto-extracted from each public
+bio, then drawn on a quiet **world map** (D3 + TopoJSON) that spans Europe, Canada, and
+the Pacific. **Live site:** https://ohpmap.alexdong0414.workers.dev/
 
-A first-time visitor lands on a **dignified hero** — the title, a one-sentence purpose,
-a live sense of scale ("221 survivors · 62 places · 1933–1950"), and two clear actions
-(*Follow one journey* · *Explore the map*) over a faint, data-drawn backdrop of the real
-journeys. The visual system (self-hosted Spectral + Inter, a warm-paper palette with a
-single ember accent, an About/methodology surface, explicit loading/empty/error states)
-is documented in [`docs/evaluation.md`](docs/evaluation.md) and
-[`docs/improvement-plan.md`](docs/improvement-plan.md).
+A first-time visitor lands on a slowly-rotating **3D globe** with a one-sentence purpose
+("Crestwood students have interviewed Holocaust survivors and war veterans — this map
+follows their journeys…"), a live sense of scale, and one clear action (*Begin with one
+story*). Everyone is presented **equally** — grouped by the archive's own categories, no
+"featured" hierarchy — each with a brief one-line introduction.
 
 > ### ⚠️ Read this: the data is *pending review*, not authoritative
 > The `ohp` WordPress post type is **not** exposed over the REST API (`/wp-json/wp/v2/ohp`

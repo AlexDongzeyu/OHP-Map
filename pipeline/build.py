@@ -39,6 +39,8 @@ def _record_to_survivor(rec: dict, extractor) -> dict:
         "name": rec.get("name", ""),
         "is_sample": rec.get("is_sample", False),
         "featured": rec.get("featured", False),
+        "group": rec.get("group", "Holocaust Survivors"),
+        "conflicts": rec.get("conflicts", []),
         "birth_year": rec.get("birth_year"),
         "bio_excerpt": rec.get("bio_excerpt", "") or _auto_excerpt(rec),
         "archive_url": rec.get("archive_url", ""),
@@ -119,6 +121,10 @@ def build(source_name="local", extractor_name="offline", allow_network=False,
     features = [_to_feature(s) for s in survivors]
     reviewed = sum(1 for f in features if f["properties"].get("review_status") == "reviewed")
     pending = len(features) - reviewed
+    group_counts = {}
+    for f in features:
+        g = f["properties"].get("group", "Holocaust Survivors")
+        group_counts[g] = group_counts.get(g, 0) + 1
     doc = {
         "type": "FeatureCollection",
         "metadata": {
@@ -128,6 +134,7 @@ def build(source_name="local", extractor_name="offline", allow_network=False,
             "count": len(features),
             "reviewed": reviewed,
             "pending": pending,
+            "groups": group_counts,
             "time_min": config.TIME_MIN,
             "time_max": config.TIME_MAX,
             "sample_data": any(f["properties"].get("is_sample") for f in features),
@@ -152,6 +159,8 @@ def build(source_name="local", extractor_name="offline", allow_network=False,
     print(f"[build] source={source_name} extractor={extractor_name} strict={strict}")
     print(f"[build] published: {len(features)} ({reviewed} reviewed, {pending} pending) "
           f"| review queue: {queued}")
+    for g, n in sorted(group_counts.items(), key=lambda kv: -kv[1]):
+        print(f"           {g}: {n}")
     print(f"[build] places indexed: {len(place_index)} | connections: {len(connections)} "
           f"({sum(1 for c in connections if c['verified'])} verified)")
     for w in warnings[:10]:
@@ -183,8 +192,8 @@ def _discover() -> int:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="Build the OHP survivor map dataset.")
-    p.add_argument("--source", default="ohp",
-                   help="ohp (real, default) | local (fictional fixture) | scraped | wordpress | scrape")
+    p.add_argument("--source", default="all",
+                   help="all (whole archive, default) | ohp | local | scraped | wordpress | scrape")
     p.add_argument("--extractor", default="offline", help="offline | anthropic | openai")
     p.add_argument("--allow-network", action="store_true",
                    help="permit live geocoding for cache misses (writes back to cache)")

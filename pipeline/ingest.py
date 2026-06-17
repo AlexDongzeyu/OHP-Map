@@ -183,6 +183,41 @@ class CombinedSource(Source):
                 yield rec
 
 
+class AllSource(Source):
+    """The whole OHP archive (every ohp-type category), from data/source/ohp_all.json.
+
+    Each record carries 'group' (Holocaust Survivors / Military Veterans / …) and
+    'conflicts' (derived era facet). Curated featured survivors are merged in first so
+    their hand-checked journeys take precedence over the auto-extracted version.
+    """
+
+    def __init__(self, all_path=config.DATA / "source" / "ohp_all.json",
+                 curated=config.DATA / "source" / "survivors_curated.json"):
+        self.all_path = all_path
+        self.curated = curated
+
+    def fetch(self) -> Iterable[dict]:
+        seen = set()
+        if self.curated.exists():
+            with open(self.curated, encoding="utf-8") as fh:
+                for rec in json.load(fh).get("survivors", []):
+                    rec.setdefault("is_sample", False)
+                    rec.setdefault("group", "Holocaust Survivors")
+                    rec.setdefault("conflicts", ["The Holocaust"])
+                    seen.add(rec["survivor_id"])
+                    yield rec
+        if not self.all_path.exists():
+            raise FileNotFoundError(
+                f"{self.all_path} not found — run `python -m pipeline.scrape_all` first.")
+        with open(self.all_path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        for rec in doc.get("people", []):
+            if rec["survivor_id"] in seen:
+                continue
+            rec.setdefault("is_sample", False)
+            yield rec
+
+
 def get_source(name: str) -> Source:
     name = (name or "local").lower()
     if name == "local":
@@ -195,4 +230,6 @@ def get_source(name: str) -> Source:
         return ScrapedSource()
     if name in ("ohp", "combined"):
         return CombinedSource()
+    if name == "all":
+        return AllSource()
     raise ValueError(f"unknown source: {name!r}")

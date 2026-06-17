@@ -89,6 +89,64 @@ PLACES = {
     "Switzerland":       {"lat": 46.8182, "lng": 8.2275,  "aliases": ["switzerland"]},
     "Italy":             {"lat": 41.8719, "lng": 12.5674, "aliases": ["italy"]},
     "New York, USA":     {"lat": 40.7128, "lng": -74.0060, "aliases": ["new york"]},
+
+    # ---- Canada: hometowns + where veterans grew up / returned -------------
+    "Ottawa, Canada":    {"lat": 45.4215, "lng": -75.6972, "aliases": ["ottawa"]},
+    "Hamilton, Canada":  {"lat": 43.2557, "lng": -79.8711, "aliases": ["hamilton"]},
+    "London, Ontario":   {"lat": 42.9849, "lng": -81.2453, "aliases": ["london, ontario", "london on"]},
+    "Kitchener, Canada": {"lat": 43.4516, "lng": -80.4925, "aliases": ["kitchener", "berlin, ontario", "waterloo"]},
+    "Kingston, Canada":  {"lat": 44.2312, "lng": -76.4860, "aliases": ["kingston"]},
+    "Windsor, Canada":   {"lat": 42.3149, "lng": -83.0364, "aliases": ["windsor"]},
+    "Winnipeg, Canada":  {"lat": 49.8951, "lng": -97.1384, "aliases": ["winnipeg"]},
+    "Vancouver, Canada": {"lat": 49.2827, "lng": -123.1207, "aliases": ["vancouver"]},
+    "Halifax, Canada":   {"lat": 44.6488, "lng": -63.5752, "aliases": ["halifax"]},
+    "Calgary, Canada":   {"lat": 51.0447, "lng": -114.0719, "aliases": ["calgary"]},
+    "Edmonton, Canada":  {"lat": 53.5461, "lng": -113.4938, "aliases": ["edmonton"]},
+    "Quebec City, Canada": {"lat": 46.8139, "lng": -71.2080, "aliases": ["quebec city", "québec city"]},
+    "Victoria, Canada":  {"lat": 48.4284, "lng": -123.3656, "aliases": ["victoria, bc", "victoria, british columbia"]},
+    "Brantford, Canada": {"lat": 43.1394, "lng": -80.2644, "aliases": ["brantford"]},
+    "Sudbury, Canada":   {"lat": 46.4917, "lng": -80.9930, "aliases": ["sudbury"]},
+    "Oshawa, Canada":    {"lat": 43.8971, "lng": -78.8658, "aliases": ["oshawa"]},
+    "Regina, Canada":    {"lat": 50.4452, "lng": -104.6189, "aliases": ["regina"]},
+    "Saskatoon, Canada": {"lat": 52.1332, "lng": -106.6700, "aliases": ["saskatoon"]},
+    "St. Catharines, Canada": {"lat": 43.1594, "lng": -79.2469, "aliases": ["st. catharines", "st catharines"]},
+    "Newfoundland, Canada": {"lat": 48.9500, "lng": -55.6500, "aliases": ["newfoundland"]},
+
+    # ---- Military training camps (Canada) ---------------------------------
+    "Camp Borden, Canada": {"lat": 44.2700, "lng": -79.9100, "role": "camp", "aliases": ["camp borden", "borden"]},
+    "Petawawa, Canada":  {"lat": 45.8970, "lng": -77.2830, "role": "camp", "aliases": ["petawawa"]},
+    "Valcartier, Canada": {"lat": 46.9000, "lng": -71.4900, "role": "camp", "aliases": ["valcartier"]},
+
+    # ---- Britain: staging / training before the front ----------------------
+    "London, England":   {"lat": 51.5074, "lng": -0.1278, "aliases": ["london, england", "london, uk"]},
+    "Aldershot, England": {"lat": 51.2480, "lng": -0.7600, "role": "transit", "aliases": ["aldershot"]},
+    "England":           {"lat": 52.3555, "lng": -1.1743, "aliases": ["england", "britain", "united kingdom"]},
+    "Liverpool, England": {"lat": 53.4084, "lng": -2.9916, "aliases": ["liverpool"]},
+
+    # ---- Second World War theatres (where veterans served) -----------------
+    "Normandy, France":  {"lat": 49.2000, "lng": -0.3700, "role": "liberation", "aliases": ["normandy", "juno beach", "d-day", "d day"]},
+    "Dieppe, France":    {"lat": 49.9220, "lng": 1.0780, "role": "camp", "aliases": ["dieppe"]},
+    "Caen, France":      {"lat": 49.1829, "lng": -0.3707, "aliases": ["caen", "falaise"]},
+    "Antwerp, Belgium":  {"lat": 51.2194, "lng": 4.4025, "aliases": ["antwerp", "scheldt"]},
+    "Arnhem, Netherlands": {"lat": 51.9851, "lng": 5.8987, "aliases": ["arnhem"]},
+    "Ortona, Italy":     {"lat": 42.3550, "lng": 14.4030, "role": "camp", "aliases": ["ortona"]},
+    "Monte Cassino, Italy": {"lat": 41.4870, "lng": 13.8140, "role": "camp", "aliases": ["monte cassino", "cassino"]},
+    "Sicily, Italy":     {"lat": 37.6000, "lng": 14.0150, "aliases": ["sicily"]},
+    "Rome, Italy":       {"lat": 41.9028, "lng": 12.4964, "aliases": ["rome"]},
+    "Hong Kong":         {"lat": 22.3193, "lng": 114.1694, "role": "camp", "aliases": ["hong kong"]},
+
+    # ---- Korean War --------------------------------------------------------
+    "Korea":             {"lat": 37.5000, "lng": 127.5000, "aliases": ["korea", "korean peninsula"]},
+    "Kapyong, Korea":    {"lat": 37.8870, "lng": 127.4890, "role": "camp", "aliases": ["kapyong", "kap'yong"]},
+    "Seoul, Korea":      {"lat": 37.5665, "lng": 126.9780, "aliases": ["seoul"]},
+    "Busan, Korea":      {"lat": 35.1796, "lng": 129.0756, "aliases": ["busan", "pusan"]},
+
+    # ---- Other world origins (community members) ---------------------------
+    "United States":     {"lat": 39.8283, "lng": -98.5795, "aliases": ["united states", "u.s.a.", "u.s.", "america", "american"]},
+    "England, UK":       {"lat": 52.3555, "lng": -1.1743, "aliases": ["english"]},
+    "Scotland":          {"lat": 56.4907, "lng": -4.2026, "aliases": ["scotland", "scottish", "glasgow", "edinburgh"]},
+    "Ireland":           {"lat": 53.1424, "lng": -7.6921, "aliases": ["ireland", "irish", "dublin"]},
+    "Russia":            {"lat": 61.5240, "lng": 105.3188, "aliases": ["russia", "russian", "soviet union", "ussr", "moscow"]},
 }
 
 def main():

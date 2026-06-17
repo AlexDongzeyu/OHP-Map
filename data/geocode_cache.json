@@ -413,5 +413,281 @@
     "lng": -74.006,
     "source": "curated",
     "precision": "city"
+  },
+  "Ottawa, Canada": {
+    "lat": 45.4215,
+    "lng": -75.6972,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Hamilton, Canada": {
+    "lat": 43.2557,
+    "lng": -79.8711,
+    "source": "curated",
+    "precision": "city"
+  },
+  "London, Ontario": {
+    "lat": 42.9849,
+    "lng": -81.2453,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Kitchener, Canada": {
+    "lat": 43.4516,
+    "lng": -80.4925,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Kingston, Canada": {
+    "lat": 44.2312,
+    "lng": -76.486,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Windsor, Canada": {
+    "lat": 42.3149,
+    "lng": -83.0364,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Winnipeg, Canada": {
+    "lat": 49.8951,
+    "lng": -97.1384,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Vancouver, Canada": {
+    "lat": 49.2827,
+    "lng": -123.1207,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Halifax, Canada": {
+    "lat": 44.6488,
+    "lng": -63.5752,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Calgary, Canada": {
+    "lat": 51.0447,
+    "lng": -114.0719,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Edmonton, Canada": {
+    "lat": 53.5461,
+    "lng": -113.4938,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Quebec City, Canada": {
+    "lat": 46.8139,
+    "lng": -71.208,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Victoria, Canada": {
+    "lat": 48.4284,
+    "lng": -123.3656,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Brantford, Canada": {
+    "lat": 43.1394,
+    "lng": -80.2644,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Sudbury, Canada": {
+    "lat": 46.4917,
+    "lng": -80.993,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Oshawa, Canada": {
+    "lat": 43.8971,
+    "lng": -78.8658,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Regina, Canada": {
+    "lat": 50.4452,
+    "lng": -104.6189,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Saskatoon, Canada": {
+    "lat": 52.1332,
+    "lng": -106.67,
+    "source": "curated",
+    "precision": "city"
+  },
+  "St. Catharines, Canada": {
+    "lat": 43.1594,
+    "lng": -79.2469,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Newfoundland, Canada": {
+    "lat": 48.95,
+    "lng": -55.65,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Camp Borden, Canada": {
+    "lat": 44.27,
+    "lng": -79.91,
+    "source": "curated",
+    "precision": "site"
+  },
+  "Petawawa, Canada": {
+    "lat": 45.897,
+    "lng": -77.283,
+    "source": "curated",
+    "precision": "site"
+  },
+  "Valcartier, Canada": {
+    "lat": 46.9,
+    "lng": -71.49,
+    "source": "curated",
+    "precision": "site"
+  },
+  "London, England": {
+    "lat": 51.5074,
+    "lng": -0.1278,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Aldershot, England": {
+    "lat": 51.248,
+    "lng": -0.76,
+    "source": "curated",
+    "precision": "site"
+  },
+  "England": {
+    "lat": 52.3555,
+    "lng": -1.1743,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Liverpool, England": {
+    "lat": 53.4084,
+    "lng": -2.9916,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Normandy, France": {
+    "lat": 49.2,
+    "lng": -0.37,
+    "source": "curated",
+    "precision": "site"
+  },
+  "Dieppe, France": {
+    "lat": 49.922,
+    "lng": 1.078,
+    "source": "curated",
+    "precision": "site"
+  },
+  "Caen, France": {
+    "lat": 49.1829,
+    "lng": -0.3707,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Antwerp, Belgium": {
+    "lat": 51.2194,
+    "lng": 4.4025,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Arnhem, Netherlands": {
+    "lat": 51.9851,
+    "lng": 5.8987,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Ortona, Italy": {
+    "lat": 42.355,
+    "lng": 14.403,
+    "source": "curated",
+    "precision": "site"
+  },
+  "Monte Cassino, Italy": {
+    "lat": 41.487,
+    "lng": 13.814,
+    "source": "curated",
+    "precision": "site"
+  },
+  "Sicily, Italy": {
+    "lat": 37.6,
+    "lng": 14.015,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Rome, Italy": {
+    "lat": 41.9028,
+    "lng": 12.4964,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Hong Kong": {
+    "lat": 22.3193,
+    "lng": 114.1694,
+    "source": "curated",
+    "precision": "site"
+  },
+  "Korea": {
+    "lat": 37.5,
+    "lng": 127.5,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Kapyong, Korea": {
+    "lat": 37.887,
+    "lng": 127.489,
+    "source": "curated",
+    "precision": "site"
+  },
+  "Seoul, Korea": {
+    "lat": 37.5665,
+    "lng": 126.978,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Busan, Korea": {
+    "lat": 35.1796,
+    "lng": 129.0756,
+    "source": "curated",
+    "precision": "city"
+  },
+  "United States": {
+    "lat": 39.8283,
+    "lng": -98.5795,
+    "source": "curated",
+    "precision": "city"
+  },
+  "England, UK": {
+    "lat": 52.3555,
+    "lng": -1.1743,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Scotland": {
+    "lat": 56.4907,
+    "lng": -4.2026,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Ireland": {
+    "lat": 53.1424,
+    "lng": -7.6921,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Russia": {
+    "lat": 61.524,
+    "lng": 105.3188,
+    "source": "curated",
+    "precision": "city"
   }
 }

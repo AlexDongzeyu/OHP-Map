@@ -1,12 +1,13 @@
 // app.js — orchestration. Owns the state machine, renders the persistent atlas
-// (atlas.js) plus the per-view overlay (ui.js), wires interaction via delegation, runs
-// the guided scroll observer, handles search/zoom/layer-toggle, and hash deep links.
+// (atlas.js) + the per-view overlay (ui.js), wires interaction via delegation, runs the
+// guided scroll observer, handles search / group filters / density toggle, deep links.
 import { loadData } from "./data.js";
 import { createAtlas } from "./atlas.js";
 import * as ui from "./ui.js";
-import { REDUCED_MOTION, slug } from "./config.js";
+import { GROUPS, REDUCED_MOTION, slug } from "./config.js";
 
 const VIEWS = ["landing", "guided", "explore", "patterns", "about"];
+const RAIL_PAGE = 140;
 
 const state = {
   view: "landing",
@@ -14,8 +15,9 @@ const state = {
   guidedId: null,
   guidedIndex: 0,
   prevIndex: null,
-  theme: null,
   query: "",
+  groupFilter: new Set(),        // populated from the data (all on by default)
+  railLimit: RAIL_PAGE,
   scrubYear: 1942,
   patternsLayer: "journeys",
 };
@@ -28,35 +30,23 @@ async function main() {
   const errorEl = document.getElementById("error");
   const fatalEl = document.getElementById("fatal");
 
-  try {
-    store = await loadData();
-  } catch (err) {
-    loadingEl.hidden = true;
-    fatalEl.hidden = false;
+  try { store = await loadData(); }
+  catch (err) {
+    loadingEl.hidden = true; fatalEl.hidden = false;
     fatalEl.textContent = "We couldn't load the journeys right now. Please refresh in a moment.";
-    console.error(err);
-    return;
+    console.error(err); return;
   }
 
   state.guidedId = store.defaultGuidedId;
   state.scrubYear = Math.round((store.time.min + store.time.max) / 2);
-  if (store.meta && store.meta.reviewed && !store.meta.pending) {
-    const pill = document.getElementById("status-pill");
-    if (pill) pill.querySelector(".status-text").textContent = "Reviewed";
-  }
+  store.groups.forEach((g) => state.groupFilter.add(g.name));
 
   atlas = createAtlas(document.getElementById("map"));
   atlas.setStore(store);
   atlas.setTooltipEl(document.getElementById("tip"));
 
-  try {
-    await atlas.ready;
-  } catch (err) {
-    loadingEl.hidden = true;
-    errorEl.hidden = false;
-    console.error(err);
-    return;
-  }
+  try { await atlas.ready; }
+  catch (err) { loadingEl.hidden = true; errorEl.hidden = false; console.error(err); return; }
   loadingEl.hidden = true;
   document.getElementById("topbar").hidden = false;
 
@@ -71,16 +61,25 @@ async function main() {
   route();
 }
 
+function matchPredicate() {
+  const q = (state.query || "").trim().toLowerCase();
+  return (j) => state.groupFilter.has(j.group) &&
+    (!q || hay(j).includes(q));
+}
+function hay(j) {
+  return (j.name + " " + j.hometown + " " + j.group + " " + j.conflicts.join(" ") + " " +
+    j.themes.join(" ") + " " + j.waypoints.map((w) => w.canonical).join(" ")).toLowerCase();
+}
+
 function atlasCtx() {
   return {
     selectedId: state.selectedId,
     guidedId: state.guidedId,
     guidedIndex: state.guidedIndex,
     prevIndex: state.prevIndex,
-    theme: state.theme,
-    query: state.query,
     scrubYear: state.scrubYear,
     patternsLayer: state.patternsLayer,
+    matches: matchPredicate(),
     onSelect: (id) => selectSurvivor(id),
   };
 }
@@ -119,47 +118,47 @@ function go(view) {
   setHash(view === "landing" ? "" : `#/${view}`);
   render();
 }
-
 function startGuided(id) {
   state.guidedId = id; state.guidedIndex = 0; state.prevIndex = null; state.view = "guided";
-  setHash("#/guided");
-  render();
+  setHash("#/guided"); render();
   const narr = document.querySelector("[data-narr]");
   if (narr) narr.scrollTo({ top: 0, behavior: REDUCED_MOTION ? "auto" : "smooth" });
 }
-
 function selectSurvivor(id) {
-  state.selectedId = id;
-  state.view = "explore";
-  setHash(`#/survivor/${id}`);
-  render();
+  state.selectedId = id; state.view = "explore"; setHash(`#/survivor/${id}`); render();
 }
 function clearSel() { state.selectedId = null; setHash("#/explore"); render(); }
 
-function toggleTheme(t) { state.theme = state.theme === t ? null : (t || null); render(); }
-function clearFilter() { state.theme = null; state.query = ""; render(); }
-
-function onSearch(value) {
-  state.query = value;
-  // Refresh only the rail list + map dims; keep the input (and its focus) intact.
-  const { html, count } = ui.railInner(store, state);
-  const list = document.querySelector("[data-rail-list]");
-  const cnt = document.querySelector("[data-rail-count]");
-  if (list) list.innerHTML = html;
-  if (cnt) cnt.textContent = `${count} of ${store.journeys.length} survivors`;
-  atlas.render("explore", atlasCtx());
-}
-
-function setLayer(layer) {
-  if (state.patternsLayer === layer) return;
-  state.patternsLayer = layer;
+function toggleGroup(name) {
+  if (state.groupFilter.has(name)) {
+    if (state.groupFilter.size === store.groups.length) {
+      // first click on a chip when all are on → solo that group
+      state.groupFilter = new Set([name]);
+    } else state.groupFilter.delete(name);
+  } else state.groupFilter.add(name);
+  if (!state.groupFilter.size) store.groups.forEach((g) => state.groupFilter.add(g.name));
+  state.railLimit = RAIL_PAGE;
   render();
 }
 
+function onSearch(value) {
+  state.query = value; state.railLimit = RAIL_PAGE;
+  refreshRail();
+  atlas.render("explore", atlasCtx());
+}
+function showMore() { state.railLimit += RAIL_PAGE * 2; refreshRail(); }
+function refreshRail() {
+  const { html, shown, total } = ui.railInner(store, state);
+  const list = document.querySelector("[data-rail-list]");
+  const cnt = document.querySelector("[data-rail-count]");
+  if (list) list.innerHTML = html;
+  if (cnt) cnt.textContent = `${shown} of ${total} shown`;
+}
+
+function setLayer(layer) { if (state.patternsLayer !== layer) { state.patternsLayer = layer; render(); } }
 function setScrub(year) {
   state.scrubYear = year;
-  const yEl = document.querySelector("[data-year]");
-  if (yEl) yEl.textContent = year;
+  const yEl = document.querySelector("[data-year]"); if (yEl) yEl.textContent = year;
   atlas.render("patterns", atlasCtx());
 }
 
@@ -180,8 +179,7 @@ function setupGuidedScroll() {
       if (d < bestD) { bestD = d; best = parseInt(s.dataset.chapter, 10) || 0; }
     });
     if (best !== state.guidedIndex) {
-      state.prevIndex = state.guidedIndex;
-      state.guidedIndex = best;
+      state.prevIndex = state.guidedIndex; state.guidedIndex = best;
       atlas.render("guided", atlasCtx());
       secs.forEach((s) => s.classList.toggle("is-active", parseInt(s.dataset.chapter, 10) === best));
     }
@@ -205,7 +203,6 @@ function wireGlobal() {
     }
   });
 }
-
 function wireOverlay() {
   const host = document.getElementById("overlay");
   host.onclick = onActivate;
@@ -217,32 +214,27 @@ function wireOverlay() {
     if (state.query) { search.focus(); search.setSelectionRange(state.query.length, state.query.length); }
   }
 }
-
 function onActivate(e) {
-  const t = e.target.closest("[data-act],[data-view],[data-guided],[data-survivor],[data-theme],[data-layer]");
+  const t = e.target.closest("[data-act],[data-view],[data-guided],[data-survivor],[data-group],[data-layer]");
   if (!t) return;
   if (t.dataset.view) return go(t.dataset.view);
   if (t.dataset.layer) return setLayer(t.dataset.layer);
   if (t.dataset.guided != null) return startGuided(t.dataset.guided);
   if (t.dataset.survivor != null) return selectSurvivor(t.dataset.survivor);
-  if (t.dataset.theme != null) return toggleTheme(t.dataset.theme);
+  if (t.dataset.group != null) return toggleGroup(t.dataset.group);
   switch (t.dataset.act) {
     case "follow": return startGuided(store.defaultGuidedId);
     case "explore": return go("explore");
     case "about": return go("about");
     case "home": return go("landing");
     case "clear": return clearSel();
-    case "clear-filter": return clearFilter();
+    case "more": return showMore();
   }
 }
 
 // ---- routing -----------------------------------------------------------------
 let programmatic = false;
-function setHash(h) {
-  programmatic = true;
-  if (location.hash !== h) location.hash = h;
-  else programmatic = false;
-}
+function setHash(h) { programmatic = true; if (location.hash !== h) location.hash = h; else programmatic = false; }
 function route() {
   if (programmatic) { programmatic = false; return; }
   const hash = location.hash || "";

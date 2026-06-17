@@ -1,13 +1,11 @@
 // Data loading + adaptation. The browser only ever loads precomputed JSON emitted by
-// the pipeline. This reshapes survivors.geojson into the "journey" model the atlas + UI
-// render: surname (for A–Z grouping like the OHP site), a one-line intro, per-waypoint
-// year/uncertainty, theme facets, origin-country counts (for the choropleth), and the
-// shared persecution sites. Survivors' as-written place names are preserved throughout.
-import { ROLE_LABEL, OVERSEAS, parseYear, initials, slug, TIME } from "./config.js";
+// the pipeline. This reshapes the people FeatureCollection into the model the atlas +
+// UI render: group (the OHP archive category), a one-line intro, conflict facet,
+// per-waypoint year/uncertainty, theme facets, origin-country counts (for the density
+// choropleth), and the shared persecution sites. As-written place names are preserved.
+import { ROLE_LABEL, GROUPS, parseYear, initials, slug, TIME } from "./config.js";
 
 const BASE = "data";
-
-// Historical → modern country aliases so origins match the atlas country names.
 const COUNTRY_ALIAS = { Czechoslovakia: "Czechia", Galicia: "Poland" };
 
 async function getJSON(name) {
@@ -21,7 +19,6 @@ function countryOf(canonical) {
   const c = parts[parts.length - 1].trim();
   return COUNTRY_ALIAS[c] || c;
 }
-
 function surnameOf(name) {
   const clean = String(name).replace(/\(sample\)/i, "").trim();
   const parts = clean.split(/\s+/).filter(Boolean);
@@ -29,23 +26,26 @@ function surnameOf(name) {
 }
 
 function shortIntro(j) {
-  // A single gentle sentence for the rail card.
   const bits = [];
   if (j.hometown) bits.push(`From ${j.hometown.split(",")[0]}`);
-  const camps = j.waypoints.filter((w) => w.roleKey === "camp").map((w) => w.canonical.split(" (")[0]);
-  if (camps.length) bits.push(`survived ${camps.slice(0, 2).join(" and ")}`);
-  const last = j.waypoints[j.waypoints.length - 1];
-  if (last && (last.newLife || last.overseas)) bits.push("rebuilt a life in Toronto");
+  if (j.group === "Military Veterans") {
+    const served = j.waypoints.filter((w) => ["camp", "liberation", "transit"].includes(w.roleKey))
+      .map((w) => w.canonical.split(" (")[0].split(",")[0]);
+    if (served.length) bits.push(`served at ${[...new Set(served)].slice(0, 2).join(" and ")}`);
+  } else {
+    const camps = j.waypoints.filter((w) => w.roleKey === "camp").map((w) => w.canonical.split(" (")[0]);
+    if (camps.length) bits.push(`survived ${camps.slice(0, 2).join(" and ")}`);
+  }
   let s = bits.join(", ");
   if (!s) s = (j.bio || "").split(". ")[0];
   return s ? s.charAt(0).toUpperCase() + s.slice(1) + "." : "";
 }
 
 function toJourney(props) {
+  const group = props.group || "Holocaust Survivors";
   const wps = (props.waypoints || []).map((w) => {
     const year = parseYear(w.date && w.date.start) || parseYear(w.date && w.date.end);
     const approx = !w.date || w.date.precision === "range" || w.date.precision === "unknown";
-    const overseas = OVERSEAS.test(w.canonical || "") || OVERSEAS.test(w.as_written || "");
     return {
       canonical: w.canonical,
       asWritten: w.as_written,
@@ -57,7 +57,6 @@ function toJourney(props) {
       approx,
       liberation: w.role === "liberation",
       newLife: w.role === "resettlement",
-      overseas: overseas && (w.role === "resettlement" || w.role === "liberation"),
       verified: !!w.verified,
       quote: w.source_quote || null,
     };
@@ -67,6 +66,8 @@ function toJourney(props) {
     id: props.survivor_id,
     name: props.name,
     surname: surnameOf(props.name),
+    group,
+    conflicts: props.conflicts || [],
     born: props.birth_year || (home && home.year) || null,
     hometown: home ? (home.canonical || home.asWritten) : "",
     originCountry: home ? countryOf(home.canonical) : null,
@@ -92,21 +93,24 @@ export async function loadData() {
   journeys.sort((a, b) => a.surname.localeCompare(b.surname) || a.name.localeCompare(b.name));
   const byId = new Map(journeys.map((j) => [j.id, j]));
 
-  // A–Z groups by surname (how the OHP site groups its listings).
-  const groups = [];
-  let cur = null;
+  // Counts per archive category (in canonical order) + per conflict.
+  const order = (geojson.metadata && geojson.metadata.group_order) || GROUPS.map((g) => g.name);
+  const groupCounts = new Map();
+  const conflicts = new Map();
   for (const j of journeys) {
-    const letter = (j.surname[0] || "#").toUpperCase();
-    if (!cur || cur.letter !== letter) { cur = { letter, items: [] }; groups.push(cur); }
-    cur.items.push(j);
+    groupCounts.set(j.group, (groupCounts.get(j.group) || 0) + 1);
+    for (const c of j.conflicts) conflicts.set(c, (conflicts.get(c) || 0) + 1);
   }
+  const groups = order.filter((g) => groupCounts.get(g)).map((name) => ({ name, count: groupCounts.get(name) }));
+  // Any groups present but not in the known order, appended.
+  for (const [name, count] of groupCounts) if (!order.includes(name)) groups.push({ name, count });
 
   // Theme facets, most common first.
   const themeCount = new Map();
   for (const j of journeys) for (const t of j.themes) themeCount.set(t, (themeCount.get(t) || 0) + 1);
   const themes = [...themeCount.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
 
-  // Origin-country counts (choropleth) + distinct places (scale line).
+  // Origin-country counts (density choropleth) + distinct places (scale line).
   const originCounts = new Map();
   const places = new Set();
   for (const j of journeys) {
@@ -114,8 +118,9 @@ export async function loadData() {
     for (const w of j.waypoints) places.add(w.canonical);
   }
 
-  // Default guided survivor: the first with a rich (>=4-waypoint) journey. No "featured".
-  const richDefault = journeys.find((j) => j.waypoints.length >= 4) || journeys[0];
+  // Default guided person: a survivor with a rich, dated journey (the clearest arc).
+  const richDefault = journeys.find((j) => j.group === "Holocaust Survivors" && j.waypoints.length >= 4)
+    || journeys.find((j) => j.waypoints.length >= 4) || journeys[0];
 
   const meta = geojson.metadata || {};
   return {
@@ -123,6 +128,7 @@ export async function loadData() {
     journeys,
     byId,
     groups,
+    conflicts: [...conflicts.entries()].sort((a, b) => b[1] - a[1]),
     placeIndex,
     connections,
     themes,

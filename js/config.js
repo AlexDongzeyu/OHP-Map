@@ -1,5 +1,7 @@
-// Shared configuration — the museum palette, role vocabulary, and small helpers.
+// Shared configuration — the museum palette, role/group vocabulary, helpers.
 // One ember accent over warm archival paper; everything else greyscale (doc 08/11).
+// Group accents stay quiet and within the same warm family — equal treatment, not a
+// rainbow hierarchy (doc 13 §4.3).
 
 export const C = {
   paper: "#F7F4EF",
@@ -24,6 +26,17 @@ export const C = {
   verified: "#5E8A5E",
 };
 
+// Group order (how the OHP archive lists its categories) + a quiet accent per group.
+// Hues stay close and muted so no group reads as "more important" than another.
+export const GROUPS = [
+  { name: "Holocaust Survivors", color: "#B45F2E" },
+  { name: "Military Veterans",   color: "#6E7B53" },
+  { name: "Community Members",   color: "#5E7382" },
+  { name: "First Nations",       color: "#9A6A3F" },
+  { name: "Crestwood Families",  color: "#7A6E86" },
+];
+export const GROUP_COLOR = Object.fromEntries(GROUPS.map((g) => [g.name, g.color]));
+
 // My pipeline roles → the gentle display vocabulary used across the UI.
 export const ROLE_LABEL = {
   birthplace: "Hometown",
@@ -34,11 +47,7 @@ export const ROLE_LABEL = {
   resettlement: "New life",
 };
 
-// Places across the Atlantic are drawn as an off-map "new life" anchor, since the
-// map frame is Europe (matches the reference; honest — the actual place is still named).
-export const OVERSEAS = /canada|toronto|montreal|united states|u\.?s\.?a?\.?|new york|america/i;
-
-export const TIME = { min: 1933, max: 1950 };
+export const TIME = { min: 1914, max: 1955 };
 
 export const REDUCED_MOTION =
   window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
