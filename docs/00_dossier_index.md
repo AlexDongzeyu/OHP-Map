@@ -9,11 +9,13 @@ can pull clean JSON from the WordPress REST API instead of scraping fragile HTML
 
 ## Start here
 
-If you only do one thing: **read `05_prototype_playbook.md` and fork the template it
-points to.** You can have a live, good-looking guided map of 3–5 real survivors on
-the internet this weekend by adapting an existing open-source project rather than
-building from scratch. Everything else is how that prototype grows into the full
-vision without throwing any work away.
+The prototype is **deployed** (Cloudflare Workers) but currently shows "0 journeys"
+— the shell is built, no data is flowing in yet. So the file to act on now is
+**`09_finish_and_polish.md`**: it audits the live site, fixes the data blocker
+step-by-step, wires the auto-update pipeline natively on Cloudflare (Cron + KV), and
+lays out the visual-polish playbook. `05`–`07` remain the reference for the
+fork-first strategy and the build prompts; `08` is required reading before the
+visual work.
 
 ## What's in here
 
@@ -27,6 +29,7 @@ vision without throwing any work away.
 | `06_reuse_toolkit.md` | The forkable base templates and the Leaflet animation plugins (with links + licenses), each mapped to a feature. This is what makes it look great. |
 | `07_prototype_prompt.md` | Copy-paste prompt to drive Claude Code through **forking and adapting** the template into the prototype. |
 | `08_visual_direction_and_weaknesses.md` | **Read before building anything visual.** Honest triage of the 3D / AR / "WW2" / collage ideas, the tasteful alternatives, and a full weakness audit of the whole plan with mitigations. |
+| `09_finish_and_polish.md` | **The live-site action guide.** Audit of the deployed Cloudflare prototype (what's done vs. the "0 journeys" blocker), step-by-step to load real data, the Cloudflare-native auto-update pipeline (Cron + KV), the visual-polish playbook, and a sequenced punch list. |
 
 ## Suggested order
 

@@ -1,0 +1,87 @@
+{
+  "_about": "Featured survivors, hand-ordered from their PUBLIC bio summaries on the Crestwood OHP archive to give the Guided view a clean arc. These are REAL people. Per the project's ethics (docs 04/08/09), nothing here is asserted as authoritative: every waypoint is verified=false (pending) until a human checks it against the full testimony AND Mr. Masters grants written permission. Dates are taken only where the public summary states them; otherwise precision is left vague. 'as_written' preserves the survivor's/archive's own spelling alongside the canonical modern name.",
+  "is_sample": false,
+  "source": "curated-from-public-summary",
+  "survivors": [
+    {
+      "survivor_id": "baranek-martin",
+      "name": "Martin Baranek",
+      "birth_year": 1930,
+      "featured": true,
+      "bio_excerpt": "Born in 1930 in Starachowice, Poland. Put into the Starachowice Ghetto in 1941, then deported to Auschwitz-Birkenau, sent on a death march, and liberated at Gunskirchen in spring 1945. Reached Canada in 1949.",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/baranek-martin/",
+      "theme_tags": ["Starachowice", "Auschwitz", "Death March"],
+      "waypoints": [
+        { "as_written": "Starachowice", "role": "birthplace", "date": {"start": "1930", "end": "1930", "precision": "year"}, "confidence": 0.9, "verified": false, "source_quote": "born August 15, 1930 in Starachowice, Poland" },
+        { "as_written": "Starachowice Ghetto", "role": "ghetto", "date": {"start": "1941", "end": "1943", "precision": "range"}, "confidence": 0.85, "verified": false, "source_quote": "put into the Starachowice Ghetto in 1941" },
+        { "as_written": "Auschwitz-Birkenau", "role": "camp", "date": {"start": "1943", "end": "1945", "precision": "range"}, "confidence": 0.85, "verified": false, "source_quote": "deported to Auschwitz-Birkenau, where he stayed until the winter of 1944-5" },
+        { "as_written": "Gunskirchen", "role": "liberation", "date": {"start": "1945", "end": "1945", "precision": "year"}, "confidence": 0.85, "verified": false, "source_quote": "liberated from the Gunskirchen camp by the American army in the spring of 1945" },
+        { "as_written": "Italy", "role": "transit", "date": {"start": "1945", "end": "1948", "precision": "range"}, "confidence": 0.7, "verified": false, "source_quote": "Martin spent time in Italy" },
+        { "as_written": "Israel", "role": "transit", "date": {"start": "1948", "end": "1949", "precision": "range"}, "confidence": 0.7, "verified": false, "source_quote": "made his way to Israel" },
+        { "as_written": "Canada", "role": "resettlement", "date": {"start": "1949", "end": "1949", "precision": "year"}, "confidence": 0.9, "verified": false, "source_quote": "emigrated to Canada in 1949" }
+      ]
+    },
+    {
+      "survivor_id": "cohen-israel",
+      "name": "Israel Cohen",
+      "birth_year": null,
+      "featured": true,
+      "bio_excerpt": "Born in Lodz, Poland. Survived the Lodz Ghetto, Auschwitz, and Kaufering until liberation, recovered in Switzerland, and settled in Canada.",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/cohen-israel/",
+      "theme_tags": ["Lodz", "Auschwitz", "Kaufering"],
+      "waypoints": [
+        { "as_written": "Lodz", "role": "birthplace", "date": {"start": "", "end": "", "precision": "unknown"}, "confidence": 0.9, "verified": false, "source_quote": "born is Lodz, Poland" },
+        { "as_written": "Lodz Ghetto", "role": "ghetto", "date": {"start": "1940", "end": "1944", "precision": "range"}, "confidence": 0.85, "verified": false, "source_quote": "At first he was in the Lodz Ghetto" },
+        { "as_written": "Auschwitz", "role": "camp", "date": {"start": "1944", "end": "1944", "precision": "year"}, "confidence": 0.85, "verified": false, "source_quote": "then Auschwitz" },
+        { "as_written": "Kaufering", "role": "liberation", "date": {"start": "1944", "end": "1945", "precision": "range"}, "confidence": 0.85, "verified": false, "source_quote": "and then Kaufering until liberation" },
+        { "as_written": "Switzerland", "role": "transit", "date": {"start": "1945", "end": "1945", "precision": "year"}, "confidence": 0.8, "verified": false, "source_quote": "he went to Switzerland, to a treatment center for TB" },
+        { "as_written": "Canada", "role": "resettlement", "date": {"start": "", "end": "", "precision": "unknown"}, "confidence": 0.9, "verified": false, "source_quote": "he came to Canada, where he lives now" }
+      ]
+    },
+    {
+      "survivor_id": "bohm-hedy",
+      "name": "Hedy Bohm",
+      "birth_year": null,
+      "featured": true,
+      "bio_excerpt": "Grew up in prewar Romania in a region that came under Hungarian control. Deported to Auschwitz in summer 1944, then a work camp; after liberation she reached Prague and arrived in Canada in 1948.",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/bohm-hedy/",
+      "theme_tags": ["Romania", "Auschwitz", "Forced Labour"],
+      "waypoints": [
+        { "as_written": "Romania", "role": "birthplace", "date": {"start": "", "end": "", "precision": "unknown"}, "confidence": 0.8, "verified": false, "source_quote": "grew up in prewar Romania" },
+        { "as_written": "Auschwitz", "role": "camp", "date": {"start": "1944", "end": "1944", "precision": "year"}, "confidence": 0.85, "verified": false, "source_quote": "the family was deported to Auschwitz in the summer of 1944" },
+        { "as_written": "Prague", "role": "transit", "date": {"start": "1945", "end": "1948", "precision": "range"}, "confidence": 0.75, "verified": false, "source_quote": "They were able to escape to Prague" },
+        { "as_written": "Canada", "role": "resettlement", "date": {"start": "1948", "end": "1948", "precision": "year"}, "confidence": 0.9, "verified": false, "source_quote": "get visas to Canada, where she arrived in 1948" }
+      ]
+    },
+    {
+      "survivor_id": "carmelly-felicia",
+      "name": "Felicia Carmelly",
+      "birth_year": 1932,
+      "featured": true,
+      "bio_excerpt": "Born in 1932 in Romania. She and her family were deported to Transnistria; she survived and was liberated by the Soviet Army, then travelled via Vienna and Israel before arriving in Canada in 1962.",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/carmelly-felicia/",
+      "theme_tags": ["Romania", "Transnistria", "Liberation"],
+      "waypoints": [
+        { "as_written": "Romania", "role": "birthplace", "date": {"start": "1932", "end": "1932", "precision": "year"}, "confidence": 0.85, "verified": false, "source_quote": "Born in 1932 amidst European anti-Semitism" },
+        { "as_written": "Transnistria", "role": "ghetto", "date": {"start": "1941", "end": "1944", "precision": "range"}, "confidence": 0.8, "verified": false, "source_quote": "taken from their hometown to Transnistria … forced into mass ghettos" },
+        { "as_written": "Vienna", "role": "transit", "date": {"start": "1945", "end": "1962", "precision": "range"}, "confidence": 0.7, "verified": false, "source_quote": "travelled to Vienna and Israel" },
+        { "as_written": "Israel", "role": "transit", "date": {"start": "1948", "end": "1962", "precision": "range"}, "confidence": 0.7, "verified": false, "source_quote": "travelled to Vienna and Israel before finally arriving in Canada" },
+        { "as_written": "Canada", "role": "resettlement", "date": {"start": "1962", "end": "1962", "precision": "year"}, "confidence": 0.9, "verified": false, "source_quote": "finally arriving in Canada in 1962" }
+      ]
+    },
+    {
+      "survivor_id": "cipin-josef",
+      "name": "Josef Cipin",
+      "birth_year": null,
+      "featured": true,
+      "bio_excerpt": "A young boy when the war began, on the run and hiding with partisans until the Gestapo caught up; deported to the Terezín (Theresienstadt) camp, which he survived. Remained in Czechoslovakia, then came to Canada.",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/cipin-josef/",
+      "theme_tags": ["Partisans", "Theresienstadt"],
+      "waypoints": [
+        { "as_written": "Czechoslovakia", "role": "birthplace", "date": {"start": "", "end": "", "precision": "unknown"}, "confidence": 0.7, "verified": false, "source_quote": "After the war he remained in Czechoslovakia" },
+        { "as_written": "Terezin", "role": "camp", "date": {"start": "", "end": "1945", "precision": "unknown"}, "confidence": 0.8, "verified": false, "source_quote": "deported to the Terezin camp, where he managed to survive" },
+        { "as_written": "Canada", "role": "resettlement", "date": {"start": "1968", "end": "1968", "precision": "year"}, "confidence": 0.8, "verified": false, "source_quote": "He ended up coming to Canada" }
+      ]
+    }
+  ]
+}

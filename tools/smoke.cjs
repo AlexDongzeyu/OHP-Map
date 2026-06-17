@@ -32,8 +32,8 @@ const BASE = "http://localhost:8124";
     const n = await page.$eval("#survivor-count", (el) => parseInt(el.textContent, 10));
     if (!(n > 0)) throw new Error("count=" + n);
   });
-  await check("sample banner visible", async () => {
-    const hidden = await page.$eval("#sample-banner", (el) => el.hidden);
+  await check("notice banner visible (pending data)", async () => {
+    const hidden = await page.$eval("#notice-banner", (el) => el.hidden);
     if (hidden) throw new Error("banner hidden");
   });
   await check("guided steps rendered", async () => {

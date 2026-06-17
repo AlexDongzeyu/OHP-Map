@@ -1,74 +1,42 @@
 [
   {
-    "place": "Auschwitz (Oswiecim), Poland",
-    "survivorA": "david-stern",
-    "survivorB": "miriam-roth",
-    "overlap_window": "1944",
-    "note": "Both describe being at Auschwitz (Oswiecim), Poland around 1944.",
-    "verified": true
+    "place": "Dachau, Germany",
+    "survivorA": "dawang-elie",
+    "survivorB": "leipciger-nate",
+    "overlap_window": "1945",
+    "note": "Both public summaries mention Dachau around 1945 (unverified — not a claim that they met).",
+    "verified": false
   },
   {
-    "place": "Auschwitz (Oswiecim), Poland",
-    "survivorA": "david-stern",
-    "survivorB": "rosa-blum",
-    "overlap_window": "1944",
-    "note": "Both describe being at Auschwitz (Oswiecim), Poland around 1944.",
-    "verified": true
+    "place": "Dachau, Germany",
+    "survivorA": "dawang-elie",
+    "survivorB": "yermus-helen",
+    "overlap_window": "1945",
+    "note": "Both public summaries mention Dachau around 1945 (unverified — not a claim that they met).",
+    "verified": false
   },
   {
-    "place": "Auschwitz (Oswiecim), Poland",
-    "survivorA": "david-stern",
-    "survivorB": "samuel-weiss",
-    "overlap_window": "1944",
-    "note": "Both describe being at Auschwitz (Oswiecim), Poland around 1944.",
-    "verified": true
+    "place": "Dachau, Germany",
+    "survivorA": "leipciger-nate",
+    "survivorB": "yermus-helen",
+    "overlap_window": "1945",
+    "note": "Both public summaries mention Dachau around 1945 (unverified — not a claim that they met).",
+    "verified": false
   },
   {
-    "place": "Auschwitz (Oswiecim), Poland",
-    "survivorA": "miriam-roth",
-    "survivorB": "rosa-blum",
-    "overlap_window": "1944-1945",
-    "note": "Both describe being at Auschwitz (Oswiecim), Poland around 1944-1945.",
-    "verified": true
+    "place": "Lodz Ghetto, Poland",
+    "survivorA": "cohen-israel",
+    "survivorB": "fox-george",
+    "overlap_window": "1942",
+    "note": "Both public summaries mention Lodz Ghetto around 1942 (unverified — not a claim that they met).",
+    "verified": false
   },
   {
-    "place": "Auschwitz (Oswiecim), Poland",
-    "survivorA": "miriam-roth",
-    "survivorB": "samuel-weiss",
-    "overlap_window": "1944-1945",
-    "note": "Both describe being at Auschwitz (Oswiecim), Poland around 1944-1945.",
-    "verified": true
-  },
-  {
-    "place": "Auschwitz (Oswiecim), Poland",
-    "survivorA": "rosa-blum",
-    "survivorB": "samuel-weiss",
-    "overlap_window": "1944-1945",
-    "note": "Both describe being at Auschwitz (Oswiecim), Poland around 1944-1945.",
-    "verified": true
-  },
-  {
-    "place": "Theresienstadt (Terezin), Czechia",
-    "survivorA": "david-stern",
-    "survivorB": "hana-kovac",
-    "overlap_window": "1942-1944",
-    "note": "Both describe being at Theresienstadt (Terezin), Czechia around 1942-1944.",
-    "verified": true
-  },
-  {
-    "place": "Theresienstadt (Terezin), Czechia",
-    "survivorA": "david-stern",
-    "survivorB": "samuel-weiss",
-    "overlap_window": "1943-1944",
-    "note": "Both describe being at Theresienstadt (Terezin), Czechia around 1943-1944.",
-    "verified": true
-  },
-  {
-    "place": "Theresienstadt (Terezin), Czechia",
-    "survivorA": "hana-kovac",
-    "survivorB": "samuel-weiss",
-    "overlap_window": "1943-1944",
-    "note": "Both describe being at Theresienstadt (Terezin), Czechia around 1943-1944.",
-    "verified": true
+    "place": "Westerbork, Netherlands",
+    "survivorA": "herschel-tswi",
+    "survivorB": "vis-leonard",
+    "overlap_window": "1943",
+    "note": "Both public summaries mention Westerbork around 1943 (unverified — not a claim that they met).",
+    "verified": false
   }
 ]

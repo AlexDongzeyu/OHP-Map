@@ -12,6 +12,14 @@ __pycache__/
 # Smoke-test screenshots (regenerate with tools/shots.cjs)
 tools/*.png
 
+# Dev probes + scrape HTML cache (the distilled data/source/ohp_scraped.json is committed)
+tools/probe/
+data/source/pages_cache/
+
+# Cloudflare / wrangler local state
+.wrangler/
+.dev.vars
+
 # OS
 .DS_Store
 Thumbs.db

@@ -1,6 +1,6 @@
 // Shared map helpers: one Leaflet map instance, the quiet basemap, and small
 // factory functions for the restrained markers and journey lines every mode reuses.
-import { PALETTE, BASEMAP, REDUCED_MOTION, ROLE_LABELS } from "./config.js";
+import { PALETTE, BASEMAP, HISTORICAL_OVERLAY, REDUCED_MOTION, ROLE_LABELS } from "./config.js";
 
 export function createMap(elementId) {
   const map = L.map(elementId, {
@@ -14,7 +14,28 @@ export function createMap(elementId) {
     markerZoomAnimation: !REDUCED_MOTION,
   });
   map.setView([50.5, 15.5], 5); // central Europe
-  L.tileLayer(BASEMAP.url, BASEMAP.options).addTo(map);
+
+  const quiet = L.tileLayer(BASEMAP.url, BASEMAP.options).addTo(map);
+  const quietNoLabels = L.tileLayer(
+    BASEMAP.url.replace("light_all", "light_nolabels"),
+    BASEMAP.options
+  );
+  const historical = L.tileLayer(HISTORICAL_OVERLAY.tiles, {
+    opacity: HISTORICAL_OVERLAY.opacity,
+    maxZoom: 12,
+    attribution: HISTORICAL_OVERLAY.attribution,
+  });
+
+  // A restrained layer control: two quiet basemaps + an optional period overlay,
+  // off by default (doc 09 #1; doc 08 — accurate cartography only).
+  L.control
+    .layers(
+      { "Quiet basemap": quiet, "Muted, no labels": quietNoLabels },
+      { "Period place-names (1900s–40s)": historical },
+      { collapsed: true, position: "topright" }
+    )
+    .addTo(map);
+
   map.attributionControl.addAttribution(
     'Map: <a href="https://github.com/AlexDongzeyu/OHP-Map">Crestwood OHP Survivor Map</a>'
   );

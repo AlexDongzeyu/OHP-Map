@@ -20,6 +20,7 @@ export async function loadData() {
 
   const survivors = geojson.features.map((f) => f.properties);
   const byId = new Map(survivors.map((s) => [s.survivor_id, s]));
+  const featured = survivors.filter((s) => s.featured);
 
   // Quick lookups used across modes.
   const places = new Map(); // canonical -> { canonical, lat, lng, roles:Set, slug }
@@ -65,6 +66,7 @@ export async function loadData() {
     geojson,
     survivors,
     byId,
+    featured,
     placeIndex,
     connections,
     connBySurvivor,

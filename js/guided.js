@@ -7,8 +7,12 @@ import { dotIcon, fitTo } from "./mapcore.js";
 
 export function createGuided(ctx) {
   const { map, store } = ctx;
+  // Prefer a featured survivor with a rich, dated arc; fall back gracefully.
   const survivor =
-    store.byId.get("rosa-blum") || store.survivors[0]; // a clear, rich anchor arc
+    store.byId.get("baranek-martin") ||
+    store.featured.find((s) => s.waypoints.length >= 4) ||
+    store.featured[0] ||
+    store.survivors[0];
   let layer = L.layerGroup();
   let scroller = null;
   let drawn = [];
@@ -48,7 +52,7 @@ export function createGuided(ctx) {
           <p class="lede">${esc(survivor.bio_excerpt || "")}</p>
           <p class="muted small">Scroll to follow the journey. Each stop is a place in a
             life; the line is the path between them.</p>
-          ${survivor.is_sample ? '<p class="sample-flag">Illustrative sample record — not real testimony.</p>' : ""}
+          ${statusLine(survivor)}
         </section>
         ${steps}
         <section class="step step-outro">
@@ -122,6 +126,14 @@ function dateLabel(d) {
   if (!d || (!d.start && !d.end)) return "date uncertain";
   if (d.start === d.end || !d.end) return d.start || "—";
   return `${d.start}–${d.end}`;
+}
+function statusLine(s) {
+  if (s.is_sample)
+    return '<p class="sample-flag">Illustrative sample record — not real testimony.</p>';
+  if (s.review_status === "pending")
+    return '<p class="sample-flag">Drawn from this survivor\'s public archive summary — ' +
+      'approximate and pending verification &amp; permission.</p>';
+  return "";
 }
 function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));

@@ -1,0 +1,29 @@
+# Cloudflare Worker config (doc 09 Part 2 — auto-update native to Cloudflare).
+#
+# Deploy:
+#   npm i -g wrangler            # or: npx wrangler ...
+#   npx wrangler kv namespace create OHP_DATA      # paste the printed id below
+#   npx wrangler deploy
+#
+# The Worker serves the static site and the dataset, and a daily Cron Trigger
+# refreshes the dataset from the OHP archive into KV. Page loads never hit the
+# external site — they read the cached GeoJSON from KV (or the committed file).
+
+name = "ohp-survivor-map"
+main = "worker/index.js"
+compatibility_date = "2024-11-01"
+
+# Serve the repo root as static assets (index.html, css/, js/, vendor/, data/…).
+[assets]
+directory = "."
+binding = "ASSETS"
+
+# Key-value cache for the generated dataset + the geocode cache + the seen-slug set.
+# Replace the id with the one `wrangler kv namespace create OHP_DATA` prints.
+[[kv_namespaces]]
+binding = "OHP_DATA"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Daily rebuild at 06:00 UTC (Cron on Workers is always UTC).
+[triggers]
+crons = ["0 6 * * *"]

@@ -130,32 +130,42 @@ export function createPatterns(ctx) {
   }
 
   function renderPanel() {
+    const verifiedCount = store.connections.filter((c) => c.verified).length;
+    const heading = verifiedCount
+      ? `Connections <span class="muted">(${verifiedCount} verified · ${store.connections.length - verifiedCount} candidate)</span>`
+      : `Candidate connections <span class="muted">(${store.connections.length})</span>`;
     ctx.panel.innerHTML = `
       <div class="patterns">
         <h2>Patterns</h2>
         <p class="muted small">The view from above: routes, origins, and the moments two
-          journeys cross.</p>
+          journeys may cross — what no alphabetical list of ${store.survivors.length} entries can show.</p>
         <fieldset class="toggles">
           <legend>Layers</legend>
           <label><input type="checkbox" data-layer="flows" checked> Flow lines (shared routes)</label>
           <label><input type="checkbox" data-layer="density" checked> Origin density</label>
           <label><input type="checkbox" data-layer="links" checked> Connection layer</label>
         </fieldset>
-        <h3>Verified connections <span class="muted">(${store.connections.length})</span></h3>
+        <h3>${heading}</h3>
         <ul class="conns">
           ${store.connections
             .map(
               (c, i) => `<li><button class="link-btn" data-conn="${i}">
               ${esc(nameOf(c.survivorA))} &amp; ${esc(nameOf(c.survivorB))}</button>
-              <span class="muted small">— ${esc(c.place.split(" (")[0])}, ${esc(c.overlap_window)}</span></li>`
+              <span class="muted small">— ${esc(c.place.split(" (")[0])}, ${esc(c.overlap_window)}</span>
+              ${c.verified ? '<span class="badge ok">verified</span>' : '<span class="badge pending">candidate</span>'}</li>`
             )
             .join("")}
         </ul>
-        <p class="muted small">Connections are only shown when both testimonies place the
-          two people together in time. Phrasing stays careful — "both describe being at X".</p>
+        <p class="muted small">A connection is a place two survivors' records both name within
+          an overlapping window. <strong>Candidate</strong> overlaps are unverified — they are
+          not a claim that the two people met. Only a human-verified overlap is shown as
+          "verified".</p>
       </div>`;
     ctx.panel.querySelectorAll("[data-layer]").forEach((cb) =>
       cb.addEventListener("change", () => toggle(cb.dataset.layer, cb.checked))
+    );
+    ctx.panel.querySelectorAll("[data-conn]").forEach((b) =>
+      b.addEventListener("mouseenter", () => focusConnection(store.connections[+b.dataset.conn]))
     );
     ctx.panel.querySelectorAll("[data-conn]").forEach((b) =>
       b.addEventListener("click", () => focusConnection(store.connections[+b.dataset.conn]))

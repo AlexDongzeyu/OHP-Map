@@ -24,12 +24,15 @@ export const BASEMAP = {
   },
 };
 
-// Faint, optional period overlay (David Rumsey collection georeferenced 1930s–40s
-// Europe). Off by default; accurate cartography, never a stylised "war" look (doc 08).
+// Optional, off-by-default period overlay. OpenHistoricalMap renders historical
+// place-names/borders as accurate cartography (not a stylised "war" look, per doc 08).
+// Shown faintly under the data and only when the visitor opts in via the layer control.
 export const HISTORICAL_OVERLAY = {
-  // A placeholder David Rumsey georeferenced layer URL pattern. Toggled off by default.
-  url: "https://maps.georeferencer.com/georeferences/{id}/{z}/{x}/{y}.png",
-  enabled: false,
+  url: "https://www.openhistoricalmap.org/map-styles/main/main.json",
+  tiles: "https://tile.openhistoricalmap.org/{z}/{x}/{y}.png",
+  attribution:
+    '&copy; <a href="https://www.openhistoricalmap.org/">OpenHistoricalMap</a> contributors',
+  opacity: 0.45,
 };
 
 export const ROLE_LABELS = {

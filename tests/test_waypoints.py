@@ -21,10 +21,23 @@ def test_order_is_stable_for_equal_dates():
     assert ordered == ["A", "B"]
 
 
-def test_missing_dates_sort_last_without_crashing():
+def test_undated_stops_keep_their_place_among_dated_ones():
+    # A leading undated birthplace should stay first (it inherits the next year),
+    # and an undated final stop should stay last (it inherits the previous year).
     wps = [
-        {"as_written": "Unknown", "date": {"start": None, "end": None}},
-        {"as_written": "Home", "date": {"start": "1930", "end": "1930"}},
+        {"as_written": "Home", "role": "birthplace", "date": {"start": None, "end": None}},
+        {"as_written": "Camp", "role": "camp", "date": {"start": "1943", "end": "1943"}},
+        {"as_written": "Toronto", "role": "resettlement", "date": {"start": None, "end": None}},
     ]
     ordered = [w["as_written"] for w in derive.order_waypoints(wps)]
-    assert ordered == ["Home", "Unknown"]
+    assert ordered == ["Home", "Camp", "Toronto"]
+
+
+def test_fully_undated_journey_falls_back_to_role_order():
+    wps = [
+        {"as_written": "Auschwitz", "role": "camp", "date": {"start": None, "end": None}},
+        {"as_written": "Home", "role": "birthplace", "date": {"start": None, "end": None}},
+        {"as_written": "Toronto", "role": "resettlement", "date": {"start": None, "end": None}},
+    ]
+    ordered = [w["as_written"] for w in derive.order_waypoints(wps)]
+    assert ordered == ["Home", "Auschwitz", "Toronto"]

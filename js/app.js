@@ -25,8 +25,19 @@ async function main() {
   }
 
   document.getElementById("survivor-count").textContent = store.survivors.length;
+  const banner = document.getElementById("notice-banner");
   if (store.meta && store.meta.sample_data) {
-    document.getElementById("sample-banner").hidden = false;
+    banner.innerHTML =
+      "Demonstration build — every survivor shown is <strong>fictional, illustrative " +
+      "sample data</strong>, not real testimony. See the README.";
+    banner.hidden = false;
+  } else if (store.meta && store.meta.pending > 0) {
+    banner.innerHTML =
+      `Journeys are <strong>auto-extracted from public archive summaries</strong> at ` +
+      `<a href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">ohp.crestwood.on.ca</a> ` +
+      `and are <strong>pending human verification and permission</strong> — approximate, ` +
+      `not authoritative. ${store.meta.reviewed || 0} reviewed · ${store.meta.pending} pending review.`;
+    banner.hidden = false;
   }
 
   const map = createMap("map");

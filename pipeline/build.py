@@ -38,8 +38,9 @@ def _record_to_survivor(rec: dict, extractor) -> dict:
         "survivor_id": rec["survivor_id"],
         "name": rec.get("name", ""),
         "is_sample": rec.get("is_sample", False),
+        "featured": rec.get("featured", False),
         "birth_year": rec.get("birth_year"),
-        "bio_excerpt": rec.get("bio_excerpt", ""),
+        "bio_excerpt": rec.get("bio_excerpt", "") or _auto_excerpt(rec),
         "archive_url": rec.get("archive_url", ""),
         "media_url": rec.get("media_url"),
         "portrait": rec.get("portrait"),
@@ -47,6 +48,18 @@ def _record_to_survivor(rec: dict, extractor) -> dict:
         "theme_tags": rec.get("theme_tags", []),
         "waypoints": waypoints,
     }
+
+
+def _auto_excerpt(rec: dict, limit: int = 320) -> str:
+    """First sentence(s) of the scraped bio, for records without a curated excerpt."""
+    text = (rec.get("text") or "").strip()
+    if not text:
+        return ""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    dot = cut.rfind(". ")
+    return (cut[: dot + 1] if dot > 80 else cut).strip() + " …"
 
 
 def _geocode_survivor(s: dict, cache: dict, allow_network: bool, warnings: list) -> dict:
@@ -78,25 +91,34 @@ def _to_feature(s: dict) -> dict:
     }
 
 
-def build(source_name="local", extractor_name="offline", allow_network=False) -> dict:
+def build(source_name="local", extractor_name="offline", allow_network=False,
+          strict=False, featured=None) -> dict:
     warnings: list[str] = []
     source = ingest.get_source(source_name)
     extractor = extract.get_extractor(extractor_name)
     cache = geocode.load_cache()
+    featured = set(featured or [])
 
     survivors = [_record_to_survivor(rec, extractor) for rec in source.fetch()]
 
-    # Human-review gate: queue everything unverified, publish only verified.
+    # Human-review gate: queue everything unverified for a person to confirm.
     queued = review.emit_review_queue(survivors)
-    survivors = review.filter_published(survivors)
 
-    # Geocode (cache-only unless --allow-network), then drop any waypoint we can't place.
+    # Geocode (cache-only unless --allow-network), dropping any waypoint we can't place.
     survivors = [_geocode_survivor(s, cache, allow_network, warnings) for s in survivors]
     survivors = [s for s in survivors if s["waypoints"]]
     if allow_network:
         geocode.save_cache(cache)
 
+    # Tag review status; optionally publish only fully-reviewed records.
+    survivors = review.stage(survivors, strict=strict)
+    for s in survivors:
+        if s["survivor_id"] in featured:
+            s["featured"] = True
+
     features = [_to_feature(s) for s in survivors]
+    reviewed = sum(1 for f in features if f["properties"].get("review_status") == "reviewed")
+    pending = len(features) - reviewed
     doc = {
         "type": "FeatureCollection",
         "metadata": {
@@ -104,10 +126,16 @@ def build(source_name="local", extractor_name="offline", allow_network=False) ->
             "source": source_name,
             "extractor": extractor_name,
             "count": len(features),
+            "reviewed": reviewed,
+            "pending": pending,
             "time_min": config.TIME_MIN,
             "time_max": config.TIME_MAX,
             "sample_data": any(f["properties"].get("is_sample") for f in features),
-            "notice": "Records flagged is_sample are FICTIONAL illustrative data, not real testimony.",
+            "notice": (
+                "Pending records are auto-extracted from public archive summaries and "
+                "await human verification and permission; they are not authoritative. "
+                "Records flagged is_sample are fictional illustrative data."
+            ),
         },
         "features": features,
     }
@@ -121,11 +149,15 @@ def build(source_name="local", extractor_name="offline", allow_network=False) ->
     _write(config.OUT_PLACE_INDEX, place_index)
     _write(config.OUT_CONNECTIONS, connections)
 
-    print(f"[build] source={source_name} extractor={extractor_name}")
-    print(f"[build] survivors published: {len(features)} | review queue: {queued}")
-    print(f"[build] places indexed: {len(place_index)} | connections: {len(connections)}")
-    for w in warnings:
+    print(f"[build] source={source_name} extractor={extractor_name} strict={strict}")
+    print(f"[build] published: {len(features)} ({reviewed} reviewed, {pending} pending) "
+          f"| review queue: {queued}")
+    print(f"[build] places indexed: {len(place_index)} | connections: {len(connections)} "
+          f"({sum(1 for c in connections if c['verified'])} verified)")
+    for w in warnings[:10]:
         print(f"[warn] {w}")
+    if len(warnings) > 10:
+        print(f"[warn] …and {len(warnings) - 10} more unplaced waypoints")
     return doc
 
 
@@ -151,17 +183,24 @@ def _discover() -> int:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="Build the OHP survivor map dataset.")
-    p.add_argument("--source", default="local", help="local | wordpress | scrape")
+    p.add_argument("--source", default="ohp",
+                   help="ohp (real, default) | local (fictional fixture) | scraped | wordpress | scrape")
     p.add_argument("--extractor", default="offline", help="offline | anthropic | openai")
     p.add_argument("--allow-network", action="store_true",
                    help="permit live geocoding for cache misses (writes back to cache)")
+    p.add_argument("--strict", action="store_true",
+                   help="publish only human-reviewed records (drop pending)")
+    p.add_argument("--featured", default="",
+                   help="comma-separated survivor_ids to flag as featured")
     p.add_argument("--discover", action="store_true", help="probe the WP REST API and exit")
     args = p.parse_args(argv)
 
     if args.discover:
         return _discover()
+    featured = [s for s in args.featured.split(",") if s]
     try:
-        build(args.source, args.extractor, args.allow_network)
+        build(args.source, args.extractor, args.allow_network,
+              strict=args.strict, featured=featured)
     except ValueError as exc:  # validation failure
         print(str(exc), file=sys.stderr)
         return 2

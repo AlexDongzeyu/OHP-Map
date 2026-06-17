@@ -139,6 +139,50 @@ class HtmlScrapeSource(Source):
             }
 
 
+class ScrapedSource(Source):
+    """Read the committed scraped OHP archive (data/source/ohp_scraped.json)."""
+
+    def __init__(self, path=config.DATA / "source" / "ohp_scraped.json"):
+        self.path = path
+
+    def fetch(self) -> Iterable[dict]:
+        if not self.path.exists():
+            raise FileNotFoundError(
+                f"{self.path} not found — run `python -m pipeline.scrape_ohp` first.")
+        with open(self.path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        for rec in doc.get("survivors", []):
+            rec.setdefault("is_sample", False)
+            yield rec
+
+
+class CombinedSource(Source):
+    """Curated featured survivors first, then the rest of the scraped archive.
+
+    Featured records (data/source/survivors_curated.json) are hand-ordered examples;
+    everything else comes from the scrape. De-duplicated by survivor_id so a curated
+    survivor isn't also emitted from the scrape.
+    """
+
+    def __init__(self, curated=config.DATA / "source" / "survivors_curated.json",
+                 scraped=config.DATA / "source" / "ohp_scraped.json"):
+        self.curated = curated
+        self.scraped = scraped
+
+    def fetch(self) -> Iterable[dict]:
+        seen = set()
+        if self.curated.exists():
+            with open(self.curated, encoding="utf-8") as fh:
+                for rec in json.load(fh).get("survivors", []):
+                    rec.setdefault("is_sample", False)
+                    rec["featured"] = True
+                    seen.add(rec["survivor_id"])
+                    yield rec
+        for rec in ScrapedSource(self.scraped).fetch():
+            if rec["survivor_id"] not in seen:
+                yield rec
+
+
 def get_source(name: str) -> Source:
     name = (name or "local").lower()
     if name == "local":
@@ -147,4 +191,8 @@ def get_source(name: str) -> Source:
         return WordPressRestSource()
     if name == "scrape":
         return HtmlScrapeSource()
+    if name == "scraped":
+        return ScrapedSource()
+    if name in ("ohp", "combined"):
+        return CombinedSource()
     raise ValueError(f"unknown source: {name!r}")

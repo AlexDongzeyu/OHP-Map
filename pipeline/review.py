@@ -63,14 +63,36 @@ def emit_review_queue(survivors: list[dict]) -> int:
     return len(rows)
 
 
-def filter_published(survivors: list[dict]) -> list[dict]:
-    """Keep only verified waypoints; drop survivors with none left."""
-    published = []
+def stage(survivors: list[dict], strict: bool = False) -> list[dict]:
+    """Tag each survivor with a review_status and decide what publishes.
+
+    Every survivor keeps only its placeable waypoints. We do NOT silently drop
+    unverified records — on a memorial, hiding everything unreviewed would just show
+    "0 journeys". Instead each record is labelled honestly:
+
+        review_status = "reviewed"  -> every waypoint is verified by a human
+                        "pending"   -> auto-extracted, awaiting human verification
+
+    The front end renders "pending" records faintly and clearly labelled (doc 09
+    Step 2.5, the accepted "looser" option). Pass strict=True to publish only fully
+    reviewed records (the conservative memorial setting).
+    """
+    staged = []
     for s in survivors:
-        verified = [wp for wp in s.get("waypoints", []) if wp.get("verified")]
-        if not verified:
+        wps = s.get("waypoints", [])
+        if not wps:
+            continue
+        all_verified = all(wp.get("verified") for wp in wps)
+        status = "reviewed" if all_verified else "pending"
+        if strict and status != "reviewed":
             continue
         s = dict(s)
-        s["waypoints"] = verified
-        published.append(s)
-    return published
+        s["review_status"] = status
+        staged.append(s)
+    return staged
+
+
+# Backwards-compatible alias used by older callers/tests.
+def filter_published(survivors: list[dict]) -> list[dict]:
+    """Strict publish: reviewed records only (kept for compatibility)."""
+    return stage(survivors, strict=True)

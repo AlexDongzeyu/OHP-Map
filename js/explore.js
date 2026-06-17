@@ -145,12 +145,16 @@ export function createExplore(ctx) {
   function renderResults(visible) {
     const box = ctx.panel.querySelector(".results");
     if (!box) return;
+    // Featured survivors first, then alphabetical by name.
+    const sorted = [...visible].sort(
+      (a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0) || a.name.localeCompare(b.name)
+    );
     box.innerHTML =
       `<p class="muted small">${visible.length} of ${store.survivors.length} shown</p>` +
-      visible
+      sorted
         .map(
           (s) => `<button class="result" role="listitem" data-id="${s.survivor_id}">
-            <span class="result-name">${esc(s.name)}</span>
+            <span class="result-name">${s.featured ? '<span class="star" title="Featured">★</span> ' : ""}${esc(s.name)}</span>
             <span class="result-sub">${esc(homeLabel(s))}</span></button>`
         )
         .join("");
@@ -159,12 +163,23 @@ export function createExplore(ctx) {
     );
   }
 
+  function statusNote(s) {
+    if (s.is_sample)
+      return '<p class="sample-flag">Illustrative sample record — not real testimony.</p>';
+    if (s.review_status === "pending")
+      return '<p class="sample-flag">Auto-extracted from the public archive summary — ' +
+        'approximate and <strong>pending human verification &amp; permission</strong>. ' +
+        'Treat as a pointer to the full entry, not an authoritative record.</p>';
+    return '<p class="reviewed-flag">Reviewed against the testimony.</p>';
+  }
+
   function renderDetail(s) {
     const box = ctx.panel.querySelector(".detail");
     const conns = store.connBySurvivor.get(s.survivor_id) || [];
     box.innerHTML = `
       <article class="card">
-        <h2>${esc(s.name)}</h2>
+        ${portraitBlock(s)}
+        <h2>${s.featured ? '<span class="star">★</span> ' : ""}${esc(s.name)}</h2>
         <p class="muted small">${s.birth_year ? "b. " + s.birth_year + " · " : ""}${esc(homeLabel(s))}</p>
         ${(s.theme_tags || []).map((t) => `<span class="tag">${esc(t)}</span>`).join("")}
         <p class="bio">${esc(s.bio_excerpt || "")}</p>
@@ -172,12 +187,22 @@ export function createExplore(ctx) {
         <ol class="journey">${s.waypoints.map(wpItem).join("")}</ol>
         ${connBlock(conns, s.survivor_id)}
         <p><a class="archive" href="${esc(s.archive_url)}" target="_blank" rel="noopener">
-          View full archive entry ↗</a></p>
-        ${s.is_sample ? '<p class="sample-flag">Illustrative sample record — not real testimony.</p>' : ""}
+          Read the full archive entry ↗</a></p>
+        ${statusNote(s)}
       </article>`;
     box.querySelectorAll("[data-place]").forEach((el) =>
       el.addEventListener("click", () => selectPlace(el.dataset.place, true))
     );
+    box.querySelectorAll("[data-id]").forEach((el) =>
+      el.addEventListener("click", () => selectSurvivor(el.dataset.id, true))
+    );
+  }
+
+  function portraitBlock(s) {
+    // Dignified, one-at-a-time. Only render a portrait we were given rights to.
+    if (!s.portrait || !s.portrait_rights) return "";
+    return `<figure class="portrait"><img src="${esc(s.portrait)}" alt="Portrait of ${esc(s.name)}"
+      loading="lazy"><figcaption>${esc(s.name)}</figcaption></figure>`;
   }
 
   function renderPlaceDetail(place, ids) {

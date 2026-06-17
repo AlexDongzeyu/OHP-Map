@@ -62,7 +62,25 @@ def _grounded(waypoints: list[dict], text: str) -> list[dict]:
 
 
 class OfflineExtractor(Extractor):
-    """Deterministic, key-free extractor: find gazetteer places in order of mention."""
+    """Deterministic, key-free extractor: find gazetteer places in order of mention.
+
+    Roles are assigned with simple, transparent heuristics so an auto-extracted
+    journey reads believably (hometown → camps → resettlement) while staying honest:
+    everything is verified=false and the as-written text is preserved.
+    """
+
+    RESETTLEMENT = {
+        "Toronto, Canada", "Canada", "Montreal, Canada", "Israel",
+        "New York, USA", "Vienna, Austria",
+    }
+
+    def _role_for(self, canonical: str, is_first: bool) -> str:
+        site_role = gazetteer.known_site_role(canonical)
+        if site_role:
+            return site_role
+        if canonical in self.RESETTLEMENT:
+            return "resettlement"
+        return "birthplace" if is_first else "transit"
 
     def extract(self, text: str) -> list[dict]:
         aliases = gazetteer._load()["aliases"]
@@ -86,13 +104,22 @@ class OfflineExtractor(Extractor):
             year = ym.group(1) if ym else None
             ordered.append({
                 "as_written": text[start:end],
-                "role": gazetteer.known_site_role(canonical) or "transit",
+                "_canonical": canonical,
                 "date": {"start": year, "end": year,
                           "precision": "year" if year else "unknown"},
                 "confidence": 0.5,
                 "verified": False,
                 "source_quote": window.strip(),
             })
+        # Assign roles: first non-site place is the hometown/birthplace.
+        first_assigned = False
+        for wp in ordered:
+            canonical = wp.pop("_canonical")
+            is_first = not first_assigned and gazetteer.known_site_role(canonical) is None \
+                and canonical not in self.RESETTLEMENT
+            wp["role"] = self._role_for(canonical, is_first)
+            if is_first:
+                first_assigned = True
         return ordered
 
 

@@ -24,11 +24,15 @@ def test_place_index_groups_survivors_by_place():
     assert idx["Krakow"] == ["c"]
 
 
+# Connections only form at real persecution sites listed in the gazetteer.
+AUSCHWITZ = "Auschwitz (Oswiecim), Poland"
+
+
 def test_connections_only_on_verified_overlap():
     feats = [
-        _feature("a", [_wp("Auschwitz", "camp", "1944", "1945")]),
-        _feature("b", [_wp("Auschwitz", "camp", "1944", "1944")]),
-        _feature("c", [_wp("Auschwitz", "camp", "1946", "1947")]),  # no time overlap
+        _feature("a", [_wp(AUSCHWITZ, "camp", "1944", "1945")]),
+        _feature("b", [_wp(AUSCHWITZ, "camp", "1944", "1944")]),
+        _feature("c", [_wp(AUSCHWITZ, "camp", "1946", "1947")]),  # no time overlap
     ]
     conns = derive.build_connections(feats)
     pairs = {(c["survivorA"], c["survivorB"]) for c in conns}
@@ -36,16 +40,29 @@ def test_connections_only_on_verified_overlap():
     assert ("a", "c") not in pairs and ("b", "c") not in pairs
 
 
-def test_unverified_waypoints_never_connect():
+def test_connection_verified_flag_reflects_both_endpoints():
+    # Unverified waypoints still form a *candidate* connection, flagged verified=False.
     feats = [
-        _feature("a", [_wp("Auschwitz", "camp", "1944", "1944", verified=False)]),
-        _feature("b", [_wp("Auschwitz", "camp", "1944", "1944", verified=True)]),
+        _feature("a", [_wp(AUSCHWITZ, "camp", "1944", "1944", verified=False)]),
+        _feature("b", [_wp(AUSCHWITZ, "camp", "1944", "1944", verified=True)]),
     ]
-    assert derive.build_connections(feats) == []
+    conns = derive.build_connections(feats)
+    assert len(conns) == 1
+    assert conns[0]["verified"] is False
+    assert "unverified" in conns[0]["note"].lower()
 
 
-def test_resettlement_overlap_is_not_a_connection():
-    # Everyone resettles in Toronto; that is expected, not a finding.
+def test_two_verified_waypoints_make_a_verified_connection():
+    feats = [
+        _feature("a", [_wp(AUSCHWITZ, "camp", "1944", "1944", verified=True)]),
+        _feature("b", [_wp(AUSCHWITZ, "camp", "1944", "1944", verified=True)]),
+    ]
+    conns = derive.build_connections(feats)
+    assert len(conns) == 1 and conns[0]["verified"] is True
+
+
+def test_non_persecution_places_do_not_connect():
+    # Two people both ending in Toronto is expected, not a coincidence.
     feats = [
         _feature("a", [_wp("Toronto, Canada", "resettlement", "1948", "1948")]),
         _feature("b", [_wp("Toronto, Canada", "resettlement", "1948", "1948")]),
