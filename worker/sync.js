@@ -19,6 +19,7 @@ const RESETTLEMENT = new Set([
 const ROLE_ORDER = { birthplace: 0, ghetto: 1, camp: 2, transit: 3, liberation: 4, resettlement: 5 };
 
 export async function syncSurvivors(env) {
+  if (!env.OHP_DATA) return { skipped: "no KV namespace bound" };
   const slugs = await listSlugs();
   const existing = await env.OHP_DATA.get(DATA_KEY, "json");
   const features = existing && existing.features ? existing.features : [];

@@ -14,14 +14,15 @@ const DATA_KEY = "survivors.geojson";
 
 export default {
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(syncSurvivors(env));
+    // No-op unless a KV namespace is bound (see wrangler.toml "Enabling auto-update").
+    if (env.OHP_DATA) ctx.waitUntil(syncSurvivors(env));
   },
 
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Serve the dataset from the warm KV cache when present.
-    if (url.pathname === "/data/survivors.geojson") {
+    // Serve the dataset from the warm KV cache when one is configured and populated.
+    if (url.pathname === "/data/survivors.geojson" && env.OHP_DATA) {
       const cached = await env.OHP_DATA.get(DATA_KEY);
       if (cached) {
         return new Response(cached, {
@@ -32,11 +33,14 @@ export default {
           },
         });
       }
-      // Fall through to the committed file if the cache is cold.
+      // Cold cache → fall through to the committed file via ASSETS.
     }
 
-    // Manual trigger for local testing: GET /__sync runs the refresh now.
+    // Manual trigger for testing: GET /__sync runs the refresh now (needs KV).
     if (url.pathname === "/__sync") {
+      if (!env.OHP_DATA) {
+        return new Response("KV not configured; auto-update is disabled.\n", { status: 503 });
+      }
       ctx.waitUntil(syncSurvivors(env));
       return new Response("sync started\n", { status: 202 });
     }

@@ -1,29 +1,39 @@
 # Cloudflare Worker config (doc 09 Part 2 — auto-update native to Cloudflare).
 #
-# Deploy:
-#   npm i -g wrangler            # or: npx wrangler ...
-#   npx wrangler kv namespace create OHP_DATA      # paste the printed id below
-#   npx wrangler deploy
+# Deploys with NO manual setup: a [build] step assembles a clean ./public site
+# (the committed 221-survivor dataset included) and the Worker serves it. The
+# KV-backed auto-update is an opt-in enhancement — see "Enabling auto-update".
 #
-# The Worker serves the static site and the dataset, and a daily Cron Trigger
-# refreshes the dataset from the OHP archive into KV. Page loads never hit the
-# external site — they read the cached GeoJSON from KV (or the committed file).
+# Cloudflare Workers Builds runs `npx wrangler deploy` on push to main; wrangler runs
+# the [build] command first. The Worker name must match the Cloudflare project.
 
-name = "ohp-survivor-map"
+name = "ohpmap"
 main = "worker/index.js"
 compatibility_date = "2024-11-01"
 
-# Serve the repo root as static assets (index.html, css/, js/, vendor/, data/…).
+# Assemble only the static site into ./public (keeps .git, tooling, and source out of
+# what's served — see tools/assemble_site.cjs).
+[build]
+command = "node tools/assemble_site.cjs"
+
+# Serve ./public as static assets. run_worker_first lets the Worker own the dataset
+# route so it can serve the warm KV cache when one is configured (falling back to the
+# committed file otherwise).
 [assets]
-directory = "."
+directory = "public"
 binding = "ASSETS"
+run_worker_first = ["/data/survivors.geojson", "/__sync"]
 
-# Key-value cache for the generated dataset + the geocode cache + the seen-slug set.
-# Replace the id with the one `wrangler kv namespace create OHP_DATA` prints.
-[[kv_namespaces]]
-binding = "OHP_DATA"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
-
-# Daily rebuild at 06:00 UTC (Cron on Workers is always UTC).
+# Daily rebuild at 06:00 UTC (Cron on Workers is always UTC). The scheduled handler
+# no-ops unless a KV namespace is bound, so this is safe with no setup.
 [triggers]
 crons = ["0 6 * * *"]
+
+# ── Enabling auto-update (optional) ──────────────────────────────────────────
+# 1. Create a namespace:   npx wrangler kv namespace create OHP_DATA
+# 2. Uncomment the binding below and paste the printed id.
+# 3. Redeploy. The cron then refreshes the dataset into KV and the Worker serves it.
+#
+# [[kv_namespaces]]
+# binding = "OHP_DATA"
+# id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"

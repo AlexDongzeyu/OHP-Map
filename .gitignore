@@ -19,6 +19,7 @@ data/source/pages_cache/
 # Cloudflare / wrangler local state
 .wrangler/
 .dev.vars
+public/
 
 # OS
 .DS_Store
