@@ -18,7 +18,7 @@ const VENDOR = ["vendor/d3", "vendor/fonts"];
 // Individual files.
 const FILES = ["index.html", "embed.html"];
 // Only the JSON the front end fetches at runtime.
-const DATA = ["survivors.geojson", "place_index.json", "connections.json", "atlas-europe.json"];
+const DATA = ["survivors.geojson", "place_index.json", "connections.json", "atlas-europe.json", "atlas-world.json"];
 
 function rmrf(p) { if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true }); }
 function copy(src, dest) {

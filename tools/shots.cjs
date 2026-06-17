@@ -12,20 +12,18 @@ const BASE = "http://localhost:8124";
   await wait(2600);
   await pg.screenshot({ path: "tools/shot-landing.png" });
 
-  await pg.click(".landing-card [data-act='follow']"); await wait(2200);
-  await pg.screenshot({ path: "tools/shot-guided.png" });
-
-  await pg.click(".nav-tab[data-view='explore']"); await wait(900);
-  await pg.click(".rail .rail-card"); await wait(2000);
+  await pg.click(".landing-card [data-act='explore']"); await wait(1400);
   await pg.screenshot({ path: "tools/shot-explore.png" });
+  await pg.click(".rail .rail-card"); await wait(1800);
+  await pg.screenshot({ path: "tools/shot-explore-sel.png" });
 
-  await pg.click(".nav-tab[data-view='patterns']"); await wait(1200);
-  await pg.$eval(".scrubber .range", (el) => { el.value = "1944"; el.dispatchEvent(new Event("input", { bubbles: true })); });
-  await wait(1200);
+  await pg.click(".nav-tab[data-view='patterns']"); await wait(1300);
   await pg.screenshot({ path: "tools/shot-patterns.png" });
+  await pg.click(".seg[data-layer='origins']"); await wait(1300);
+  await pg.screenshot({ path: "tools/shot-origins.png" });
 
   await pg.setViewport({ width: 390, height: 800 });
-  await pg.goto(BASE + "/#/explore", { waitUntil: "networkidle2" }); await wait(1800);
+  await pg.goto(BASE + "/", { waitUntil: "networkidle2" }); await wait(2200);
   await pg.screenshot({ path: "tools/shot-mobile.png" });
 
   await b.close();

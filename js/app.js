@@ -1,10 +1,10 @@
-// app.js — orchestration. Owns the small state machine, renders the persistent atlas
+// app.js — orchestration. Owns the state machine, renders the persistent atlas
 // (atlas.js) plus the per-view overlay (ui.js), wires interaction via delegation, runs
-// the guided scroll observer, and handles hash deep links.
+// the guided scroll observer, handles search/zoom/layer-toggle, and hash deep links.
 import { loadData } from "./data.js";
 import { createAtlas } from "./atlas.js";
 import * as ui from "./ui.js";
-import { REDUCED_MOTION, TIME, slug } from "./config.js";
+import { REDUCED_MOTION, slug } from "./config.js";
 
 const VIEWS = ["landing", "guided", "explore", "patterns", "about"];
 
@@ -15,11 +15,12 @@ const state = {
   guidedIndex: 0,
   prevIndex: null,
   theme: null,
+  query: "",
   scrubYear: 1942,
+  patternsLayer: "journeys",
 };
 
 let store, atlas;
-let guidedMountedFor = null;
 let scrollHandler = null;
 
 async function main() {
@@ -37,7 +38,7 @@ async function main() {
     return;
   }
 
-  state.guidedId = (store.featured[0] || store.journeys[0]).id;
+  state.guidedId = store.defaultGuidedId;
   state.scrubYear = Math.round((store.time.min + store.time.max) / 2);
   if (store.meta && store.meta.reviewed && !store.meta.pending) {
     const pill = document.getElementById("status-pill");
@@ -59,13 +60,10 @@ async function main() {
   loadingEl.hidden = true;
   document.getElementById("topbar").hidden = false;
 
-  // resize
   if (window.ResizeObserver) {
     let t;
-    new ResizeObserver(() => {
-      clearTimeout(t);
-      t = setTimeout(() => { atlas.resize(); }, 120);
-    }).observe(document.getElementById("map"));
+    new ResizeObserver(() => { clearTimeout(t); t = setTimeout(() => atlas.resize(), 120); })
+      .observe(document.getElementById("map"));
   }
 
   wireGlobal();
@@ -73,7 +71,6 @@ async function main() {
   route();
 }
 
-// ---- context passed to the atlas ---------------------------------------------
 function atlasCtx() {
   return {
     selectedId: state.selectedId,
@@ -81,29 +78,26 @@ function atlasCtx() {
     guidedIndex: state.guidedIndex,
     prevIndex: state.prevIndex,
     theme: state.theme,
+    query: state.query,
     scrubYear: state.scrubYear,
+    patternsLayer: state.patternsLayer,
     onSelect: (id) => selectSurvivor(id),
   };
 }
 
-// ---- rendering ---------------------------------------------------------------
-function render(rebuildOverlay = true) {
+function render() {
   const v = state.view;
-  // nav active states
-  document.querySelectorAll(".nav-tab").forEach((b) =>
-    b.classList.toggle("on", b.dataset.view === v));
+  document.querySelectorAll(".nav-tab").forEach((b) => b.classList.toggle("on", b.dataset.view === v));
   document.body.dataset.view = v;
-
   atlas.render(v, atlasCtx());
-
-  if (rebuildOverlay) mountOverlay();
+  mountOverlay();
 }
 
 function mountOverlay() {
   const host = document.getElementById("overlay");
   const v = state.view;
   if (v === "landing") host.innerHTML = ui.landing(store);
-  else if (v === "guided") { host.innerHTML = ui.guided(store, state); guidedMountedFor = state.guidedId; setupGuidedScroll(); }
+  else if (v === "guided") { host.innerHTML = ui.guided(store, state); setupGuidedScroll(); }
   else if (v === "explore") { host.innerHTML = ui.explore(store, state); afterExplore(); }
   else if (v === "patterns") host.innerHTML = ui.patterns(store, state);
   else if (v === "about") host.innerHTML = ui.about(store);
@@ -121,37 +115,44 @@ function afterExplore() {
 function go(view) {
   if (!VIEWS.includes(view)) view = "landing";
   state.view = view;
-  if (view === "guided" && !state.guidedId) state.guidedId = (store.featured[0] || store.journeys[0]).id;
+  if (view === "guided" && !state.guidedId) state.guidedId = store.defaultGuidedId;
   setHash(view === "landing" ? "" : `#/${view}`);
   render();
 }
 
 function startGuided(id) {
-  state.guidedId = id;
-  state.guidedIndex = 0;
-  state.prevIndex = null;
-  state.view = "guided";
-  setHash(`#/guided`);
-  render(); // rebuilds narrative + resets scroll
+  state.guidedId = id; state.guidedIndex = 0; state.prevIndex = null; state.view = "guided";
+  setHash("#/guided");
+  render();
   const narr = document.querySelector("[data-narr]");
   if (narr) narr.scrollTo({ top: 0, behavior: REDUCED_MOTION ? "auto" : "smooth" });
 }
 
 function selectSurvivor(id) {
   state.selectedId = id;
-  if (state.view !== "explore") { state.view = "explore"; setHash(`#/survivor/${id}`); }
-  else setHash(`#/survivor/${id}`);
+  state.view = "explore";
+  setHash(`#/survivor/${id}`);
   render();
 }
+function clearSel() { state.selectedId = null; setHash("#/explore"); render(); }
 
-function clearSel() {
-  state.selectedId = null;
-  setHash("#/explore");
-  render();
+function toggleTheme(t) { state.theme = state.theme === t ? null : (t || null); render(); }
+function clearFilter() { state.theme = null; state.query = ""; render(); }
+
+function onSearch(value) {
+  state.query = value;
+  // Refresh only the rail list + map dims; keep the input (and its focus) intact.
+  const { html, count } = ui.railInner(store, state);
+  const list = document.querySelector("[data-rail-list]");
+  const cnt = document.querySelector("[data-rail-count]");
+  if (list) list.innerHTML = html;
+  if (cnt) cnt.textContent = `${count} of ${store.journeys.length} survivors`;
+  atlas.render("explore", atlasCtx());
 }
 
-function toggleTheme(t) {
-  state.theme = t || null;
+function setLayer(layer) {
+  if (state.patternsLayer === layer) return;
+  state.patternsLayer = layer;
   render();
 }
 
@@ -159,7 +160,7 @@ function setScrub(year) {
   state.scrubYear = year;
   const yEl = document.querySelector("[data-year]");
   if (yEl) yEl.textContent = year;
-  atlas.render("patterns", atlasCtx()); // move dots only; don't rebuild the slider
+  atlas.render("patterns", atlasCtx());
 }
 
 // ---- guided scroll observer --------------------------------------------------
@@ -194,7 +195,7 @@ function teardownGuidedScroll() {
   scrollHandler = null;
 }
 
-// ---- event wiring (delegation) ----------------------------------------------
+// ---- event wiring ------------------------------------------------------------
 function wireGlobal() {
   document.getElementById("topbar").addEventListener("click", onActivate);
   document.addEventListener("keydown", (e) => {
@@ -210,21 +211,28 @@ function wireOverlay() {
   host.onclick = onActivate;
   const range = host.querySelector("[data-scrub]");
   if (range) range.addEventListener("input", () => setScrub(parseInt(range.value, 10)));
+  const search = host.querySelector("#search");
+  if (search) {
+    search.addEventListener("input", () => onSearch(search.value));
+    if (state.query) { search.focus(); search.setSelectionRange(state.query.length, state.query.length); }
+  }
 }
 
 function onActivate(e) {
-  const t = e.target.closest("[data-act],[data-view],[data-guided],[data-survivor],[data-theme]");
+  const t = e.target.closest("[data-act],[data-view],[data-guided],[data-survivor],[data-theme],[data-layer]");
   if (!t) return;
   if (t.dataset.view) return go(t.dataset.view);
+  if (t.dataset.layer) return setLayer(t.dataset.layer);
   if (t.dataset.guided != null) return startGuided(t.dataset.guided);
   if (t.dataset.survivor != null) return selectSurvivor(t.dataset.survivor);
   if (t.dataset.theme != null) return toggleTheme(t.dataset.theme);
   switch (t.dataset.act) {
-    case "follow": return startGuided((store.featured[0] || store.journeys[0]).id);
+    case "follow": return startGuided(store.defaultGuidedId);
     case "explore": return go("explore");
     case "about": return go("about");
     case "home": return go("landing");
     case "clear": return clearSel();
+    case "clear-filter": return clearFilter();
   }
 }
 

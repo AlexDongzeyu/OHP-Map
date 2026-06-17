@@ -1,8 +1,8 @@
-// ui.js — renders the overlay panels (landing, guided, explore, patterns, about) as
-// class-based markup over the persistent atlas. Each render returns HTML; handlers are
-// wired by the caller (app.js). Keeping markup here and styling in css/style.css keeps
-// the map engine (atlas.js) and orchestration (app.js) clean.
-import { C, ROLE_LABEL, esc, slug } from "./config.js";
+// ui.js — the overlay panels (landing, guided, explore, patterns, about) as class-based
+// markup over the persistent atlas. Markup lives here; styling in css/style.css; the map
+// engine (atlas.js) and orchestration (app.js) stay clean. No "featured" distinction —
+// every survivor is presented equally, grouped A–Z by surname like the OHP archive.
+import { C, esc, slug } from "./config.js";
 
 const roman = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 
@@ -15,7 +15,6 @@ function wpMeta(w) {
 
 // ---- LANDING ----------------------------------------------------------------
 export function landing(store) {
-  const m = store.meta;
   return `
   <div class="ov ov-landing">
     <div class="landing-card">
@@ -43,9 +42,10 @@ export function landing(store) {
 export function guided(store, state) {
   const j = store.byId.get(state.guidedId) || store.journeys[0];
   const first = j.name.split(" ")[0];
-  const chips = (store.featured.length ? store.featured : store.journeys.slice(0, 8))
-    .map((s) => `<button class="chip ${s.id === j.id ? "on" : ""}" data-guided="${esc(s.id)}">${esc(s.name.split(" ")[0])}</button>`)
-    .join("");
+  // A small, alphabetical set of other lives to jump to (no stars / ranking).
+  const others = store.journeys.filter((s) => s.id !== j.id).slice(0, 7);
+  const chips = [j, ...others].map((s) =>
+    `<button class="chip ${s.id === j.id ? "on" : ""}" data-guided="${esc(s.id)}">${esc(shortName(s))}</button>`).join("");
   const chapters = j.waypoints.map((w, i) => `
     <section class="chapter" data-chapter="${i}">
       <div class="ch-head">
@@ -85,37 +85,55 @@ export function guided(store, state) {
 
 // ---- EXPLORE ----------------------------------------------------------------
 export function explore(store, state) {
-  const theme = state.theme;
+  const theme = state.theme, q = (state.query || "").trim().toLowerCase();
   const chips = store.themes.slice(0, 8).map((t) =>
     `<button class="chip ${theme === t ? "on" : ""}" data-theme="${esc(t)}">${esc(t)}</button>`).join("");
-  const shown = store.journeys.filter((j) => !theme || j.themes.includes(theme));
-  const list = [...store.journeys]
-    .sort((a, b) => (b.featured - a.featured) || a.name.localeCompare(b.name))
-    .map((j) => {
-      const match = !theme || j.themes.includes(theme);
-      const isSel = j.id === state.selectedId;
-      return `<button class="rail-card ${isSel ? "sel" : ""}" data-survivor="${esc(j.id)}" style="opacity:${match ? 1 : 0.4}">
-        <span class="medal ${isSel ? "on" : ""}">${esc(j.initials)}</span>
-        <span class="rail-text">
-          <span class="rail-name">${j.featured ? "★ " : ""}${esc(j.name)}</span>
-          <span class="rail-sub">${j.born ? "Born " + j.born + " · " : ""}${j.waypoints.length} places</span>
-        </span></button>`;
-    }).join("");
+
+  const match = (j) => (!theme || j.themes.includes(theme)) &&
+    (!q || haystack(j).includes(q));
+  const { html: groupsHtml, count } = railInner(store, state, match);
 
   return `
   <div class="ov ov-explore ${state.selectedId ? "has-sel" : ""}">
-    <div class="filterbar">
-      <span class="micro-label">Filter</span>
-      ${chips}
-      ${theme ? `<button class="chip clear" data-theme="">clear ×</button>` : ""}
-    </div>
     <aside class="rail scroll">
-      <div class="micro-label">${theme ? `${shown.length} of ${store.journeys.length} survivors` : `${store.journeys.length} survivors`}</div>
-      <div class="rail-list">${list}</div>
+      <div class="rail-search">
+        <input id="search" class="search-input" type="search" placeholder="Search name, place, or theme…"
+          value="${esc(state.query || "")}" autocomplete="off" aria-label="Search survivors">
+      </div>
+      <div class="filter-chips">${chips}${theme || q ? `<button class="chip clear" data-act="clear-filter">clear ×</button>` : ""}</div>
+      <div class="rail-count micro-label" data-rail-count>${count} of ${store.journeys.length} survivors</div>
+      <div class="rail-list" data-rail-list>${groupsHtml}</div>
     </aside>
     <div class="panel-host" data-panel>${state.selectedId ? panel(store, state) : ""}</div>
-    ${!state.selectedId ? `<p class="explore-hint">Select a name, or click any point on the map, to follow that life.</p>` : ""}
+    ${!state.selectedId ? `<p class="explore-hint">Select a name, or click any point on the map, to follow that life. Drag to pan · scroll to zoom.</p>` : ""}
   </div>`;
+}
+
+// Inner HTML of the grouped rail (factored out so search can refresh it without
+// rebuilding the input and losing focus).
+export function railInner(store, state, match) {
+  if (!match) {
+    const theme = state.theme, q = (state.query || "").trim().toLowerCase();
+    match = (j) => (!theme || j.themes.includes(theme)) && (!q || haystack(j).includes(q));
+  }
+  let count = 0;
+  const html = store.groups.map((grp) => {
+    const items = grp.items.filter(match);
+    if (!items.length) return "";
+    count += items.length;
+    const cards = items.map((j) => railCard(j, j.id === state.selectedId)).join("");
+    return `<div class="rail-group"><div class="rail-letter">${esc(grp.letter)}</div>${cards}</div>`;
+  }).join("");
+  return { html: html || `<p class="rail-empty">No survivors match that search.</p>`, count };
+}
+
+function railCard(j, isSel) {
+  return `<button class="rail-card ${isSel ? "sel" : ""}" data-survivor="${esc(j.id)}">
+    <span class="medal ${isSel ? "on" : ""}">${esc(j.initials)}</span>
+    <span class="rail-text">
+      <span class="rail-name">${esc(j.name)}</span>
+      <span class="rail-intro">${esc(j.intro || (j.born ? "Born " + j.born : ""))}</span>
+    </span></button>`;
 }
 
 function panel(store, state) {
@@ -142,6 +160,7 @@ function panel(store, state) {
       <span class="medal medal-lg on">${esc(j.initials)}</span>
       <h2 class="serif-lg">${esc(j.name)}</h2>
       <div class="panel-meta">${j.born ? "Born " + j.born + " · " : ""}${esc(j.hometown)}</div>
+      <p class="panel-intro">${esc(j.intro)}</p>
       <p class="bio">${esc(j.bio)}</p>
       <svg class="mini" viewBox="0 0 340 150" data-mini></svg>
       <div class="mini-cap">Their route — hometown to new life.</div>
@@ -149,14 +168,41 @@ function panel(store, state) {
       <ol class="journey">${steps}</ol>
       <div class="tags">${tags}</div>
       <div class="ver" style="color:${ver.c}"><span class="ver-dot" style="background:${ver.c}"></span>${ver.t}</div>
+      <button class="guided-pill" data-guided="${esc(j.id)}">Follow this journey as a story →</button>
       <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Open full archive entry <span aria-hidden="true">↗</span></a>
     </aside>`;
 }
 
 // ---- PATTERNS ---------------------------------------------------------------
 export function patterns(store, state) {
+  const layer = state.patternsLayer || "journeys";
   const top = store.shared[0];
   const verified = store.connections.filter((c) => c.verified).length;
+  const topOrigin = [...store.originCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+
+  const toggle = `
+    <div class="layer-toggle" role="tablist" aria-label="Pattern layer">
+      <button class="seg ${layer === "journeys" ? "on" : ""}" data-layer="journeys">Journeys &amp; years</button>
+      <button class="seg ${layer === "origins" ? "on" : ""}" data-layer="origins">Where they came from</button>
+    </div>`;
+
+  if (layer === "origins") {
+    const list = [...store.originCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+      .map(([c, n]) => `<li><span class="oc-name">${esc(c)}</span><span class="oc-bar"><span style="width:${Math.round(n / topOrigin[1] * 100)}%"></span></span><span class="oc-n">${n}</span></li>`).join("");
+    return `
+    <div class="ov ov-patterns">
+      <div class="patterns-intro">
+        <p class="kicker">Patterns</p>
+        <h2 class="serif-xl">Where they came from</h2>
+        <p class="lede sm">The darker a country, the more survivors in this archive were born
+          there. ${topOrigin ? `Most — <b>${topOrigin[1]}</b> — came from <span class="accent">${esc(topOrigin[0])}</span>.` : ""}</p>
+        ${toggle}
+        <ul class="origin-list">${list}</ul>
+        <p class="cross-sub">Counts are by birthplace, mapped to present-day countries.</p>
+      </div>
+    </div>`;
+  }
+
   const crossLine = top
     ? `${top.count} of these survivors describe being at <span class="accent">${esc(top.canonical.split(" (")[0])}</span>. The ringed places mark where separate lives passed through the same ground.`
     : `The ringed places mark where separate lives passed through the same ground.`;
@@ -167,6 +213,7 @@ export function patterns(store, state) {
       <h2 class="serif-xl">What no single story shows</h2>
       <p class="lede sm">Every journey at once. Move the years to watch each life travel its
         route. Where dates are uncertain, the point softens to a glow.</p>
+      ${toggle}
       <div class="legend">
         <span><span class="lg-line"></span>journey</span>
         <span><span class="lg-ring"></span>shared place</span>
@@ -228,6 +275,14 @@ export function about(store) {
 }
 
 // ---- helpers ----------------------------------------------------------------
+function shortName(j) {
+  const p = j.name.split(" ");
+  return p.length > 1 ? `${p[0]} ${j.surname[0]}.` : j.name;
+}
+function haystack(j) {
+  return (j.name + " " + j.hometown + " " + j.themes.join(" ") + " " +
+    j.waypoints.map((w) => w.canonical + " " + w.asWritten).join(" ")).toLowerCase();
+}
 function metaLine(w) {
   const yr = w.year ? (w.approx ? `around ${w.year}` : `${w.year}`) : "date uncertain";
   const written = w.asWritten && w.asWritten.toLowerCase() !== (w.canonical || "").toLowerCase()

@@ -1,15 +1,44 @@
 // Data loading + adaptation. The browser only ever loads precomputed JSON emitted by
-// the pipeline. This module reshapes survivors.geojson into the "journey" model the
-// atlas and UI render, deriving initials, themes, a hometown label, and per-waypoint
-// year/uncertainty — while preserving each survivor's as-written place names.
+// the pipeline. This reshapes survivors.geojson into the "journey" model the atlas + UI
+// render: surname (for A–Z grouping like the OHP site), a one-line intro, per-waypoint
+// year/uncertainty, theme facets, origin-country counts (for the choropleth), and the
+// shared persecution sites. Survivors' as-written place names are preserved throughout.
 import { ROLE_LABEL, OVERSEAS, parseYear, initials, slug, TIME } from "./config.js";
 
 const BASE = "data";
+
+// Historical → modern country aliases so origins match the atlas country names.
+const COUNTRY_ALIAS = { Czechoslovakia: "Czechia", Galicia: "Poland" };
 
 async function getJSON(name) {
   const res = await fetch(`${BASE}/${name}`, { cache: "no-cache" });
   if (!res.ok) throw new Error(`Failed to load ${name}: ${res.status}`);
   return res.json();
+}
+
+function countryOf(canonical) {
+  const parts = String(canonical || "").split(",");
+  const c = parts[parts.length - 1].trim();
+  return COUNTRY_ALIAS[c] || c;
+}
+
+function surnameOf(name) {
+  const clean = String(name).replace(/\(sample\)/i, "").trim();
+  const parts = clean.split(/\s+/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : clean;
+}
+
+function shortIntro(j) {
+  // A single gentle sentence for the rail card.
+  const bits = [];
+  if (j.hometown) bits.push(`From ${j.hometown.split(",")[0]}`);
+  const camps = j.waypoints.filter((w) => w.roleKey === "camp").map((w) => w.canonical.split(" (")[0]);
+  if (camps.length) bits.push(`survived ${camps.slice(0, 2).join(" and ")}`);
+  const last = j.waypoints[j.waypoints.length - 1];
+  if (last && (last.newLife || last.overseas)) bits.push("rebuilt a life in Toronto");
+  let s = bits.join(", ");
+  if (!s) s = (j.bio || "").split(". ")[0];
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) + "." : "";
 }
 
 function toJourney(props) {
@@ -34,19 +63,22 @@ function toJourney(props) {
     };
   });
   const home = wps.find((w) => w.roleKey === "birthplace") || wps[0] || null;
-  return {
+  const j = {
     id: props.survivor_id,
     name: props.name,
+    surname: surnameOf(props.name),
     born: props.birth_year || (home && home.year) || null,
     hometown: home ? (home.canonical || home.asWritten) : "",
+    originCountry: home ? countryOf(home.canonical) : null,
     initials: initials(props.name),
     themes: props.theme_tags || [],
     bio: props.bio_excerpt || "",
     archiveUrl: props.archive_url || "",
     reviewStatus: props.review_status || "pending",
-    featured: !!props.featured,
     waypoints: wps,
   };
+  j.intro = shortIntro(j);
+  return j;
 }
 
 export async function loadData() {
@@ -57,39 +89,53 @@ export async function loadData() {
   ]);
 
   const journeys = geojson.features.map((f) => toJourney(f.properties));
+  journeys.sort((a, b) => a.surname.localeCompare(b.surname) || a.name.localeCompare(b.name));
   const byId = new Map(journeys.map((j) => [j.id, j]));
 
-  // Theme facets, most common first (for the filter chips).
+  // A–Z groups by surname (how the OHP site groups its listings).
+  const groups = [];
+  let cur = null;
+  for (const j of journeys) {
+    const letter = (j.surname[0] || "#").toUpperCase();
+    if (!cur || cur.letter !== letter) { cur = { letter, items: [] }; groups.push(cur); }
+    cur.items.push(j);
+  }
+
+  // Theme facets, most common first.
   const themeCount = new Map();
-  for (const j of journeys)
-    for (const t of j.themes) themeCount.set(t, (themeCount.get(t) || 0) + 1);
+  for (const j of journeys) for (const t of j.themes) themeCount.set(t, (themeCount.get(t) || 0) + 1);
   const themes = [...themeCount.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
 
-  // Distinct remembered places (for the scale line).
+  // Origin-country counts (choropleth) + distinct places (scale line).
+  const originCounts = new Map();
   const places = new Set();
-  for (const j of journeys) for (const w of j.waypoints) places.add(w.canonical);
+  for (const j of journeys) {
+    if (j.originCountry) originCounts.set(j.originCountry, (originCounts.get(j.originCountry) || 0) + 1);
+    for (const w of j.waypoints) places.add(w.canonical);
+  }
 
-  // Shared persecution sites: where separate lives crossed the same ground.
-  const shared = sharedPlaces(journeys);
+  // Default guided survivor: the first with a rich (>=4-waypoint) journey. No "featured".
+  const richDefault = journeys.find((j) => j.waypoints.length >= 4) || journeys[0];
 
   const meta = geojson.metadata || {};
   return {
     meta,
     journeys,
     byId,
+    groups,
     placeIndex,
     connections,
     themes,
+    originCounts,
     placeCount: places.size,
-    shared,
-    featured: journeys.filter((j) => j.featured),
+    shared: sharedPlaces(journeys),
+    defaultGuidedId: richDefault ? richDefault.id : (journeys[0] && journeys[0].id),
     time: { min: meta.time_min || TIME.min, max: meta.time_max || TIME.max },
   };
 }
 
-// Places where ≥2 survivors share a camp/ghetto — the "threads that cross" rings.
 function sharedPlaces(journeys) {
-  const at = new Map(); // canonical -> {lat,lng,role,ids:Set}
+  const at = new Map();
   for (const j of journeys) {
     for (const w of j.waypoints) {
       if (!["camp", "ghetto", "transit"].includes(w.roleKey)) continue;
@@ -98,10 +144,8 @@ function sharedPlaces(journeys) {
       at.get(w.canonical).ids.add(j.id);
     }
   }
-  return [...at.values()]
-    .map((p) => ({ ...p, count: p.ids.size }))
-    .filter((p) => p.count >= 2)
-    .sort((a, b) => b.count - a.count);
+  return [...at.values()].map((p) => ({ ...p, count: p.ids.size }))
+    .filter((p) => p.count >= 2).sort((a, b) => b.count - a.count);
 }
 
 export { slug };

@@ -1,27 +1,35 @@
-// atlas.js — the vector map engine: a quiet, paper-toned map of Europe drawn with D3
-// + a trimmed TopoJSON-derived GeoJSON. Journeys are curved arcs that draw themselves;
-// a CSS-transform camera pans and zooms cinematically; places across the Atlantic are
-// drawn as an off-map "new life" anchor. This replaces the old Leaflet basemap.
+// atlas.js — the map engine.
+//
+// Two stages share one SVG:
+//   • a slow-rotating 3D globe (d3.geoOrthographic) for the LANDING — a clean
+//     establishing shot of the world (doc 08: gentle 3D overview only).
+//   • a flat, paper-toned vector map of Europe for GUIDED / EXPLORE / PATTERNS, with
+//     curved self-drawing journey arcs, an off-map "new life across the Atlantic"
+//     anchor, an optional origin-density CHOROPLETH, and FREE pan/zoom (d3.zoom).
+//
+// The 2D map is the canonical product; the globe is enhancement with a graceful path.
 import { C, REDUCED_MOTION } from "./config.js";
 
 const d3 = window.d3;
 
 export function createAtlas(container) {
-  let world = null, svg, camera, countriesG, overlayG, projection, path;
-  let size = { w: 0, h: 0 };
-  let cameraK = 1;
-  let anchor = { x: 0, y: 0 };
-  let tipEl = null;
-  let store = null;
+  let europe = null, worldGlobe = null;
+  let svg, globeG, camera, countriesG, overlayG, countrySel = null;
+  let projection, path;          // flat Europe
+  let gProjection, gPath;        // globe
+  let size = { w: 0, h: 0 }, currentK = 1, anchor = { x: 0, y: 0 };
+  let store = null, tipEl = null, zoom = null;
+  let view = null, rotateRAF = null, rot = [ -14, -48, 0 ];
   const api = {};
 
-  // Europe window matches data/atlas-europe.json's build window.
   const EUROPE = { type: "MultiPoint", coordinates: [[-11, 34], [40, 34], [40, 61], [-11, 61]] };
 
   api.ready = (async function init() {
-    const res = await fetch("data/atlas-europe.json", { cache: "force-cache" });
-    if (!res.ok) throw new Error("atlas basemap failed to load");
-    world = await res.json();
+    const [eu, gl] = await Promise.all([
+      fetch("data/atlas-europe.json", { cache: "force-cache" }).then((r) => r.json()),
+      fetch("data/atlas-world.json", { cache: "force-cache" }).then((r) => r.json()).catch(() => null),
+    ]);
+    europe = eu; worldGlobe = gl;
     build();
     layout();
     return api;
@@ -30,19 +38,36 @@ export function createAtlas(container) {
   api.setStore = (s) => { store = s; };
   api.setTooltipEl = (el) => { tipEl = el; };
 
+  // ---- build -----------------------------------------------------------------
   function build() {
     container.innerHTML = "";
     svg = d3.select(container).append("svg")
       .attr("width", "100%").attr("height", "100%").style("display", "block");
-    svg.append("rect").attr("x", 0).attr("y", 0)
-      .attr("width", "100%").attr("height", "100%").attr("fill", C.ocean);
-    camera = svg.append("g").attr("class", "camera")
-      .style("transition", REDUCED_MOTION ? "none" : "transform 850ms cubic-bezier(.4,0,.2,1)")
-      .style("transform-origin", "0 0");
+    svg.append("rect").attr("width", "100%").attr("height", "100%").attr("fill", C.ocean);
+
+    globeG = svg.append("g").attr("class", "globe").style("display", "none");
+    camera = svg.append("g").attr("class", "camera").style("transform-origin", "0 0");
     countriesG = camera.append("g");
     overlayG = camera.append("g");
+
+    zoom = d3.zoom().scaleExtent([1, 9])
+      .on("zoom", (ev) => {
+        currentK = ev.transform.k;
+        camera.attr("transform", ev.transform.toString());
+        rescaleMarkers();
+      });
+    svg.call(zoom).on("dblclick.zoom", null).on("wheel", (e) => e.preventDefault());
   }
 
+  function rescaleMarkers() {
+    overlayG.selectAll("[data-r]").attr("r", function () { return +this.getAttribute("data-r") / currentK; });
+    overlayG.selectAll("[data-fs]").attr("font-size", function () { return (+this.getAttribute("data-fs") / currentK) + "px"; });
+    overlayG.selectAll("[data-y]").attr("y", function () {
+      return +this.getAttribute("data-y0") - (+this.getAttribute("data-y")) / currentK;
+    });
+  }
+
+  // ---- layout ----------------------------------------------------------------
   function layout(redraw) {
     if (!container) return;
     const w = container.clientWidth, h = container.clientHeight;
@@ -51,42 +76,42 @@ export function createAtlas(container) {
     projection = d3.geoMercator().fitExtent(
       [[Math.max(40, w * 0.05), h * 0.06], [w - 40, h - 40]], EUROPE);
     path = d3.geoPath(projection);
-    // "New life across the Atlantic" anchor — lower-left, in the ocean off Europe.
     anchor = { x: Math.max(70, w * 0.085), y: h * 0.6 };
 
-    const land = countriesG.selectAll("path").data(world.features);
-    land.enter().append("path").merge(land)
+    const land = countriesG.selectAll("path").data(europe.features);
+    countrySel = land.enter().append("path").merge(land)
       .attr("d", path).attr("fill", C.land)
       .attr("stroke", C.landStroke).attr("stroke-width", 0.6)
       .attr("vector-effect", "non-scaling-stroke");
     land.exit().remove();
 
+    layoutGlobe();
     if (store) projectAll();
-    if (redraw && api._lastRender) api._lastRender();
+    if (redraw && api._last) api._last();
   }
-
   api.resize = () => layout(true);
 
-  // ---- projection of journey waypoints --------------------------------------
+  function layoutGlobe() {
+    if (!worldGlobe) return;
+    const { w, h } = size;
+    const r = Math.min(w, h) * 0.46;
+    gProjection = d3.geoOrthographic().scale(r)
+      .translate([w * (w > 720 ? 0.6 : 0.5), h * 0.46]).rotate(rot).clipAngle(90);
+    gPath = d3.geoPath(gProjection);
+  }
+
+  // ---- projection of waypoints ----------------------------------------------
   function projectWaypoint(w) {
-    if (w.overseas) return { ...anchor, off: true };
+    if (w.overseas) return { x: anchor.x, y: anchor.y, off: true };
     const p = projection([w.lng, w.lat]);
-    if (!p || p[0] < -20 || p[0] > size.w + 20 || p[1] < -20 || p[1] > size.h + 20) {
-      // Off the European frame and not flagged overseas → soft-clamp to anchor.
-      return { ...anchor, off: true };
-    }
+    if (!p) return { x: anchor.x, y: anchor.y, off: true };
     return { x: p[0], y: p[1], off: false };
   }
-
   function projectAll() {
     for (const j of store.journeys)
-      for (const w of j.waypoints) {
-        const p = projectWaypoint(w);
-        w.px = p.x; w.py = p.y; w.off = p.off;
-      }
+      for (const w of j.waypoints) { const p = projectWaypoint(w); w.px = p.x; w.py = p.y; w.off = p.off; }
   }
 
-  // ---- geometry --------------------------------------------------------------
   function legPath(a, b) {
     const dx = b.px - a.px, dy = b.py - a.py;
     const len = Math.hypot(dx, dy) || 1;
@@ -113,13 +138,15 @@ export function createAtlas(container) {
   };
 
   // ---- low-level draw --------------------------------------------------------
-  function camG() { return overlayG; }
   function clearOverlay() { overlayG.selectAll("*").remove(); }
 
   function dot(g, x, y, o = {}) {
-    return g.append("circle").attr("cx", x).attr("cy", y).attr("r", (o.r || 4) / cameraK)
+    const r = o.r || 4;
+    return g.append("circle").attr("cx", x).attr("cy", y)
+      .attr("data-r", r).attr("r", r / currentK)
       .attr("fill", o.fill || C.dotIdle).attr("stroke", o.stroke || "none")
-      .attr("stroke-width", (o.sw || 0) / cameraK).attr("opacity", o.op == null ? 1 : o.op);
+      .attr("stroke-width", (o.sw || 0)).attr("vector-effect", "non-scaling-stroke")
+      .attr("opacity", o.op == null ? 1 : o.op);
   }
 
   function leg(g, a, b, o = {}) {
@@ -135,28 +162,32 @@ export function createAtlas(container) {
     return p;
   }
 
-  function setCamera(target, k) {
-    cameraK = k;
-    const { w, h } = size;
-    let tx, ty;
-    if (target) { tx = w / 2 - k * target.x; ty = h / 2 - k * target.y; }
-    else { tx = w / 2 - k * (w / 2); ty = h / 2 - k * (h / 2); }
-    camera.style("transform", `translate(${tx}px,${ty}px) scale(${k})`);
+  function label(g, x, y, text, o = {}) {
+    const fs = o.fs || 11, dy = o.dy || 0;
+    g.append("text").attr("x", x).attr("data-y0", y).attr("data-y", dy).attr("y", y - dy / currentK)
+      .attr("text-anchor", "middle").attr("data-fs", fs).attr("font-size", `${fs / currentK}px`)
+      .attr("font-family", "'Public Sans',sans-serif").attr("font-weight", o.weight || 600)
+      .attr("letter-spacing", o.ls || "0.12em").attr("fill", o.fill || C.anchorInk).text(text);
   }
 
-  function anchorLabel(g, show, text) {
+  function anchorLabel(g, show) {
     if (!show) return;
-    const t = anchor;
-    dot(g, t.x, t.y, { r: 5, fill: C.anchorInk });
-    dot(g, t.x, t.y, { r: 10, fill: "none", stroke: C.anchorInk, sw: 1, op: 0.25 });
-    g.append("text").attr("x", t.x).attr("y", t.y - 16 / cameraK).attr("text-anchor", "middle")
-      .attr("font-family", "'Public Sans',sans-serif").attr("font-size", `${11 / cameraK}px`)
-      .attr("font-weight", 600).attr("letter-spacing", "0.12em").attr("fill", C.anchorInk)
-      .text(text || "NEW LIFE");
-    g.append("text").attr("x", t.x).attr("y", t.y + 20 / cameraK).attr("text-anchor", "middle")
-      .attr("font-family", "'Public Sans',sans-serif").attr("font-size", `${9 / cameraK}px`)
-      .attr("fill", C.faint).text("across the Atlantic");
+    dot(g, anchor.x, anchor.y, { r: 5, fill: C.anchorInk });
+    dot(g, anchor.x, anchor.y, { r: 10, fill: "none", stroke: C.anchorInk, sw: 1, op: 0.25 });
+    label(g, anchor.x, anchor.y, "NEW LIFE", { fs: 11, dy: 16 });
+    label(g, anchor.x, anchor.y, "across the Atlantic", { fs: 9, dy: -20, weight: 400, ls: "0", fill: C.faint });
   }
+
+  // ---- camera ----------------------------------------------------------------
+  function moveCamera(target, k) {
+    const { w, h } = size;
+    const t = target
+      ? d3.zoomIdentity.translate(w / 2 - k * target.x, h / 2 - k * target.y).scale(k)
+      : d3.zoomIdentity;
+    const sel = REDUCED_MOTION ? svg : svg.transition().duration(850).ease(d3.easeCubicInOut);
+    sel.call(zoom.transform, t);
+  }
+  api.resetCamera = () => moveCamera(null, 1);
 
   // ---- tooltip ---------------------------------------------------------------
   function showTip(e, text) { if (!tipEl) return; tipEl.textContent = text; tipEl.style.opacity = 1; moveTip(e); }
@@ -168,36 +199,100 @@ export function createAtlas(container) {
   }
   function hideTip() { if (tipEl) tipEl.style.opacity = 0; }
 
-  // ---- per-view rendering ----------------------------------------------------
-  api.render = function (view, ctx) {
-    api._lastRender = () => api.render(view, ctx);
-    if (!overlayG) return;
-    const interactive = view === "explore" || view === "patterns";
-    svg.style("pointer-events", interactive ? "auto" : "none");
-    clearOverlay();
-    if (view === "landing") { drawLanding(); setCamera(null, 1.04); }
-    else if (view === "guided") drawGuided(ctx);
-    else if (view === "explore") { drawExplore(ctx); setCamera(null, 1); }
-    else if (view === "patterns") { drawPatterns(ctx); setCamera(null, 1); }
-    else setCamera(null, 1);
-  };
-
-  function drawLanding() {
-    const g = camG();
-    const sample = (store.featured.length ? store.featured : store.journeys).slice(0, 18);
-    for (const j of sample) {
-      const w = j.waypoints;
-      for (let i = 0; i < w.length - 1; i++) leg(g, w[i], w[i + 1], { color: C.accent, width: 1.4, op: 0.16 });
-      w.forEach((p) => dot(g, p.px, p.py, { r: 2.4, fill: C.accent, op: 0.26 }));
-    }
-    anchorLabel(g, true);
+  // ---- choropleth ------------------------------------------------------------
+  function paintChoropleth(on) {
+    if (!countrySel) return;
+    if (!on) { countrySel.attr("fill", C.land); return; }
+    const max = Math.max(1, ...[...store.originCounts.values()]);
+    const ramp = d3.interpolateRgb("#EEE6D6", C.accentDeep);
+    countrySel.attr("fill", (d) => {
+      const n = store.originCounts.get(d.properties.name) || 0;
+      if (!n) return "#EFEADF";
+      return ramp(Math.pow(n / max, 0.55));
+    });
   }
+
+  // ---- globe -----------------------------------------------------------------
+  function showGlobe(on) {
+    globeG.style("display", on ? null : "none");
+    camera.style("display", on ? "none" : null);
+    if (on) drawGlobe(), startRotate();
+    else stopRotate();
+  }
+
+  function drawGlobe() {
+    if (!worldGlobe) { showGlobe(false); return; }
+    globeG.selectAll("*").remove();
+    const c = gProjection.translate();
+    const r = gProjection.scale();
+    globeG.append("circle").attr("cx", c[0]).attr("cy", c[1]).attr("r", r)
+      .attr("fill", "#F2EDE3").attr("stroke", C.landStroke).attr("stroke-width", 1);
+    const land = globeG.append("g");
+    land.selectAll("path").data(worldGlobe.features).enter().append("path")
+      .attr("fill", "#E3DCCC").attr("stroke", "#D6CDBB").attr("stroke-width", 0.4);
+    const dots = globeG.append("g");
+    redrawGlobe(land, dots);
+    globeG._land = land; globeG._dots = dots;
+  }
+
+  function redrawGlobe(land, dots) {
+    land = land || globeG._land; dots = dots || globeG._dots;
+    if (!land) return;
+    gProjection.rotate(rot);
+    land.selectAll("path").attr("d", gPath);
+    // origin dots on the visible hemisphere
+    const center = [-rot[0], -rot[1]];
+    const data = store ? store.journeys : [];
+    const sel = dots.selectAll("circle").data(data, (j) => j.id);
+    sel.enter().append("circle").attr("r", 1.7).attr("fill", C.accent).merge(sel)
+      .each(function (j) {
+        const home = j.waypoints[0];
+        if (!home) { d3.select(this).attr("display", "none"); return; }
+        const visible = d3.geoDistance([home.lng, home.lat], center) < Math.PI / 2;
+        if (!visible) { d3.select(this).attr("display", "none"); return; }
+        const p = gProjection([home.lng, home.lat]);
+        d3.select(this).attr("display", null).attr("cx", p[0]).attr("cy", p[1]).attr("opacity", 0.55);
+      });
+    sel.exit().remove();
+  }
+
+  function startRotate() {
+    stopRotate();
+    if (REDUCED_MOTION) { rot = [-14, -48, 0]; layoutGlobe(); redrawGlobe(); return; }
+    const step = () => { rot[0] += 0.16; redrawGlobe(); rotateRAF = requestAnimationFrame(step); };
+    rotateRAF = requestAnimationFrame(step);
+  }
+  function stopRotate() { if (rotateRAF) cancelAnimationFrame(rotateRAF); rotateRAF = null; }
+
+  // ---- per-view rendering ----------------------------------------------------
+  api.render = function (v, ctx) {
+    api._last = () => api.render(v, ctx);
+    if (!overlayG) return;
+    const changed = v !== view; view = v;
+
+    if (v === "landing") {
+      svg.style("pointer-events", "none");
+      showGlobe(true);
+      return;
+    }
+    showGlobe(false);
+    const interactive = v === "explore" || v === "patterns";
+    svg.style("pointer-events", interactive ? "auto" : "none");
+
+    // Choropleth only in patterns "origins" layer.
+    paintChoropleth(v === "patterns" && ctx.patternsLayer === "origins");
+
+    clearOverlay();
+    if (v === "guided") drawGuided(ctx);
+    else if (v === "explore") { drawExplore(ctx); if (changed) api.resetCamera(); }
+    else if (v === "patterns") { drawPatterns(ctx); if (changed) api.resetCamera(); }
+  };
 
   function drawGuided(ctx) {
     const j = store.byId.get(ctx.guidedId) || store.journeys[0];
     if (!j) return;
     const idx = Math.min(ctx.guidedIndex || 0, j.waypoints.length - 1);
-    const g = camG();
+    const g = overlayG;
     for (let i = 0; i < idx; i++) {
       const newest = i === idx - 1;
       const animate = newest && ctx.prevIndex != null && ctx.prevIndex < idx;
@@ -208,19 +303,20 @@ export function createAtlas(container) {
       if (active) {
         dot(g, w.px, w.py, { r: 9, fill: "none", stroke: C.accent, sw: 1.5, op: 0.4 });
         dot(g, w.px, w.py, { r: 5, fill: C.accent });
-      } else {
-        dot(g, w.px, w.py, { r: 3.4, fill: visited ? C.accent : C.dotIdle, op: visited ? 0.85 : 0.55 });
-      }
+      } else dot(g, w.px, w.py, { r: 3.4, fill: visited ? C.accent : C.dotIdle, op: visited ? 0.85 : 0.55 });
     });
     const t = j.waypoints[idx];
-    setCamera({ x: t.px, y: t.py }, 2.2);
+    moveCamera({ x: t.px, y: t.py }, 2.2);
     anchorLabel(g, j.waypoints.some((w) => w.overseas) && idx >= j.waypoints.length - 1);
   }
 
   function drawExplore(ctx) {
-    const g = camG();
-    const theme = ctx.theme;
+    const g = overlayG;
+    const theme = ctx.theme, q = (ctx.query || "").toLowerCase();
     const sel = store.byId.get(ctx.selectedId);
+    const matches = (j) => (!theme || j.themes.includes(theme)) &&
+      (!q || (j.name + " " + j.hometown + " " + j.themes.join(" ") + " " +
+        j.waypoints.map((w) => w.canonical + " " + w.asWritten).join(" ")).toLowerCase().includes(q));
     if (sel) {
       for (let i = 0; i < sel.waypoints.length - 1; i++)
         leg(g, sel.waypoints[i], sel.waypoints[i + 1], { color: C.accent, width: 2.2, op: 0.9, animate: true });
@@ -230,11 +326,9 @@ export function createAtlas(container) {
       });
     }
     for (const j of store.journeys) {
-      const match = !theme || j.themes.includes(theme);
+      const home = j.waypoints[0]; if (!home) continue;
       const isSel = sel && j.id === sel.id;
-      const home = j.waypoints[0];
-      if (!home) continue;
-      const dim = theme && !match ? 0.18 : 1;
+      const dim = matches(j) ? 1 : 0.14;
       const c = dot(g, home.px, home.py, {
         r: isSel ? 6 : 4.5, fill: isSel ? C.accent : C.paperSoft,
         stroke: isSel ? C.accentDeep : C.accent, sw: isSel ? 2 : 1.5, op: dim,
@@ -249,45 +343,55 @@ export function createAtlas(container) {
   }
 
   function drawPatterns(ctx) {
-    const g = camG();
+    const g = overlayG;
+    if (ctx.patternsLayer === "origins") { drawOrigins(g); return; }
     const year = ctx.scrubYear;
     for (const j of store.journeys)
       for (let i = 0; i < j.waypoints.length - 1; i++)
         leg(g, j.waypoints[i], j.waypoints[i + 1], { color: C.accent, width: 1.2, op: 0.1 });
-    // Shared-place rings (top crossings).
     for (const sp of store.shared.slice(0, 6)) {
-      const w0 = findWaypoint(sp.canonical);
-      if (!w0) continue;
+      const w0 = findWaypoint(sp.canonical); if (!w0) continue;
       dot(g, w0.px, w0.py, { r: 13, fill: "none", stroke: C.accent, sw: 1.1, op: 0.5 });
       dot(g, w0.px, w0.py, { r: 8, fill: "none", stroke: C.accent, sw: 1, op: 0.3 });
     }
-    // Moving dots at the chosen year.
     for (const j of store.journeys) {
-      const pos = api.pointAtYear(j, year);
-      if (!pos) continue;
+      const pos = api.pointAtYear(j, year); if (!pos) continue;
       if (pos.glow) {
         dot(g, pos.x, pos.y, { r: 11, fill: C.accent, op: 0.13 });
         dot(g, pos.x, pos.y, { r: 6, fill: C.accent, op: 0.26 });
       }
-      dot(g, pos.x, pos.y, {
-        r: 3.6, fill: pos.before ? C.dotIdle : C.accent,
-        stroke: C.paperSoft, sw: 1, op: pos.before ? 0.6 : 1,
-      });
+      dot(g, pos.x, pos.y, { r: 3.6, fill: pos.before ? C.dotIdle : C.accent, stroke: C.paperSoft, sw: 1, op: pos.before ? 0.6 : 1 });
     }
     anchorLabel(g, true);
   }
 
+  // Origin density: choropleth is painted on the countries; here we add count labels.
+  function drawOrigins(g) {
+    const placed = new Map();
+    for (const j of store.journeys) {
+      const home = j.waypoints[0]; if (!home || home.off) continue;
+      if (!placed.has(j.originCountry)) placed.set(j.originCountry, { x: 0, y: 0, n: 0 });
+      const e = placed.get(j.originCountry); e.x += home.px; e.y += home.py; e.n++;
+    }
+    for (const [country, e] of placed) {
+      const n = store.originCounts.get(country) || e.n;
+      if (n < 3) continue;
+      const cx = e.x / e.n, cy = e.y / e.n;
+      dot(g, cx, cy, { r: 3, fill: C.accentDeep, op: 0.8 });
+      label(g, cx, cy, `${n}`, { fs: 13, dy: 10, weight: 600, ls: "0", fill: C.accentDeep });
+    }
+    anchorLabel(g, false);
+  }
+
   function findWaypoint(canonical) {
-    for (const j of store.journeys)
-      for (const w of j.waypoints) if (w.canonical === canonical) return w;
+    for (const j of store.journeys) for (const w of j.waypoints) if (w.canonical === canonical) return w;
     return null;
   }
 
   // ---- mini route (side panel) ----------------------------------------------
   api.drawMini = function (svgEl, j) {
     if (!svgEl || !j) return;
-    const sel = d3.select(svgEl);
-    sel.selectAll("*").remove();
+    const sel = d3.select(svgEl); sel.selectAll("*").remove();
     const W = 340, H = 150, pad = 22;
     const pts = j.waypoints.map((w) => ({ px: w.px, py: w.py, newLife: w.overseas || w.newLife }));
     const xs = pts.map((p) => p.px), ys = pts.map((p) => p.py);
@@ -305,8 +409,7 @@ export function createAtlas(container) {
         .attr("fill", "none").attr("stroke", C.accent).attr("stroke-width", 1.6).attr("stroke-linecap", "round");
     }
     P.forEach((p, i) => sel.append("circle").attr("cx", p.x).attr("cy", p.y)
-      .attr("r", i === 0 || i === P.length - 1 ? 4 : 2.8)
-      .attr("fill", p.newLife ? C.anchorInk : C.accent));
+      .attr("r", i === 0 || i === P.length - 1 ? 4 : 2.8).attr("fill", p.newLife ? C.anchorInk : C.accent));
   };
 
   return api;
