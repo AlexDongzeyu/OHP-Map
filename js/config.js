@@ -3,13 +3,13 @@
 // museum"). No rainbow category colours — grayscale base, one accent for journeys,
 // one for the active/selected state.
 export const PALETTE = {
-  ink: "#33312e",
-  paper: "#f4f2ee",
-  muted: "#6f6a64",      // resting survivor / waypoint dots
-  journey: "#5e7a8c",    // journey lines (single muted accent)
-  active: "#b07d52",     // selected / active state (second accent)
-  flow: "#5e7a8c",
-  link: "#9a8c7a",       // connection-layer links
+  ink: "#1a1a18",
+  paper: "#f7f4ef",
+  muted: "#9a9388",      // resting survivor / waypoint dots (greyscale)
+  journey: "#b4673a",    // journey lines — the single ember accent
+  active: "#8f4a24",     // selected / active state (deeper ember, same hue)
+  flow: "#b4673a",
+  link: "#7f8a87",       // connection-layer threads (quiet grey-slate)
 };
 
 // CARTO Positron — desaturated, built to sit quietly under data (doc 01).

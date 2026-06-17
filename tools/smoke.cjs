@@ -26,7 +26,20 @@ const BASE = "http://localhost:8124";
     catch (e) { errors.push(label + ": " + e.message); console.log("FAIL " + label + " :: " + e.message); }
   }
 
-  await page.goto(BASE + "/#/guided", { waitUntil: "networkidle2", timeout: 30000 });
+  // 1) Landing intro first (no hash): a stranger must see purpose + actions.
+  await page.goto(BASE + "/", { waitUntil: "networkidle2", timeout: 30000 });
+  await check("intro hero shows scale + actions", async () => {
+    await page.waitForSelector("#intro .intro-actions [data-go]", { timeout: 5000 });
+    const scale = await page.$eval("#scale", (el) => el.textContent.trim());
+    if (!/\d+ survivors/.test(scale)) throw new Error("scale='" + scale + "'");
+    const introHidden = await page.$eval("#intro", (el) => el.hidden);
+    if (introHidden) throw new Error("intro hidden on first load");
+  });
+  await check("primary action enters guided + reveals shell", async () => {
+    await page.click('#intro [data-go="guided"]');
+    await page.waitForSelector(".topbar:not([hidden])", { timeout: 5000 });
+    await page.waitForSelector("#panel .step", { timeout: 5000 });
+  });
 
   await check("data loaded (survivor count > 0)", async () => {
     const n = await page.$eval("#survivor-count", (el) => parseInt(el.textContent, 10));
@@ -37,7 +50,6 @@ const BASE = "http://localhost:8124";
     if (hidden) throw new Error("banner hidden");
   });
   await check("guided steps rendered", async () => {
-    await page.waitForSelector("#panel .step", { timeout: 5000 });
     const steps = await page.$$eval("#panel .step", (els) => els.length);
     if (steps < 3) throw new Error("only " + steps + " steps");
   });
@@ -74,8 +86,16 @@ const BASE = "http://localhost:8124";
     if (conns < 1) throw new Error("no connections listed");
   });
 
-  await check("deep link #/place/ works", async () => {
+  await check("about modal opens + closes", async () => {
+    await page.click("#about-tab");
+    await page.waitForSelector("#about:not([hidden])", { timeout: 4000 });
+    await page.click("#about-close");
+    await new Promise((r) => setTimeout(r, 400));
+  });
+
+  await check("deep link #/place/ works (skips intro)", async () => {
     await page.goto(BASE + "/#/place/auschwitz-oswiecim-poland", { waitUntil: "networkidle2" });
+    await page.waitForSelector(".topbar:not([hidden])", { timeout: 5000 });
     await page.waitForSelector("#panel .card", { timeout: 5000 });
   });
 

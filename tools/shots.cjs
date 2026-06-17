@@ -7,6 +7,11 @@ const BASE = "http://localhost:8124";
   await pg.setViewport({ width: 1280, height: 800 });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  // Landing first (no hash → intro visible).
+  await pg.goto(BASE + "/", { waitUntil: "networkidle2" });
+  await wait(2600);
+  await pg.screenshot({ path: "tools/shot-landing.png" });
+
   await pg.goto(BASE + "/#/guided", { waitUntil: "networkidle2" });
   await wait(2500);
   await pg.screenshot({ path: "tools/shot-guided.png" });

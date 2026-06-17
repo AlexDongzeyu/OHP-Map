@@ -30,6 +30,9 @@ visual work.
 | `07_prototype_prompt.md` | Copy-paste prompt to drive Claude Code through **forking and adapting** the template into the prototype. |
 | `08_visual_direction_and_weaknesses.md` | **Read before building anything visual.** Honest triage of the 3D / AR / "WW2" / collage ideas, the tasteful alternatives, and a full weakness audit of the whole plan with mitigations. |
 | `09_finish_and_polish.md` | **The live-site action guide.** Audit of the deployed Cloudflare prototype (what's done vs. the "0 journeys" blocker), step-by-step to load real data, the Cloudflare-native auto-update pipeline (Cron + KV), the visual-polish playbook, and a sequenced punch list. |
+| `10_references_and_roadmap.md` | World-class inspiration projects (Arolsen TransRem, Stolpersteine, The Pudding, NYT), forkable repositories, the skills to build, and the order to do it in. |
+| `11_claude_design_brief.md` | **Paste into Claude Design.** A self-contained brief to produce a beautiful, dignified visual system + screen mockups (landing, guided, explore, patterns, survivor card, empty states). |
+| `12_github_copilot_instructions.md` | **Paste into GitHub Copilot.** A self-contained, phased agent prompt: read the repo → research references → critically evaluate → improvement plan → implement smallest-risk-first, with guardrails. |
 
 ## Suggested order
 

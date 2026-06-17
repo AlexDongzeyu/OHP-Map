@@ -9,6 +9,15 @@ converge on the same camp in the same year.
 
 **Live data:** the map is populated with **221 real survivors** scraped from the public
 OHP archive, their journeys auto-extracted from each public bio.
+**Live site:** https://ohpmap.alexdong0414.workers.dev/
+
+A first-time visitor lands on a **dignified hero** — the title, a one-sentence purpose,
+a live sense of scale ("221 survivors · 62 places · 1933–1950"), and two clear actions
+(*Follow one journey* · *Explore the map*) over a faint, data-drawn backdrop of the real
+journeys. The visual system (self-hosted Spectral + Inter, a warm-paper palette with a
+single ember accent, an About/methodology surface, explicit loading/empty/error states)
+is documented in [`docs/evaluation.md`](docs/evaluation.md) and
+[`docs/improvement-plan.md`](docs/improvement-plan.md).
 
 > ### ⚠️ Read this: the data is *pending review*, not authoritative
 > The `ohp` WordPress post type is **not** exposed over the REST API (`/wp-json/wp/v2/ohp`

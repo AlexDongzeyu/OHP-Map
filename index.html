@@ -3,57 +3,118 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Crestwood OHP — Survivor Journeys</title>
+  <title>Survivor Journeys — Crestwood Oral History Project</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <meta name="description" content="An interactive memorial map of Holocaust survivor
-    journeys from the Crestwood Oral History Project. A quiet, accessible way to follow
-    one life, explore many, and see where journeys crossed." />
+  <meta name="description" content="An interactive memorial map following the journeys of
+    Holocaust survivors who shared their stories with Crestwood students — from their
+    hometowns, through the ghettos and camps, to new lives in Toronto." />
+  <meta property="og:title" content="Survivor Journeys — Crestwood Oral History Project" />
+  <meta property="og:description" content="Follow the journeys of Holocaust survivors
+    across Europe — one life at a time, then all of them at once." />
 
-  <!-- Vendored, pinned libraries (doc 06: no fragile CDNs). -->
+  <!-- Self-hosted fonts, preloaded so headings don't flash (doc 06: no fragile CDNs). -->
+  <link rel="preload" href="vendor/fonts/spectral-600.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="vendor/fonts/inter-400.woff2" as="font" type="font/woff2" crossorigin />
+
+  <!-- Vendored, pinned libraries. -->
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
   <link rel="stylesheet" href="vendor/markercluster/MarkerCluster.css" />
   <link rel="stylesheet" href="vendor/markercluster/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="css/tokens.css" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
   <a class="skip-link" href="#map">Skip to map</a>
 
-  <header class="topbar">
-    <div class="brand">
-      <h1>Survivor Journeys</h1>
-      <p class="subtitle">Crestwood Oral History Project ·
-        <span id="survivor-count">0</span> journeys</p>
+  <!-- ── Landing / intro (doc 11: a stranger must understand it in 5 seconds) ── -->
+  <section id="intro" class="intro" aria-label="Introduction">
+    <canvas id="hero-canvas" class="hero-canvas" aria-hidden="true"></canvas>
+    <div class="intro-inner">
+      <p class="kicker">Crestwood Oral History Project</p>
+      <h1 class="intro-title">Survivor&nbsp;Journeys</h1>
+      <p class="intro-lede">
+        Following the journeys of Holocaust survivors who shared their stories with
+        Crestwood students — from their hometowns, through the ghettos and camps, to
+        new lives in Toronto.
+      </p>
+      <p class="intro-scale" id="scale" aria-live="polite">&nbsp;</p>
+      <div class="intro-actions">
+        <button class="btn btn-primary" data-go="guided">Follow one journey</button>
+        <button class="btn btn-ghost" data-go="explore">Explore the map</button>
+      </div>
+      <p class="intro-care">
+        Built with restraint, in memory of those whose journeys these are.
+        <button class="link-btn" id="open-about">About this project</button>
+      </p>
     </div>
+    <div class="intro-scrollcue" aria-hidden="true">Holocaust survivors · their journeys</div>
+  </section>
+
+  <!-- ── App shell ── -->
+  <header class="topbar" hidden>
+    <button class="brand" id="brand" title="Back to the introduction">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-text">
+        <span class="brand-title">Survivor Journeys</span>
+        <span class="subtitle">Crestwood OHP · <span id="survivor-count">0</span> journeys</span>
+      </span>
+    </button>
     <nav class="modes" role="tablist" aria-label="View modes">
       <button class="mode-tab" role="tab" data-mode="guided" aria-selected="false">Guided</button>
       <button class="mode-tab" role="tab" data-mode="explore" aria-selected="false">Explore</button>
       <button class="mode-tab" role="tab" data-mode="patterns" aria-selected="false">Patterns</button>
+      <button class="mode-tab about-tab" id="about-tab" type="button">About</button>
     </nav>
   </header>
 
   <p id="notice-banner" class="sample-banner" hidden></p>
 
-  <main class="layout">
+  <main class="layout" hidden>
     <aside id="panel" class="panel" aria-label="Details"></aside>
-    <div id="map" tabindex="-1" role="application" aria-label="Map of survivor journeys"></div>
+    <div class="map-wrap">
+      <div id="map" tabindex="-1" role="application" aria-label="Map of survivor journeys"></div>
+      <div id="map-loading" class="map-loading" hidden>
+        <span class="spinner" aria-hidden="true"></span>
+        <p>Loading the journeys…</p>
+      </div>
+    </div>
   </main>
 
   <div id="scrubber" class="scrubber-bar" hidden aria-label="Time scrubber"></div>
 
   <p id="status" class="status" hidden role="alert"></p>
 
-  <footer class="credits">
-    <p>
-      A student project that adapts the open-source
-      <a href="https://github.com/HandsOnDataViz/leaflet-storymaps-with-google-sheets"
-         target="_blank" rel="noopener">HandsOnDataViz Leaflet Storymaps</a> idea for the
-      guided view, and adds a custom Explore / Patterns / time-scrubber app.
-      Built on <a href="https://leafletjs.com/" target="_blank" rel="noopener">Leaflet</a>
-      (BSD-2-Clause) with <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>
-      basemaps. Source of truth: <a href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">ohp.crestwood.on.ca</a>.
-      Made with restraint, in memory of those whose journeys these are.
-    </p>
-  </footer>
+  <!-- ── About / methodology dialog ── -->
+  <div id="about" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="about-h">
+    <div class="modal-card">
+      <button class="modal-close" id="about-close" aria-label="Close">×</button>
+      <h2 id="about-h">About this project</h2>
+      <p>This is a student memorial map of the <strong>Crestwood Oral History Project</strong>
+        — interviews Crestwood Preparatory College students conducted with Holocaust
+        survivors. Each survivor's testimony is shown as a journey across Europe: from the
+        town they were born in, through the ghettos and camps they were forced through, to
+        liberation and the new lives many built in Toronto.</p>
+      <h3>How the journeys were made</h3>
+      <p>Places are <strong>auto-extracted from each survivor's public archive summary</strong>
+        and matched to a curated gazetteer of historical place-names (so "Lemberg" resolves to
+        today's Lviv) before being geocoded once, at build time. Every record is
+        <strong>pending human verification</strong> — these are pointers into the archive, not
+        authoritative biographies. Uncertain dates are kept uncertain; survivors' own spellings
+        of places are always preserved.</p>
+      <h3>A note on care</h3>
+      <p>This is a memorial, not a product. "Same place, same time" links between survivors are
+        shown only as <em>candidates</em> — never a claim that two people met. Before any record
+        is presented as fact, it must be checked against the full testimony and cleared with the
+        project's teacher.</p>
+      <h3>Credits</h3>
+      <p class="small muted">Source of truth: <a href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">ohp.crestwood.on.ca</a>.
+        The guided view adapts the idea of HandsOnDataViz <em>Leaflet Storymaps</em> (Ilya
+        Ilyankou &amp; Jack Dougherty). Built on Leaflet, Leaflet.markercluster,
+        Leaflet.Polyline.SnakeAnim and Scrollama; quiet basemap © OpenStreetMap contributors ©
+        CARTO; optional period place-names © OpenHistoricalMap. Code:
+        <a href="https://github.com/AlexDongzeyu/OHP-Map" target="_blank" rel="noopener">AlexDongzeyu/OHP-Map</a>.</p>
+    </div>
+  </div>
 
   <!-- Library globals load first; the app is an ES module (deferred), so it runs after. -->
   <script src="vendor/leaflet/leaflet.js"></script>
