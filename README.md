@@ -180,16 +180,20 @@ reproducible and offline. Validated against `data/schema/survivors.schema.json`.
 Both rebuild the dataset from the archive with **zero page-load cost**; new survivors are
 staged `pending`, never auto-published as fact (doc 09 Step 2.5).
 
-**A. GitHub Actions** (`.github/workflows/build.yml`) — on push (validate), a weekly
+**A. GitHub Actions** (`.github/workflows/build.yml`) — **CI only**: on push, a weekly
 schedule, `workflow_dispatch` (manual), and `repository_dispatch` (a WordPress publish
-webhook, type `ohp-publish`). Each run: `pytest` → `pipeline.build` → commit changed JSON →
-deploy to GitHub Pages. The build *fails on invalid data*.
+webhook, type `ohp-publish`). Each run: `pytest` → `pipeline.build` → assemble-site
+smoke check → (on scheduled/dispatch) commit changed JSON. The build *fails on invalid
+data*. Deployment is handled by Cloudflare (below), not by this workflow.
 
-**B. Cloudflare Worker** (`wrangler.toml`, `worker/`) — the Cloudflare-native option from
-doc 09. A **Cron Trigger** fires `scheduled()`, which scrapes the archive, diffs against
-**Workers KV**, enriches only NEW survivors (reusing the committed gazetteer + geocode
-cache), and writes the merged GeoJSON to KV. `fetch()` serves the site and the dataset
-straight from KV — no external call on page load.
+**B. Cloudflare Worker** (`wrangler.toml`, `worker/`) — **the live deployment**. On push,
+Cloudflare Workers Builds runs `wrangler deploy`; a `[build]` step assembles a clean
+`public/` and the Worker serves it. The Cloudflare-native auto-update from doc 09 is an
+opt-in enhancement: a **Cron Trigger** fires `scheduled()`, which scrapes the archive,
+diffs against **Workers KV**, enriches only NEW survivors (reusing the committed
+gazetteer + geocode cache), and writes merged GeoJSON to KV; `fetch()` then serves the
+dataset straight from KV — no external call on page load. It deploys with zero setup
+(KV optional).
 
 ```bash
 npx wrangler kv namespace create OHP_DATA   # paste the id into wrangler.toml

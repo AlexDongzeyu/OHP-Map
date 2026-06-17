@@ -1,9 +1,11 @@
-name: build-and-deploy
+name: build-and-validate
 
-# Auto-update pipeline (doc 02 section 8 / F12):
-#  - push:               validate on every change to main
-#  - schedule:           weekly rebuild from the source of truth
-#  - workflow_dispatch:  a manual "rebuild now" button
+# CI for the data pipeline (doc 02 section 8 / F12). Deployment is handled by
+# Cloudflare Workers Builds (wrangler deploy on push — see wrangler.toml / worker/),
+# so this workflow only builds and validates; it does not deploy.
+#  - push:                validate on every change to main
+#  - schedule:            weekly rebuild from the source of truth
+#  - workflow_dispatch:   a manual "rebuild now" button
 #  - repository_dispatch: fired by a WordPress publish webhook (type: ohp-publish)
 on:
   push:
@@ -16,11 +18,9 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: ohp-ci
   cancel-in-progress: false
 
 jobs:
@@ -36,7 +36,7 @@ jobs:
       - name: Install pipeline dependencies
         run: pip install -r pipeline/requirements.txt
 
-      - name: Run tests (the build cannot deploy bad data)
+      - name: Run tests (the build cannot ship bad data)
         run: python -m pytest -q
 
       - name: Rebuild dataset
@@ -51,6 +51,9 @@ jobs:
           #   --extractor anthropic
           python -m pipeline.build
 
+      - name: Assemble the static site (smoke check that it builds cleanly)
+        run: node tools/assemble_site.cjs
+
       - name: Commit regenerated data (scheduled / dispatch runs only)
         if: github.event_name != 'push'
         run: |
@@ -63,28 +66,3 @@ jobs:
           else
             echo "No data changes."
           fi
-
-      - name: Assemble the static site
-        run: |
-          mkdir -p _site
-          cp -r index.html embed.html css js vendor assets data _site/
-          touch _site/.nojekyll
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-  # Best-effort deploy. ONE-TIME SETUP by the repo owner: Settings → Pages →
-  # "Build and deployment" → Source: "GitHub Actions". Until that is set, this job
-  # fails softly (continue-on-error) so the build/validate signal above stays green.
-  # The site is also deployable via the Cloudflare Worker (see wrangler.toml / worker/).
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
