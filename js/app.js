@@ -1,195 +1,253 @@
-// APP — the landing flow + the three modes, mode switcher, deep links, scrubber.
-// A first-time visitor lands on the intro (doc 11). Choosing "Follow one journey" or
-// "Explore the map" reveals the app shell. One Leaflet map; each mode owns its layers.
+// app.js — orchestration. Owns the small state machine, renders the persistent atlas
+// (atlas.js) plus the per-view overlay (ui.js), wires interaction via delegation, runs
+// the guided scroll observer, and handles hash deep links.
 import { loadData } from "./data.js";
-import { createMap } from "./mapcore.js";
-import { createExplore } from "./explore.js";
-import { createGuided } from "./guided.js";
-import { createPatterns } from "./patterns.js";
-import { createScrubber } from "./scrubber.js";
-import { drawHero } from "./hero.js";
-import { REDUCED_MOTION } from "./config.js";
+import { createAtlas } from "./atlas.js";
+import * as ui from "./ui.js";
+import { REDUCED_MOTION, TIME, slug } from "./config.js";
 
-const MODES = ["guided", "explore", "patterns"];
-const SCRUBBER_MODES = new Set(["explore", "patterns"]);
+const VIEWS = ["landing", "guided", "explore", "patterns", "about"];
+
+const state = {
+  view: "landing",
+  selectedId: null,
+  guidedId: null,
+  guidedIndex: 0,
+  prevIndex: null,
+  theme: null,
+  scrubYear: 1942,
+};
+
+let store, atlas;
+let guidedMountedFor = null;
+let scrollHandler = null;
 
 async function main() {
-  const statusEl = document.getElementById("status");
-  const intro = document.getElementById("intro");
+  const loadingEl = document.getElementById("loading");
+  const errorEl = document.getElementById("error");
+  const fatalEl = document.getElementById("fatal");
 
-  let store;
   try {
     store = await loadData();
   } catch (err) {
-    statusEl.hidden = false;
-    statusEl.textContent =
-      "We couldn't load the journeys right now. Please refresh in a moment.";
+    loadingEl.hidden = true;
+    fatalEl.hidden = false;
+    fatalEl.textContent = "We couldn't load the journeys right now. Please refresh in a moment.";
     console.error(err);
     return;
   }
 
-  // ---- intro content: scale line + dignified data-drawn hero --------------------
-  const places = store.places ? store.places.size : 0;
-  const tmin = (store.meta && store.meta.time_min) || 1933;
-  const tmax = (store.meta && store.meta.time_max) || 1950;
-  const scaleEl = document.getElementById("scale");
-  if (scaleEl)
-    scaleEl.textContent =
-      `${store.survivors.length} survivors · ${places} places · ${tmin}–${tmax}`;
-  drawHero(document.getElementById("hero-canvas"), store);
-
-  document.getElementById("survivor-count").textContent = store.survivors.length;
-  setupBanner(store);
-
-  const map = createMap("map");
-  const panel = document.getElementById("panel");
-  const scrubberEl = document.getElementById("scrubber");
-
-  let programmaticHash = false;
-  const setHash = (h) => {
-    programmaticHash = true;
-    if (location.hash !== h) location.hash = h;
-    else programmaticHash = false;
-  };
-
-  const ctx = { map, store, panel, scrubberEl, setHash };
-  const scrubber = createScrubber(ctx);
-  const modes = {
-    guided: createGuided(ctx),
-    explore: createExplore(ctx),
-    patterns: createPatterns(ctx),
-  };
-
-  let current = null;
-  let entered = false;
-
-  function revealShell() {
-    if (entered) return;
-    entered = true;
-    document.querySelector(".topbar").hidden = false;
-    document.querySelector(".layout").hidden = false;
-    intro.classList.add("is-dismissed");
-    setTimeout(() => { intro.hidden = true; map.invalidateSize(); },
-      REDUCED_MOTION ? 0 : 420);
-    setTimeout(() => map.invalidateSize(), 80);
+  state.guidedId = (store.featured[0] || store.journeys[0]).id;
+  state.scrubYear = Math.round((store.time.min + store.time.max) / 2);
+  if (store.meta && store.meta.reviewed && !store.meta.pending) {
+    const pill = document.getElementById("status-pill");
+    if (pill) pill.querySelector(".status-text").textContent = "Reviewed";
   }
 
-  function showIntro() {
-    intro.hidden = false;
-    requestAnimationFrame(() => intro.classList.remove("is-dismissed"));
-    entered = false;
-    current = null;
-    document.querySelector(".topbar").hidden = true;
-    document.querySelector(".layout").hidden = true;
-    const sb = document.getElementById("scrubber");
-    if (sb) sb.hidden = true;
-    if (location.hash) setHash("");
+  atlas = createAtlas(document.getElementById("map"));
+  atlas.setStore(store);
+  atlas.setTooltipEl(document.getElementById("tip"));
+
+  try {
+    await atlas.ready;
+  } catch (err) {
+    loadingEl.hidden = true;
+    errorEl.hidden = false;
+    console.error(err);
+    return;
+  }
+  loadingEl.hidden = true;
+  document.getElementById("topbar").hidden = false;
+
+  // resize
+  if (window.ResizeObserver) {
+    let t;
+    new ResizeObserver(() => {
+      clearTimeout(t);
+      t = setTimeout(() => { atlas.resize(); }, 120);
+    }).observe(document.getElementById("map"));
   }
 
-  function activate(mode) {
-    if (current === mode) return;
-    if (current) {
-      modes[current].deactivate();
-      if (SCRUBBER_MODES.has(current)) scrubber.deactivate();
-    }
-    current = mode;
-    modes[mode].activate();
-    if (SCRUBBER_MODES.has(mode)) scrubber.activate();
-    document.querySelectorAll(".mode-tab[data-mode]").forEach((b) => {
-      const on = b.dataset.mode === mode;
-      b.classList.toggle("is-active", on);
-      b.setAttribute("aria-selected", on ? "true" : "false");
+  wireGlobal();
+  window.addEventListener("hashchange", route);
+  route();
+}
+
+// ---- context passed to the atlas ---------------------------------------------
+function atlasCtx() {
+  return {
+    selectedId: state.selectedId,
+    guidedId: state.guidedId,
+    guidedIndex: state.guidedIndex,
+    prevIndex: state.prevIndex,
+    theme: state.theme,
+    scrubYear: state.scrubYear,
+    onSelect: (id) => selectSurvivor(id),
+  };
+}
+
+// ---- rendering ---------------------------------------------------------------
+function render(rebuildOverlay = true) {
+  const v = state.view;
+  // nav active states
+  document.querySelectorAll(".nav-tab").forEach((b) =>
+    b.classList.toggle("on", b.dataset.view === v));
+  document.body.dataset.view = v;
+
+  atlas.render(v, atlasCtx());
+
+  if (rebuildOverlay) mountOverlay();
+}
+
+function mountOverlay() {
+  const host = document.getElementById("overlay");
+  const v = state.view;
+  if (v === "landing") host.innerHTML = ui.landing(store);
+  else if (v === "guided") { host.innerHTML = ui.guided(store, state); guidedMountedFor = state.guidedId; setupGuidedScroll(); }
+  else if (v === "explore") { host.innerHTML = ui.explore(store, state); afterExplore(); }
+  else if (v === "patterns") host.innerHTML = ui.patterns(store, state);
+  else if (v === "about") host.innerHTML = ui.about(store);
+  wireOverlay();
+}
+
+function afterExplore() {
+  if (state.selectedId) {
+    const miniEl = document.querySelector("[data-mini]");
+    if (miniEl) atlas.drawMini(miniEl, store.byId.get(state.selectedId));
+  }
+}
+
+// ---- actions -----------------------------------------------------------------
+function go(view) {
+  if (!VIEWS.includes(view)) view = "landing";
+  state.view = view;
+  if (view === "guided" && !state.guidedId) state.guidedId = (store.featured[0] || store.journeys[0]).id;
+  setHash(view === "landing" ? "" : `#/${view}`);
+  render();
+}
+
+function startGuided(id) {
+  state.guidedId = id;
+  state.guidedIndex = 0;
+  state.prevIndex = null;
+  state.view = "guided";
+  setHash(`#/guided`);
+  render(); // rebuilds narrative + resets scroll
+  const narr = document.querySelector("[data-narr]");
+  if (narr) narr.scrollTo({ top: 0, behavior: REDUCED_MOTION ? "auto" : "smooth" });
+}
+
+function selectSurvivor(id) {
+  state.selectedId = id;
+  if (state.view !== "explore") { state.view = "explore"; setHash(`#/survivor/${id}`); }
+  else setHash(`#/survivor/${id}`);
+  render();
+}
+
+function clearSel() {
+  state.selectedId = null;
+  setHash("#/explore");
+  render();
+}
+
+function toggleTheme(t) {
+  state.theme = t || null;
+  render();
+}
+
+function setScrub(year) {
+  state.scrubYear = year;
+  const yEl = document.querySelector("[data-year]");
+  if (yEl) yEl.textContent = year;
+  atlas.render("patterns", atlasCtx()); // move dots only; don't rebuild the slider
+}
+
+// ---- guided scroll observer --------------------------------------------------
+function setupGuidedScroll() {
+  teardownGuidedScroll();
+  const root = document.querySelector("[data-narr]");
+  if (!root) return;
+  scrollHandler = () => {
+    const secs = root.querySelectorAll("[data-chapter]");
+    if (!secs.length) return;
+    const rr = root.getBoundingClientRect();
+    const mid = rr.top + rr.height * 0.5;
+    let best = 0, bestD = Infinity;
+    secs.forEach((s) => {
+      const r = s.getBoundingClientRect();
+      const d = Math.abs(r.top + r.height * 0.5 - mid);
+      if (d < bestD) { bestD = d; best = parseInt(s.dataset.chapter, 10) || 0; }
     });
-    setTimeout(() => map.invalidateSize(), 50);
-  }
-
-  // ---- routing ---------------------------------------------------------------
-
-  function route() {
-    const hash = location.hash || "#/guided";
-    const [, kind, value] = hash.split("/");
-    revealShell();
-    if (kind === "survivor" && value) {
-      activate("explore");
-      modes.explore.selectSurvivor(decodeURIComponent(value), true);
-    } else if (kind === "place" && value) {
-      activate("explore");
-      modes.explore.selectPlace(decodeURIComponent(value), true);
-    } else if (MODES.includes(kind)) {
-      activate(kind);
-    } else {
-      activate("guided");
+    if (best !== state.guidedIndex) {
+      state.prevIndex = state.guidedIndex;
+      state.guidedIndex = best;
+      atlas.render("guided", atlasCtx());
+      secs.forEach((s) => s.classList.toggle("is-active", parseInt(s.dataset.chapter, 10) === best));
     }
-  }
-
-  window.addEventListener("hashchange", () => {
-    if (programmaticHash) { programmaticHash = false; return; }
-    if (!location.hash || location.hash.length <= 2) return;
-    route();
-  });
-
-  // Intro primary/secondary actions.
-  intro.querySelectorAll("[data-go]").forEach((b) =>
-    b.addEventListener("click", () => { setHash(`#/${b.dataset.go}`); route(); })
-  );
-
-  // Mode tabs.
-  document.querySelectorAll(".mode-tab[data-mode]").forEach((b) =>
-    b.addEventListener("click", () => { setHash(`#/${b.dataset.mode}`); route(); })
-  );
-
-  // Brand returns to the introduction.
-  document.getElementById("brand").addEventListener("click", showIntro);
-
-  setupAbout();
-
-  // ---- start: honour a deep link, else show the intro -------------------------
-  const deep = location.hash && location.hash.length > 2;
-  if (deep) route();
+  };
+  root.addEventListener("scroll", scrollHandler, { passive: true });
+  scrollHandler();
+}
+function teardownGuidedScroll() {
+  const root = document.querySelector("[data-narr]");
+  if (scrollHandler && root) root.removeEventListener("scroll", scrollHandler);
+  scrollHandler = null;
 }
 
-// ---- helpers -----------------------------------------------------------------
-
-function setupBanner(store) {
-  const banner = document.getElementById("notice-banner");
-  if (store.meta && store.meta.sample_data) {
-    banner.innerHTML =
-      "Demonstration build — every survivor shown is <strong>fictional, illustrative " +
-      "sample data</strong>, not real testimony. See the README.";
-    banner.hidden = false;
-  } else if (store.meta && store.meta.pending > 0) {
-    banner.innerHTML =
-      `Journeys are <strong>auto-extracted from public archive summaries</strong> and ` +
-      `<strong>pending verification</strong> — approximate pointers into the ` +
-      `<a href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">archive</a>, ` +
-      `not authoritative. <button class="link-btn" id="banner-about">Why?</button>`;
-    banner.hidden = false;
-    const b = document.getElementById("banner-about");
-    if (b) b.addEventListener("click", () => openAbout());
-  }
-}
-
-function openAbout() {
-  const m = document.getElementById("about");
-  m.hidden = false;
-  requestAnimationFrame(() => m.classList.add("is-open"));
-  document.getElementById("about-close").focus();
-}
-function closeAbout() {
-  const m = document.getElementById("about");
-  m.classList.remove("is-open");
-  setTimeout(() => { m.hidden = true; }, 250);
-}
-function setupAbout() {
-  document.getElementById("about-tab").addEventListener("click", openAbout);
-  document.getElementById("open-about").addEventListener("click", openAbout);
-  document.getElementById("about-close").addEventListener("click", closeAbout);
-  document.getElementById("about").addEventListener("click", (e) => {
-    if (e.target.id === "about") closeAbout();
-  });
+// ---- event wiring (delegation) ----------------------------------------------
+function wireGlobal() {
+  document.getElementById("topbar").addEventListener("click", onActivate);
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !document.getElementById("about").hidden) closeAbout();
+    if (e.key === "Escape") {
+      if (state.view === "about") go("explore");
+      else if (state.selectedId) clearSel();
+    }
   });
+}
+
+function wireOverlay() {
+  const host = document.getElementById("overlay");
+  host.onclick = onActivate;
+  const range = host.querySelector("[data-scrub]");
+  if (range) range.addEventListener("input", () => setScrub(parseInt(range.value, 10)));
+}
+
+function onActivate(e) {
+  const t = e.target.closest("[data-act],[data-view],[data-guided],[data-survivor],[data-theme]");
+  if (!t) return;
+  if (t.dataset.view) return go(t.dataset.view);
+  if (t.dataset.guided != null) return startGuided(t.dataset.guided);
+  if (t.dataset.survivor != null) return selectSurvivor(t.dataset.survivor);
+  if (t.dataset.theme != null) return toggleTheme(t.dataset.theme);
+  switch (t.dataset.act) {
+    case "follow": return startGuided((store.featured[0] || store.journeys[0]).id);
+    case "explore": return go("explore");
+    case "about": return go("about");
+    case "home": return go("landing");
+    case "clear": return clearSel();
+  }
+}
+
+// ---- routing -----------------------------------------------------------------
+let programmatic = false;
+function setHash(h) {
+  programmatic = true;
+  if (location.hash !== h) location.hash = h;
+  else programmatic = false;
+}
+function route() {
+  if (programmatic) { programmatic = false; return; }
+  const hash = location.hash || "";
+  const [, kind, value] = hash.split("/");
+  if (kind === "survivor" && value && store.byId.has(value)) {
+    state.selectedId = value; state.view = "explore"; render(); return;
+  }
+  if (kind === "place" && value) {
+    const found = store.journeys.find((j) => j.waypoints.some((w) => slug(w.canonical) === value));
+    state.view = "explore"; state.selectedId = found ? found.id : null; render(); return;
+  }
+  if (VIEWS.includes(kind)) { state.view = kind; render(); return; }
+  state.view = "landing"; render();
 }
 
 main();

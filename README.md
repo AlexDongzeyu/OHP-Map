@@ -95,10 +95,10 @@ WordPress (ohp.crestwood.on.ca)         ← source of truth, never written to
         ▼
 ┌───────────────────────────────────────────────┐
 │  Static front end (index.html + js/ + vendor/) │
-│  Leaflet + CARTO Positron + Scrollama          │
+│  D3 + TopoJSON vector atlas of Europe          │
 │  Guided / Explore / Patterns + time scrubber   │
 └───────────────────────────────────────────────┘
-        │  GitHub Actions  ─or─  Cloudflare Worker (cron + KV)
+        │  GitHub Actions (CI)  ─and─  Cloudflare Worker (deploy + cron + KV)
         ▼
    <iframe> on the OHP homepage  (see embed.html)
 ```
@@ -136,26 +136,31 @@ overlaps as **candidates**.
 
 ## The front end (`index.html`, `js/`, `css/`, `vendor/`)
 
-Vanilla ES modules, no build step. Libraries are **vendored and pinned** in `vendor/` (no
-fragile CDNs). One Leaflet map; each mode adds/removes its own layers.
+Vanilla ES modules, no bundler. Libraries are **vendored and pinned** in `vendor/` (no
+fragile CDNs). The map is a **custom D3 + TopoJSON vector atlas of Europe** drawn as a
+single full-bleed stage — paper-toned countries, curved journey arcs that draw
+themselves, a CSS-transform camera that pans and zooms cinematically, and an off-map
+"new life across the Atlantic" anchor. Each view is an overlay over that one persistent
+map.
 
 | File | Responsibility |
 |------|----------------|
-| `js/config.js` | The restrained palette, basemap, period-overlay, roles, reduced-motion flag |
-| `js/data.js` | Loads the three JSON artifacts; builds lookups + filter facets |
-| `js/mapcore.js` | Map + Positron basemap + layer control (incl. optional period place-names) + marker/line factories |
-| `js/guided.js` | Scrollytelling (Scrollama) with the self-drawing journey line (SnakeAnim) |
-| `js/explore.js` | Clustered dots, side panel, click-a-place index, filter bar, dignified portrait slot |
-| `js/patterns.js` | Flow lines, origin density, the candidate/verified connection layer |
-| `js/scrubber.js` | The 1933–1950 time scrubber; fuzzy positions shown soft |
-| `js/app.js` | Mode switching, hash deep links, the pending/sample notice banner |
+| `js/config.js` | The restrained palette, role vocabulary, time range, helpers |
+| `js/data.js` | Loads the three JSON artifacts; reshapes them into the journey model (initials, themes, hometown, per-waypoint year/uncertainty) |
+| `js/atlas.js` | The vector-map engine: projection, country rendering, camera, curved self-drawing arcs, off-map anchor, `pointAtYear` for the scrubber, mini-routes, tooltip |
+| `js/ui.js` | The overlay panels (landing, guided, explore, patterns, about) as class-based markup |
+| `js/app.js` | The state machine: view switching, the guided scroll observer, hash deep links, event delegation |
+| `tools/build_atlas.cjs` | Build step: trims the vendored world-atlas TopoJSON to a compact ~51 KB Europe GeoJSON (`data/atlas-europe.json`) |
 
-**Deep links:** `#/guided`, `#/explore`, `#/patterns`, `#/survivor/<id>`, `#/place/<slug>`.
+**Deep links:** `#/guided`, `#/explore`, `#/patterns`, `#/about`, `#/survivor/<id>`,
+`#/place/<slug>`.
 
-**Visual polish (doc 09 Part 3):** self-drawing SnakeAnim journey lines; an optional faint
-period place-names overlay (OpenHistoricalMap, off by default — accurate cartography, not a
-"war" look); marker clustering for 200+ dots; a serif for names/quotes; a faint map
-vignette; grayscale-to-colour portrait slot (rights-gated); slow non-looping motion.
+**Visual craft (docs 10–12):** a dignified landing that explains itself in five seconds
+(purpose, live scale, two clear actions); Spectral (serif) + Public Sans (sans),
+self-hosted; one ember accent over warm archival paper; self-drawing curved journey arcs;
+initials medallions; a side panel with an inline mini-route; the 1933–1950 time scrubber
+that softens uncertain dates to a glow; slow non-looping motion, `prefers-reduced-motion`
+honoured. All 221 journeys converge visibly in Patterns — what no alphabetical list shows.
 
 **Accessibility (doc 02 N1):** keyboard-navigable tabs, a focusable survivor list mirroring
 the map, ARIA labels, a skip link, AA-contrast palette, and a fully honoured
@@ -223,16 +228,19 @@ changes in WordPress.
 
 ```
 index.html  embed.html              static entry + the one-line embed
-css/  js/  vendor/  assets/          front end (vendored, pinned libs)
+css/         tokens.css + style.css  design tokens + component styles
+js/          config · data · atlas (D3 map) · ui (overlays) · app (state)
+vendor/      d3, topojson (build), atlas (source), fonts — pinned, self-hosted
 data/        survivors.geojson, place_index.json, connections.json, geocode_cache.json,
              gazetteer.json, schema/, golden/, review/, source/ (ohp_scraped + curated)
+             atlas-europe.json is generated at build time by tools/build_atlas.cjs
 pipeline/    the Python build pipeline (incl. scrape_ohp.py)
-worker/      Cloudflare Worker (scheduled sync + KV-served fetch)
-wrangler.toml
+worker/      Cloudflare Worker (static deploy + scheduled KV sync)
+wrangler.toml  ·  tools/assemble_site.cjs builds public/ (runs build_atlas first)
 tests/       pytest suite (run: python -m pytest)
-tools/       build_gazetteer.py + headless smoke/screenshot helpers
-docs/        the planning dossier (00–09)
-.github/     CI build + deploy workflow
+tools/       build_gazetteer.py, build_atlas.cjs, assemble_site.cjs, smoke/shots
+docs/        the planning dossier (00–12) + audit/evaluation/improvement-plan
+.github/     CI build + validate workflow
 ```
 
 ---
@@ -242,11 +250,11 @@ docs/        the planning dossier (00–09)
 | | Requirement | Where |
 |---|---|---|
 | F1–F3 | Ingest (scrape), extract, normalize + geocode | `pipeline/scrape_ohp,extract,gazetteer,geocode` |
-| F4–F6 | Dots, survivor panel, click-a-place | `js/explore.js`, `place_index.json` |
-| F7 | Filter bar | `js/explore.js` |
-| F8 | Guided scrollytelling | `js/guided.js` (Scrollama + SnakeAnim) |
-| F9 | Patterns: flows, density, connections | `js/patterns.js`, `connections.json` |
-| F10 | Time scrubber 1933–1950 | `js/scrubber.js` |
+| F4–F6 | Dots, survivor panel, click-a-place | `js/atlas.js`, `js/ui.js`, `place_index.json` |
+| F7 | Filter bar (theme chips) | `js/ui.js` (explore) |
+| F8 | Guided scrollytelling | `js/ui.js` + `js/app.js` scroll observer + `js/atlas.js` camera |
+| F9 | Patterns: all journeys + shared-place rings + connections | `js/atlas.js`, `connections.json` |
+| F10 | Time scrubber 1933–1950 | `js/atlas.js` `pointAtYear` + `js/ui.js` scrubber |
 | F11 | Deep links | `js/app.js` |
 | F12 | Automated rebuild | `.github/workflows/build.yml` + `worker/` |
 | N1–N6 | a11y, perf (clustering), mobile, reproducibility, maintainability, resilience | front end + committed cache + CI/Worker validation |
@@ -256,14 +264,15 @@ docs/        the planning dossier (00–09)
 
 ## Credits & licenses
 
-A student project. The **Guided** view adapts the idea of HandsOnDataViz
+A student project. The guided-storymap idea is indebted to HandsOnDataViz
 [*Leaflet Storymaps with Google Sheets*](https://github.com/HandsOnDataViz/leaflet-storymaps-with-google-sheets)
-by **Ilya Ilyankou & Jack Dougherty**; the **Explore / Patterns / scrubber** app and the
-ingest/extraction pipeline are custom. Built on **Leaflet** (BSD-2-Clause),
-**Leaflet.markercluster** (MIT), **Leaflet.Polyline.SnakeAnim** (Beerware), and
-**Scrollama** (MIT). Basemap © OpenStreetMap contributors © CARTO; optional period overlay
-© OpenHistoricalMap contributors. Testimony content belongs to the Crestwood OHP and the
-survivors and families — used here only as short excerpts linking back to the archive. See
-[`LICENSE`](LICENSE). Code in this repo is MIT.
+by **Ilya Ilyankou & Jack Dougherty**; the visual direction is informed by the Arolsen
+Archives' *Transnational Remembrance* map. The vector-atlas front end and the
+ingest/extraction pipeline are custom. Built with **D3** (ISC) and **TopoJSON**
+(build-time, ISC); basemap geometry from **Natural Earth** via
+[**world-atlas**](https://github.com/topojson/world-atlas) (public domain); type set in
+**Spectral** and **Public Sans** (SIL OFL). Testimony content belongs to the Crestwood OHP
+and the survivors and families — used here only as short excerpts linking back to the
+archive. See [`LICENSE`](LICENSE). Code in this repo is MIT.
 
 Made with restraint, in memory of those whose journeys these are.

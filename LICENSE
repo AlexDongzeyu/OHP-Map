@@ -23,14 +23,13 @@ SOFTWARE.
 ---
 
 Third-party components retain their own licenses (kept in /vendor):
-  - Leaflet — BSD-2-Clause
-  - Leaflet.markercluster — MIT
-  - Leaflet.Polyline.SnakeAnim — Beerware (notice retained in the source file)
-  - Scrollama — MIT
-Basemap tiles © OpenStreetMap contributors © CARTO, used under their terms.
-Optional period overlay © OpenHistoricalMap contributors.
+  - D3 (d3.min.js) — ISC
+  - TopoJSON client (build-time only) — ISC
+  - world-atlas / Natural Earth basemap geometry — public domain
+  - Spectral & Public Sans typefaces — SIL Open Font License 1.1
 Survivor testimony content belongs to the Crestwood Oral History Project and the
 survivors and their families; it is used here only as short excerpts that link back
 to the archive, pending permission, and is not republished in full.
-The guided-mode concept is adapted from HandsOnDataViz "Leaflet Storymaps with
-Google Sheets" (Ilya Ilyankou & Jack Dougherty); see the credits in README.md.
+The guided-storymap idea is indebted to HandsOnDataViz "Leaflet Storymaps with
+Google Sheets" (Ilya Ilyankou & Jack Dougherty); the visual direction is informed by
+the Arolsen Archives' Transnational Remembrance map. See the credits in README.md.

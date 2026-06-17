@@ -1,81 +1,21 @@
-/* Self-hosted fonts (doc 06: no fragile CDNs) + design tokens (doc 11 visual system).
-   Spectral — a humanist serif for names, quotes, headings (gravitas, humanity).
-   Inter   — a clean neutral sans for UI and labels. */
+/* Self-hosted fonts (doc 06: no fragile CDNs) — Spectral (serif) + Public Sans (sans),
+   matching the design reference. */
+@font-face { font-family:"Spectral"; font-weight:300; font-display:swap; src:url("../vendor/fonts/spectral-400.woff2") format("woff2"); }
+@font-face { font-family:"Spectral"; font-weight:400; font-display:swap; src:url("../vendor/fonts/spectral-400.woff2") format("woff2"); }
+@font-face { font-family:"Spectral"; font-weight:500; font-display:swap; src:url("../vendor/fonts/spectral-500.woff2") format("woff2"); }
+@font-face { font-family:"Spectral"; font-weight:600; font-display:swap; src:url("../vendor/fonts/spectral-600.woff2") format("woff2"); }
+@font-face { font-family:"Public Sans"; font-weight:300; font-display:swap; src:url("../vendor/fonts/public-sans-300.woff2") format("woff2"); }
+@font-face { font-family:"Public Sans"; font-weight:400; font-display:swap; src:url("../vendor/fonts/public-sans-400.woff2") format("woff2"); }
+@font-face { font-family:"Public Sans"; font-weight:500; font-display:swap; src:url("../vendor/fonts/public-sans-500.woff2") format("woff2"); }
+@font-face { font-family:"Public Sans"; font-weight:600; font-display:swap; src:url("../vendor/fonts/public-sans-600.woff2") format("woff2"); }
 
-@font-face {
-  font-family: "Spectral";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("../vendor/fonts/spectral-400.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Spectral";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("../vendor/fonts/spectral-500.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Spectral";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("../vendor/fonts/spectral-600.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Inter";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("../vendor/fonts/inter-400.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Inter";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("../vendor/fonts/inter-500.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Inter";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("../vendor/fonts/inter-600.woff2") format("woff2");
-}
-
-/* ── Design tokens ───────────────────────────────────────────────────────── */
 :root {
-  /* Colour — warm archival paper, near-black ink, one ember accent (doc 11). */
-  --paper: #f7f4ef;
-  --paper-2: #efeae1;
-  --paper-3: #e7e1d6;
-  --ink: #1a1a18;
-  --ink-soft: #4b4843;
-  --muted: #6f6a62;
-  --line: #ddd6c9;
-  --accent: #b4673a;        /* muted ember — journey lines + active state */
-  --accent-soft: #d9a884;
-  --slate: #5e7382;         /* the single quiet secondary tone */
-  --link: #5a6f7e;
-
-  /* Type */
-  --serif: "Spectral", Georgia, "Times New Roman", serif;
-  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-
-  /* Spacing scale (8px rhythm) */
-  --s1: 0.25rem; --s2: 0.5rem; --s3: 0.75rem; --s4: 1rem;
-  --s5: 1.5rem;  --s6: 2rem;   --s7: 3rem;    --s8: 4.5rem;
-
-  /* Motion */
-  --ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --dur: 320ms;
-
-  --panel-w: 380px;
-  --radius: 10px;
-
-  /* Compatibility aliases used across the existing CSS + JS palette. */
-  --journey: var(--accent);
-  --active: #8f4a24;
+  --paper:#F7F4EF; --paper-soft:#FBF9F5; --panel:#FBF9F5;
+  --ink:#1A1A18; --ink-soft:#3A352D; --muted:#5E574C; --faint:#908876;
+  --line:#E9E2D4; --line-soft:#EBE4D7; --rule:#E3DCCE;
+  --accent:#B45F2E; --accent-deep:#8F4A22; --accent-soft:#9A6A3F; --accent-wash:#FBF1E8;
+  --verified:#5E8A5E;
+  --serif:"Spectral", Georgia, "Times New Roman", serif;
+  --sans:"Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ease:cubic-bezier(.4,0,.2,1);
 }

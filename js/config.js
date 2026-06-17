@@ -1,62 +1,66 @@
-// Shared configuration: the restrained palette, basemap, and roles live here so the
-// rest of the app reads from one place (doc 01 "make it look like it belongs in a
-// museum"). No rainbow category colours — grayscale base, one accent for journeys,
-// one for the active/selected state.
-export const PALETTE = {
-  ink: "#1a1a18",
-  paper: "#f7f4ef",
-  muted: "#9a9388",      // resting survivor / waypoint dots (greyscale)
-  journey: "#b4673a",    // journey lines — the single ember accent
-  active: "#8f4a24",     // selected / active state (deeper ember, same hue)
-  flow: "#b4673a",
-  link: "#7f8a87",       // connection-layer threads (quiet grey-slate)
+// Shared configuration — the museum palette, role vocabulary, and small helpers.
+// One ember accent over warm archival paper; everything else greyscale (doc 08/11).
+
+export const C = {
+  paper: "#F7F4EF",
+  paperSoft: "#FBF9F5",
+  panel: "#FBF9F5",
+  ink: "#1A1A18",
+  inkSoft: "#3A352D",
+  muted: "#5E574C",
+  faint: "#908876",
+  line: "#E9E2D4",
+  lineSoft: "#EBE4D7",
+  rule: "#E3DCCE",
+  accent: "#B45F2E",       // the single ember accent — journeys + active state
+  accentDeep: "#8F4A22",
+  accentSoft: "#9A6A3F",
+  accentWash: "#FBF1E8",
+  land: "#E4DECF",         // basemap country fill
+  landStroke: "#D6CDBB",
+  ocean: "#EFEBE2",
+  dotIdle: "#C2BAA9",
+  anchorInk: "#3A352D",
+  verified: "#5E8A5E",
 };
 
-// CARTO Positron — desaturated, built to sit quietly under data (doc 01).
-export const BASEMAP = {
-  url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-  options: {
-    subdomains: "abcd",
-    maxZoom: 19,
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
-      'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-  },
-};
-
-// Optional, off-by-default period overlay. OpenHistoricalMap renders historical
-// place-names/borders as accurate cartography (not a stylised "war" look, per doc 08).
-// Shown faintly under the data and only when the visitor opts in via the layer control.
-export const HISTORICAL_OVERLAY = {
-  url: "https://www.openhistoricalmap.org/map-styles/main/main.json",
-  tiles: "https://tile.openhistoricalmap.org/{z}/{x}/{y}.png",
-  attribution:
-    '&copy; <a href="https://www.openhistoricalmap.org/">OpenHistoricalMap</a> contributors',
-  opacity: 0.45,
-};
-
-export const ROLE_LABELS = {
-  birthplace: "Birthplace",
+// My pipeline roles → the gentle display vocabulary used across the UI.
+export const ROLE_LABEL = {
+  birthplace: "Hometown",
   ghetto: "Ghetto",
   camp: "Camp",
   transit: "Transit",
   liberation: "Liberation",
-  resettlement: "Resettlement",
+  resettlement: "New life",
 };
 
-// Time window for the scrubber (doc 01 / F10). Kept in sync with the build metadata.
+// Places across the Atlantic are drawn as an off-map "new life" anchor, since the
+// map frame is Europe (matches the reference; honest — the actual place is still named).
+export const OVERSEAS = /canada|toronto|montreal|united states|u\.?s\.?a?\.?|new york|america/i;
+
 export const TIME = { min: 1933, max: 1950 };
 
 export const REDUCED_MOTION =
-  window.matchMedia &&
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function slug(text) {
   return String(text).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-export function country(canonical) {
-  // "Auschwitz (Oswiecim), Poland" -> "Poland"
-  const parts = String(canonical).split(",");
-  return parts[parts.length - 1].trim();
+export function initials(name) {
+  const parts = String(name).replace(/\(sample\)/i, "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "·";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+export function parseYear(token) {
+  if (token == null) return null;
+  const m = String(token).match(/(1[89]\d\d|20\d\d)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+export function esc(s) {
+  return String(s ?? "").replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
