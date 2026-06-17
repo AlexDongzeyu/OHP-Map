@@ -67,21 +67,21 @@ jobs:
       - name: Assemble the static site
         run: |
           mkdir -p _site
-          cp -r index.html css js vendor assets data _site/
+          cp -r index.html embed.html css js vendor assets data _site/
           touch _site/.nojekyll
-
-      - name: Configure GitHub Pages (auto-enables it on first run)
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
+  # Best-effort deploy. ONE-TIME SETUP by the repo owner: Settings → Pages →
+  # "Build and deployment" → Source: "GitHub Actions". Until that is set, this job
+  # fails softly (continue-on-error) so the build/validate signal above stays green.
+  # The site is also deployable via the Cloudflare Worker (see wrangler.toml / worker/).
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
