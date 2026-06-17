@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="A journey between two places">
+  <rect width="32" height="32" rx="6" fill="#f4f2ee"/>
+  <line x1="9" y1="22" x2="23" y2="10" stroke="#5e7a8c" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="9" cy="22" r="3.2" fill="#6f6a64"/>
+  <circle cx="23" cy="10" r="3.2" fill="#b07d52"/>
+</svg>

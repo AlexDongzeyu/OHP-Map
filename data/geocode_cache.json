@@ -1,0 +1,14 @@
+{
+  "_about": "Build-time geocode cache: canonical place name -> coordinates. Committed so rebuilds are reproducible and never re-hit a geocoder (doc 02 N4). Coordinates are approximate, town/site level. Edit by hand for any place the geocoder gets wrong.",
+  "Lviv, Ukraine": { "lat": 49.8397, "lng": 24.0297, "source": "manual", "precision": "city" },
+  "Janowska (Lviv), Ukraine": { "lat": 49.8500, "lng": 23.9800, "source": "manual", "precision": "site" },
+  "Bratislava, Slovakia": { "lat": 48.1486, "lng": 17.1077, "source": "manual", "precision": "city" },
+  "Theresienstadt (Terezin), Czechia": { "lat": 50.5108, "lng": 14.1508, "source": "manual", "precision": "site" },
+  "Auschwitz (Oswiecim), Poland": { "lat": 50.0270, "lng": 19.2030, "source": "manual", "precision": "site" },
+  "Krakow, Poland": { "lat": 50.0647, "lng": 19.9450, "source": "manual", "precision": "city" },
+  "Plaszow (Krakow), Poland": { "lat": 50.0330, "lng": 19.9610, "source": "manual", "precision": "site" },
+  "Wroclaw, Poland": { "lat": 51.1079, "lng": 17.0385, "source": "manual", "precision": "city" },
+  "Bergen-Belsen, Germany": { "lat": 52.7575, "lng": 9.9076, "source": "manual", "precision": "site" },
+  "Budapest, Hungary": { "lat": 47.4979, "lng": 19.0402, "source": "manual", "precision": "city" },
+  "Toronto, Canada": { "lat": 43.6532, "lng": -79.3832, "source": "manual", "precision": "city" }
+}

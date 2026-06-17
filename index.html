@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Crestwood OHP — Survivor Journeys</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <meta name="description" content="An interactive memorial map of Holocaust survivor
+    journeys from the Crestwood Oral History Project. A quiet, accessible way to follow
+    one life, explore many, and see where journeys crossed." />
+
+  <!-- Vendored, pinned libraries (doc 06: no fragile CDNs). -->
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+  <link rel="stylesheet" href="vendor/markercluster/MarkerCluster.css" />
+  <link rel="stylesheet" href="vendor/markercluster/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <a class="skip-link" href="#map">Skip to map</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <h1>Survivor Journeys</h1>
+      <p class="subtitle">Crestwood Oral History Project ·
+        <span id="survivor-count">0</span> journeys</p>
+    </div>
+    <nav class="modes" role="tablist" aria-label="View modes">
+      <button class="mode-tab" role="tab" data-mode="guided" aria-selected="false">Guided</button>
+      <button class="mode-tab" role="tab" data-mode="explore" aria-selected="false">Explore</button>
+      <button class="mode-tab" role="tab" data-mode="patterns" aria-selected="false">Patterns</button>
+    </nav>
+  </header>
+
+  <p id="sample-banner" class="sample-banner" hidden>
+    Demonstration build — every survivor shown is <strong>fictional, illustrative sample
+    data</strong>, not real testimony. See the README for why.
+  </p>
+
+  <main class="layout">
+    <aside id="panel" class="panel" aria-label="Details"></aside>
+    <div id="map" tabindex="-1" role="application" aria-label="Map of survivor journeys"></div>
+  </main>
+
+  <div id="scrubber" class="scrubber-bar" hidden aria-label="Time scrubber"></div>
+
+  <p id="status" class="status" hidden role="alert"></p>
+
+  <footer class="credits">
+    <p>
+      A student project that adapts the open-source
+      <a href="https://github.com/HandsOnDataViz/leaflet-storymaps-with-google-sheets"
+         target="_blank" rel="noopener">HandsOnDataViz Leaflet Storymaps</a> idea for the
+      guided view, and adds a custom Explore / Patterns / time-scrubber app.
+      Built on <a href="https://leafletjs.com/" target="_blank" rel="noopener">Leaflet</a>
+      (BSD-2-Clause) with <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>
+      basemaps. Source of truth: <a href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">ohp.crestwood.on.ca</a>.
+      Made with restraint, in memory of those whose journeys these are.
+    </p>
+  </footer>
+
+  <!-- Library globals load first; the app is an ES module (deferred), so it runs after. -->
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="vendor/markercluster/leaflet.markercluster.js"></script>
+  <script src="vendor/snakeanim/L.Polyline.SnakeAnim.js"></script>
+  <script src="vendor/scrollama/scrollama.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

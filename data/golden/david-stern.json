@@ -1,0 +1,12 @@
+{
+  "_about": "Golden extraction case. FICTIONAL sample text.",
+  "survivor_id": "david-stern",
+  "text": "Born in Pressburg in 1922. They deported us to Theresienstadt in 1942. In 1944 we were put on a transport to Auschwitz, and later marched to Bergen-Belsen, where the British liberated us in 1945. I settled in Toronto in 1949.",
+  "expected_canonical": [
+    "Bratislava, Slovakia",
+    "Theresienstadt (Terezin), Czechia",
+    "Auschwitz (Oswiecim), Poland",
+    "Bergen-Belsen, Germany",
+    "Toronto, Canada"
+  ]
+}

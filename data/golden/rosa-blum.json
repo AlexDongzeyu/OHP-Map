@@ -1,0 +1,11 @@
+{
+  "_about": "Golden extraction case (doc 02 section 7, doc 04). Hand-checked ground truth: given this raw testimony text, the extractor should find these canonical places, in this order, and nothing not present in the text. FICTIONAL sample text.",
+  "survivor_id": "rosa-blum",
+  "text": "I was born in Lemberg in 1925. In 1942 we were forced into the ghetto. From there they sent us to Janowska. In 1944 we arrived at Auschwitz, and we were liberated there in 1945. I came to Toronto in 1948.",
+  "expected_canonical": [
+    "Lviv, Ukraine",
+    "Janowska (Lviv), Ukraine",
+    "Auschwitz (Oswiecim), Poland",
+    "Toronto, Canada"
+  ]
+}

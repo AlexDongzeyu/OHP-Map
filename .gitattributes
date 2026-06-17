@@ -1,0 +1,4 @@
+# Normalize line endings to LF so the Linux CI checkout matches local.
+* text=auto eol=lf
+*.png binary
+*.svg text eol=lf

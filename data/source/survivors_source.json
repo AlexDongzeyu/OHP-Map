@@ -1,0 +1,115 @@
+{
+  "_about": "Hand-entered 'anchor survivor' source records (doc 02 Phase 1 / doc 05). These stand in for the human-reviewed, permission-cleared inputs the real pipeline would receive from WordPress + extraction + the review gate. The pipeline normalizes place names (gazetteer), geocodes (cache), validates, and emits survivors.geojson + indexes. ALL RECORDS BELOW ARE FICTIONAL, ILLUSTRATIVE SAMPLES — NOT REAL TESTIMONY — created only to exercise the system. Waypoints carry 'as_written' (the survivor's own spelling) and 'role'; 'canonical', 'lat', 'lng' are filled by the build.",
+  "is_sample": true,
+  "survivors": [
+    {
+      "survivor_id": "rosa-blum",
+      "name": "Rosa Blum (sample)",
+      "birth_year": 1925,
+      "bio_excerpt": "A fictional sample record. Born in Lemberg, Rosa survived the ghetto, the Janowska camp, and Auschwitz before resettling in Toronto.",
+      "archive_url": "https://ohp.crestwood.on.ca/sample/rosa-blum",
+      "media_url": null,
+      "portrait": null,
+      "portrait_rights": null,
+      "theme_tags": ["Auschwitz", "Forced Labour", "Liberation"],
+      "waypoints": [
+        { "as_written": "Lemberg", "role": "birthplace", "date": { "start": "1925", "end": "1925", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "I was born in Lemberg in 1925." },
+        { "as_written": "Lemberg", "role": "ghetto", "date": { "start": "1942", "end": "1943", "precision": "range" }, "confidence": 1.0, "verified": true, "source_quote": "We were forced into the ghetto." },
+        { "as_written": "Janowska", "role": "camp", "date": { "start": "1943", "end": "1943", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "From the ghetto they sent us to Janowska." },
+        { "as_written": "Auschwitz", "role": "camp", "date": { "start": "1944", "end": "1945", "precision": "range" }, "confidence": 1.0, "verified": true, "source_quote": "In 1944 we arrived at Auschwitz." },
+        { "as_written": "Auschwitz", "role": "liberation", "date": { "start": "1945-01", "end": "1945-01", "precision": "month" }, "confidence": 1.0, "verified": true, "source_quote": "We were liberated in January 1945." },
+        { "as_written": "Toronto", "role": "resettlement", "date": { "start": "1948", "end": "1948", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "I came to Toronto in 1948." }
+      ]
+    },
+    {
+      "survivor_id": "david-stern",
+      "name": "David Stern (sample)",
+      "birth_year": 1922,
+      "bio_excerpt": "A fictional sample record. From Pressburg, David passed through Theresienstadt and Auschwitz to Bergen-Belsen, where he was liberated.",
+      "archive_url": "https://ohp.crestwood.on.ca/sample/david-stern",
+      "media_url": null,
+      "portrait": null,
+      "portrait_rights": null,
+      "theme_tags": ["Theresienstadt", "Auschwitz", "Death March"],
+      "waypoints": [
+        { "as_written": "Pressburg", "role": "birthplace", "date": { "start": "1922", "end": "1922", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "Born in Pressburg, 1922." },
+        { "as_written": "Theresienstadt", "role": "transit", "date": { "start": "1942", "end": "1944", "precision": "range" }, "confidence": 1.0, "verified": true, "source_quote": "They deported us to Theresienstadt." },
+        { "as_written": "Auschwitz", "role": "camp", "date": { "start": "1944", "end": "1944", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "In 1944 we were put on a transport to Auschwitz." },
+        { "as_written": "Bergen-Belsen", "role": "camp", "date": { "start": "1944", "end": "1945", "precision": "range" }, "confidence": 1.0, "verified": true, "source_quote": "Later they marched us to Bergen-Belsen." },
+        { "as_written": "Bergen-Belsen", "role": "liberation", "date": { "start": "1945-04", "end": "1945-04", "precision": "month" }, "confidence": 1.0, "verified": true, "source_quote": "The British liberated us in April 1945." },
+        { "as_written": "Toronto", "role": "resettlement", "date": { "start": "1949", "end": "1949", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "I settled in Toronto in 1949." }
+      ]
+    },
+    {
+      "survivor_id": "hana-kovac",
+      "name": "Hana Kovac (sample)",
+      "birth_year": 1928,
+      "bio_excerpt": "A fictional sample record. A child from Pressburg held at Theresienstadt until liberation, later resettling in Toronto.",
+      "archive_url": "https://ohp.crestwood.on.ca/sample/hana-kovac",
+      "media_url": null,
+      "portrait": null,
+      "portrait_rights": null,
+      "theme_tags": ["Theresienstadt", "Hidden Child"],
+      "waypoints": [
+        { "as_written": "Pressburg", "role": "birthplace", "date": { "start": "1928", "end": "1928", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "I was born in Pressburg in 1928." },
+        { "as_written": "Theresienstadt", "role": "transit", "date": { "start": "1942", "end": "1945", "precision": "range" }, "confidence": 1.0, "verified": true, "source_quote": "We were sent to Theresienstadt." },
+        { "as_written": "Theresienstadt", "role": "liberation", "date": { "start": "1945-05", "end": "1945-05", "precision": "month" }, "confidence": 1.0, "verified": true, "source_quote": "The camp was liberated in May 1945." },
+        { "as_written": "Toronto", "role": "resettlement", "date": { "start": "1948", "end": "1948", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "I came to Toronto in 1948." }
+      ]
+    },
+    {
+      "survivor_id": "miriam-roth",
+      "name": "Miriam Roth (sample)",
+      "birth_year": 1930,
+      "bio_excerpt": "A fictional sample record. From Cracow, Miriam survived the ghetto, the Plaszow camp, and Auschwitz.",
+      "archive_url": "https://ohp.crestwood.on.ca/sample/miriam-roth",
+      "media_url": null,
+      "portrait": null,
+      "portrait_rights": null,
+      "theme_tags": ["Krakow Ghetto", "Plaszow", "Auschwitz"],
+      "waypoints": [
+        { "as_written": "Cracow", "role": "birthplace", "date": { "start": "1930", "end": "1930", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "I was born in Cracow." },
+        { "as_written": "Cracow", "role": "ghetto", "date": { "start": "1941", "end": "1943", "precision": "range" }, "confidence": 1.0, "verified": true, "source_quote": "We lived in the Cracow ghetto." },
+        { "as_written": "Plaszow", "role": "camp", "date": { "start": "1943", "end": "1944", "precision": "range" }, "confidence": 1.0, "verified": true, "source_quote": "Then we were taken to Plaszow." },
+        { "as_written": "Auschwitz", "role": "camp", "date": { "start": "1944", "end": "1945", "precision": "range" }, "confidence": 1.0, "verified": true, "source_quote": "From Plaszow they sent us to Auschwitz." },
+        { "as_written": "Auschwitz", "role": "liberation", "date": { "start": "1945-01", "end": "1945-01", "precision": "month" }, "confidence": 1.0, "verified": true, "source_quote": "We were freed in 1945." },
+        { "as_written": "Toronto", "role": "resettlement", "date": { "start": "1950", "end": "1950", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "I arrived in Toronto in 1950." }
+      ]
+    },
+    {
+      "survivor_id": "samuel-weiss",
+      "name": "Samuel Weiss (sample)",
+      "birth_year": 1924,
+      "bio_excerpt": "A fictional sample record. From Breslau, Samuel passed through Theresienstadt and Auschwitz before resettling in Toronto.",
+      "archive_url": "https://ohp.crestwood.on.ca/sample/samuel-weiss",
+      "media_url": null,
+      "portrait": null,
+      "portrait_rights": null,
+      "theme_tags": ["Theresienstadt", "Auschwitz"],
+      "waypoints": [
+        { "as_written": "Breslau", "role": "birthplace", "date": { "start": "1924", "end": "1924", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "Born in Breslau, 1924." },
+        { "as_written": "Theresienstadt", "role": "transit", "date": { "start": "1943", "end": "1944", "precision": "range" }, "confidence": 1.0, "verified": true, "source_quote": "We were deported to Theresienstadt in 1943." },
+        { "as_written": "Auschwitz", "role": "camp", "date": { "start": "1944", "end": "1945", "precision": "range" }, "confidence": 1.0, "verified": true, "source_quote": "In 1944 we were sent on to Auschwitz." },
+        { "as_written": "Auschwitz", "role": "liberation", "date": { "start": "1945-01", "end": "1945-01", "precision": "month" }, "confidence": 1.0, "verified": true, "source_quote": "Liberated early in 1945." },
+        { "as_written": "Toronto", "role": "resettlement", "date": { "start": "1947", "end": "1947", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "I came to Toronto in 1947." }
+      ]
+    },
+    {
+      "survivor_id": "eva-brandt",
+      "name": "Eva Brandt (sample)",
+      "birth_year": 1931,
+      "bio_excerpt": "A fictional sample record. Eva survived in Budapest through the ghetto period and was liberated in the city she was born in.",
+      "archive_url": "https://ohp.crestwood.on.ca/sample/eva-brandt",
+      "media_url": null,
+      "portrait": null,
+      "portrait_rights": null,
+      "theme_tags": ["Budapest", "Hidden Child"],
+      "waypoints": [
+        { "as_written": "Budapest", "role": "birthplace", "date": { "start": "1931", "end": "1931", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "I was born in Budapest in 1931." },
+        { "as_written": "Budapest", "role": "ghetto", "date": { "start": "1944", "end": "1945", "precision": "range" }, "confidence": 1.0, "verified": true, "source_quote": "We were confined to the Budapest ghetto." },
+        { "as_written": "Budapest", "role": "liberation", "date": { "start": "1945-01", "end": "1945-01", "precision": "month" }, "confidence": 1.0, "verified": true, "source_quote": "The city was liberated in January 1945." },
+        { "as_written": "Toronto", "role": "resettlement", "date": { "start": "1949", "end": "1949", "precision": "year" }, "confidence": 1.0, "verified": true, "source_quote": "I came to Toronto in 1949." }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Crestwood OHP survivors.geojson",
+  "description": "GeoJSON FeatureCollection, one Feature per survivor. The build FAILS if any record is invalid (doc 02 section 7). GeoJSON coordinate order is [lng, lat].",
+  "type": "object",
+  "required": ["type", "features"],
+  "properties": {
+    "type": { "const": "FeatureCollection" },
+    "metadata": { "type": "object" },
+    "features": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/survivor" }
+    }
+  },
+  "definitions": {
+    "survivor": {
+      "type": "object",
+      "required": ["type", "geometry", "properties"],
+      "properties": {
+        "type": { "const": "Feature" },
+        "geometry": {
+          "type": "object",
+          "required": ["type", "coordinates"],
+          "properties": {
+            "type": { "const": "Point" },
+            "coordinates": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": { "type": "number" }
+            }
+          }
+        },
+        "properties": {
+          "type": "object",
+          "required": ["survivor_id", "name", "archive_url", "theme_tags", "waypoints"],
+          "properties": {
+            "survivor_id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+            "name": { "type": "string", "minLength": 1 },
+            "is_sample": { "type": "boolean" },
+            "birth_year": { "type": ["integer", "null"] },
+            "bio_excerpt": { "type": "string" },
+            "archive_url": { "type": "string", "format": "uri" },
+            "media_url": { "type": ["string", "null"] },
+            "portrait": { "type": ["string", "null"] },
+            "portrait_rights": { "type": ["string", "null"] },
+            "theme_tags": { "type": "array", "items": { "type": "string" } },
+            "waypoints": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/definitions/waypoint" }
+            }
+          },
+          "additionalProperties": true
+        }
+      }
+    },
+    "waypoint": {
+      "type": "object",
+      "required": ["as_written", "canonical", "role", "lat", "lng", "date", "confidence", "verified"],
+      "properties": {
+        "as_written": { "type": "string", "minLength": 1 },
+        "canonical": { "type": "string", "minLength": 1 },
+        "role": {
+          "type": "string",
+          "enum": ["birthplace", "ghetto", "camp", "transit", "liberation", "resettlement"]
+        },
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lng": { "type": "number", "minimum": -180, "maximum": 180 },
+        "date": {
+          "type": "object",
+          "required": ["start", "end", "precision"],
+          "properties": {
+            "start": { "type": ["string", "null"] },
+            "end": { "type": ["string", "null"] },
+            "precision": { "type": "string", "enum": ["day", "month", "year", "range", "unknown"] }
+          }
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "verified": { "type": "boolean" },
+        "source_quote": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    }
+  }
+}

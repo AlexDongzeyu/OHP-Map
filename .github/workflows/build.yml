@@ -1,0 +1,82 @@
+name: build-and-deploy
+
+# Auto-update pipeline (doc 02 section 8 / F12):
+#  - push:               validate on every change to main
+#  - schedule:           weekly rebuild from the source of truth
+#  - workflow_dispatch:  a manual "rebuild now" button
+#  - repository_dispatch: fired by a WordPress publish webhook (type: ohp-publish)
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [ohp-publish]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pipeline dependencies
+        run: pip install -r pipeline/requirements.txt
+
+      - name: Run tests (the build cannot deploy bad data)
+        run: python -m pytest -q
+
+      - name: Rebuild dataset
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # With a real WordPress + key configured, switch the flags below to:
+          #   --source wordpress --extractor anthropic --allow-network
+          # The default offline build regenerates the committed sample dataset.
+          python -m pipeline.build
+
+      - name: Commit regenerated data (scheduled / dispatch runs only)
+        if: github.event_name != 'push'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/*.json data/survivors.geojson data/review || true
+          if ! git diff --cached --quiet; then
+            git commit -m "data: scheduled rebuild [skip ci]"
+            git push
+          else
+            echo "No data changes."
+          fi
+
+      - name: Assemble the static site
+        run: |
+          mkdir -p _site
+          cp -r index.html css js vendor assets data _site/
+          touch _site/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,12 @@
+# Build pipeline dependencies (doc 03 stack).
+# Core build + validation (offline sample build needs only these):
+jsonschema>=4.0
+# Ingest / geocode network paths (Plan A REST, scrape fallback, live geocoding):
+requests>=2.28
+beautifulsoup4>=4.11
+lxml>=4.9
+# LLM extraction (only needed when --extractor anthropic|openai). Uncomment as used:
+# anthropic>=0.39
+# openai>=1.0
+# Tests:
+pytest>=7.0

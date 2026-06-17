@@ -1,0 +1,46 @@
+{
+  "Auschwitz (Oswiecim), Poland": [
+    "david-stern",
+    "miriam-roth",
+    "rosa-blum",
+    "samuel-weiss"
+  ],
+  "Bergen-Belsen, Germany": [
+    "david-stern"
+  ],
+  "Bratislava, Slovakia": [
+    "david-stern",
+    "hana-kovac"
+  ],
+  "Budapest, Hungary": [
+    "eva-brandt"
+  ],
+  "Janowska (Lviv), Ukraine": [
+    "rosa-blum"
+  ],
+  "Krakow, Poland": [
+    "miriam-roth"
+  ],
+  "Lviv, Ukraine": [
+    "rosa-blum"
+  ],
+  "Plaszow (Krakow), Poland": [
+    "miriam-roth"
+  ],
+  "Theresienstadt (Terezin), Czechia": [
+    "david-stern",
+    "hana-kovac",
+    "samuel-weiss"
+  ],
+  "Toronto, Canada": [
+    "david-stern",
+    "eva-brandt",
+    "hana-kovac",
+    "miriam-roth",
+    "rosa-blum",
+    "samuel-weiss"
+  ],
+  "Wroclaw, Poland": [
+    "samuel-weiss"
+  ]
+}

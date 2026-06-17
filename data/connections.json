@@ -1,0 +1,74 @@
+[
+  {
+    "place": "Auschwitz (Oswiecim), Poland",
+    "survivorA": "david-stern",
+    "survivorB": "miriam-roth",
+    "overlap_window": "1944",
+    "note": "Both describe being at Auschwitz (Oswiecim), Poland around 1944.",
+    "verified": true
+  },
+  {
+    "place": "Auschwitz (Oswiecim), Poland",
+    "survivorA": "david-stern",
+    "survivorB": "rosa-blum",
+    "overlap_window": "1944",
+    "note": "Both describe being at Auschwitz (Oswiecim), Poland around 1944.",
+    "verified": true
+  },
+  {
+    "place": "Auschwitz (Oswiecim), Poland",
+    "survivorA": "david-stern",
+    "survivorB": "samuel-weiss",
+    "overlap_window": "1944",
+    "note": "Both describe being at Auschwitz (Oswiecim), Poland around 1944.",
+    "verified": true
+  },
+  {
+    "place": "Auschwitz (Oswiecim), Poland",
+    "survivorA": "miriam-roth",
+    "survivorB": "rosa-blum",
+    "overlap_window": "1944-1945",
+    "note": "Both describe being at Auschwitz (Oswiecim), Poland around 1944-1945.",
+    "verified": true
+  },
+  {
+    "place": "Auschwitz (Oswiecim), Poland",
+    "survivorA": "miriam-roth",
+    "survivorB": "samuel-weiss",
+    "overlap_window": "1944-1945",
+    "note": "Both describe being at Auschwitz (Oswiecim), Poland around 1944-1945.",
+    "verified": true
+  },
+  {
+    "place": "Auschwitz (Oswiecim), Poland",
+    "survivorA": "rosa-blum",
+    "survivorB": "samuel-weiss",
+    "overlap_window": "1944-1945",
+    "note": "Both describe being at Auschwitz (Oswiecim), Poland around 1944-1945.",
+    "verified": true
+  },
+  {
+    "place": "Theresienstadt (Terezin), Czechia",
+    "survivorA": "david-stern",
+    "survivorB": "hana-kovac",
+    "overlap_window": "1942-1944",
+    "note": "Both describe being at Theresienstadt (Terezin), Czechia around 1942-1944.",
+    "verified": true
+  },
+  {
+    "place": "Theresienstadt (Terezin), Czechia",
+    "survivorA": "david-stern",
+    "survivorB": "samuel-weiss",
+    "overlap_window": "1943-1944",
+    "note": "Both describe being at Theresienstadt (Terezin), Czechia around 1943-1944.",
+    "verified": true
+  },
+  {
+    "place": "Theresienstadt (Terezin), Czechia",
+    "survivorA": "hana-kovac",
+    "survivorB": "samuel-weiss",
+    "overlap_window": "1943-1944",
+    "note": "Both describe being at Theresienstadt (Terezin), Czechia around 1943-1944.",
+    "verified": true
+  }
+]

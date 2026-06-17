@@ -1,0 +1,17 @@
+# Node (only used for the headless smoke test tooling)
+node_modules/
+package-lock.json
+package.json
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# Smoke-test screenshots (regenerate with tools/shots.cjs)
+tools/*.png
+
+# OS
+.DS_Store
+Thumbs.db
