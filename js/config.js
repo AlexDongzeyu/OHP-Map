@@ -1,39 +1,38 @@
-// Shared configuration — the museum palette, role/group vocabulary, helpers.
-// One ember accent over warm archival paper; everything else greyscale (doc 08/11).
-// Group accents stay quiet and within the same warm family — equal treatment, not a
-// rainbow hierarchy (doc 13 §4.3).
+// Shared configuration: mineral neutrals, one deep-pine interface accent, and a quiet
+// alpine family for archive categories. Category color is data encoding, not hierarchy.
 
 export const C = {
-  paper: "#F7F4EF",
-  paperSoft: "#FBF9F5",
-  panel: "#FBF9F5",
-  ink: "#1A1A18",
-  inkSoft: "#3A352D",
-  muted: "#5E574C",
-  faint: "#908876",
-  line: "#E9E2D4",
-  lineSoft: "#EBE4D7",
-  rule: "#E3DCCE",
-  accent: "#B45F2E",       // the single ember accent — journeys + active state
-  accentDeep: "#8F4A22",
-  accentSoft: "#9A6A3F",
-  accentWash: "#FBF1E8",
-  land: "#E4DECF",         // basemap country fill
-  landStroke: "#D6CDBB",
-  ocean: "#EFEBE2",
-  dotIdle: "#C2BAA9",
-  anchorInk: "#3A352D",
-  verified: "#5E8A5E",
+  paper: "#F4F6F3",
+  paperSoft: "#FCFCFA",
+  panel: "#FCFCFA",
+  ink: "#171A18",
+  inkSoft: "#303633",
+  muted: "#5F6863",
+  faint: "#7B847F",
+  line: "#DCE2DD",
+  lineSoft: "#E8ECE8",
+  rule: "#CDD5CF",
+  accent: "#315C4E",
+  accentDeep: "#214237",
+  accentSoft: "#43685C",
+  accentWash: "#E9F0EC",
+  land: "#DDE3DE",
+  landStroke: "#C8D0CA",
+  ocean: "#F1F3F0",
+  densityNone: "#EDF0ED",
+  densityLow: "#E8ECE8",
+  dotIdle: "#AAB4AE",
+  anchorInk: "#303633",
+  verified: "#315C4E",
 };
 
-// Group order (how the OHP archive lists its categories) + a quiet accent per group.
-// Hues stay close and muted so no group reads as "more important" than another.
+// Group order follows the OHP archive. Muted, similarly weighted hues preserve equality.
 export const GROUPS = [
-  { name: "Holocaust Survivors", color: "#B45F2E" },
-  { name: "Military Veterans",   color: "#6E7B53" },
-  { name: "Community Members",   color: "#5E7382" },
-  { name: "First Nations",       color: "#9A6A3F" },
-  { name: "Crestwood Families",  color: "#7A6E86" },
+  { name: "Holocaust Survivors", color: "#315C4E" },
+  { name: "Military Veterans",   color: "#657C72" },
+  { name: "Community Members",   color: "#5F7580" },
+  { name: "First Nations",       color: "#7E806A" },
+  { name: "Crestwood Families",  color: "#756F7A" },
 ];
 export const GROUP_COLOR = Object.fromEntries(GROUPS.map((g) => [g.name, g.color]));
 

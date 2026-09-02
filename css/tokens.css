@@ -1,5 +1,4 @@
-/* Self-hosted fonts (doc 06: no fragile CDNs) — Spectral (serif) + Public Sans (sans),
-   matching the design reference. */
+/* Self-hosted fonts keep the memorial independent from third-party font services. */
 @font-face { font-family:"Spectral"; font-weight:300; font-display:swap; src:url("../vendor/fonts/spectral-400.woff2") format("woff2"); }
 @font-face { font-family:"Spectral"; font-weight:400; font-display:swap; src:url("../vendor/fonts/spectral-400.woff2") format("woff2"); }
 @font-face { font-family:"Spectral"; font-weight:500; font-display:swap; src:url("../vendor/fonts/spectral-500.woff2") format("woff2"); }
@@ -10,12 +9,42 @@
 @font-face { font-family:"Public Sans"; font-weight:600; font-display:swap; src:url("../vendor/fonts/public-sans-600.woff2") format("woff2"); }
 
 :root {
-  --paper:#F7F4EF; --paper-soft:#FBF9F5; --panel:#FBF9F5;
-  --ink:#1A1A18; --ink-soft:#3A352D; --muted:#5E574C; --faint:#908876;
-  --line:#E9E2D4; --line-soft:#EBE4D7; --rule:#E3DCCE;
-  --accent:#B45F2E; --accent-deep:#8F4A22; --accent-soft:#9A6A3F; --accent-wash:#FBF1E8;
-  --verified:#5E8A5E;
+  color-scheme:light;
+
+  --paper:#F4F6F3;
+  --paper-soft:#FCFCFA;
+  --panel:#FCFCFA;
+  --ink:#171A18;
+  --ink-soft:#303633;
+  --muted:#5F6863;
+  --faint:#7B847F;
+  --line:#DCE2DD;
+  --line-soft:#E8ECE8;
+  --rule:#CDD5CF;
+  --accent:#315C4E;
+  --accent-deep:#214237;
+  --accent-soft:#43685C;
+  --accent-wash:#E9F0EC;
+  --verified:#315C4E;
+
   --serif:"Spectral", Georgia, "Times New Roman", serif;
   --sans:"Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --ease:cubic-bezier(.4,0,.2,1);
+  --ease:cubic-bezier(.22,1,.36,1);
+
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --space-5:20px;
+  --space-6:24px;
+  --space-8:32px;
+  --space-12:48px;
+  --space-16:64px;
+  --space-24:96px;
+
+  --radius-control:8px;
+  --radius-sheet:16px;
+  --header-height:68px;
+  --shadow-sheet:0 24px 64px rgba(23,26,24,.09);
+  --shadow-float:0 10px 30px rgba(23,26,24,.07);
 }

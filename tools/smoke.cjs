@@ -30,6 +30,8 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (!/survivor/.test(lede) || !/veteran/.test(lede)) throw new Error("lede missing survivors/veterans");
     const scale = await page.$eval(".scale", (el) => el.textContent.replace(/\s+/g, " ").trim());
     if (!/\d+ people/.test(scale)) throw new Error("scale='" + scale + "'");
+    const icon = await page.$(".landing-card [data-act='follow'] .icon");
+    if (!icon) throw new Error("primary action is missing its SVG icon");
   });
   await check("follow -> guided narrative + flat map", async () => {
     await page.click(".landing-card [data-act='follow']");
@@ -79,6 +81,67 @@ const BASE = process.argv[2] || "http://localhost:8124";
   await check("about renders", async () => {
     await page.click(".nav-plain[data-view='about']");
     await page.waitForSelector(".about-wrap .about-grid", { timeout: 5000 });
+  });
+
+  await page.setViewport({ width: 390, height: 844 });
+  await page.goto(BASE + "/", { waitUntil: "networkidle2", timeout: 40000 });
+  await page.waitForSelector("#topbar:not([hidden])", { timeout: 15000 });
+  await wait(300);
+
+  await check("mobile landing uses a two-row shell without overflow", async () => {
+    const layout = await page.evaluate(() => {
+      const nav = document.querySelector(".nav").getBoundingClientRect();
+      const brand = document.querySelector(".brand").getBoundingClientRect();
+      return {
+        navTop: nav.top,
+        brandBottom: brand.bottom,
+        viewport: innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+      };
+    });
+    if (layout.navTop < layout.brandBottom - 2) throw new Error("navigation overlaps the brand row");
+    if (layout.scrollWidth > layout.viewport + 1) throw new Error(`horizontal overflow ${layout.scrollWidth}/${layout.viewport}`);
+  });
+  await check("mobile explore keeps the map visible", async () => {
+    await page.click(".nav-tab[data-view='explore']");
+    await page.waitForSelector(".rail .rail-card", { timeout: 5000 });
+    const box = await page.$eval(".rail", (el) => el.getBoundingClientRect().toJSON());
+    if (box.top < 220) throw new Error("explore sheet obscures too much of the map");
+    if (box.bottom > 845) throw new Error("explore sheet overflows the viewport");
+  });
+  await check("mobile person detail is a closable bottom sheet", async () => {
+    await page.$eval(".rail-card", (el) => el.click());
+    await page.waitForSelector(".panel .journey", { timeout: 5000 });
+    const detail = await page.$eval(".panel", (el) => {
+      const box = el.getBoundingClientRect();
+      return {
+        top: box.top,
+        bottom: box.bottom,
+        hasCloseIcon: Boolean(el.querySelector(".panel-close .icon-close")),
+      };
+    });
+    if (detail.top < 120) throw new Error("person sheet hides the entire map");
+    if (detail.bottom > 845) throw new Error("person sheet overflows the viewport");
+    if (!detail.hasCloseIcon) throw new Error("person sheet close action is not an SVG icon");
+  });
+  await check("mobile patterns separates insight and timeline", async () => {
+    await page.click(".nav-tab[data-view='patterns']");
+    await page.waitForSelector(".scrubber .range", { timeout: 5000 });
+    const layout = await page.evaluate(() => {
+      const intro = document.querySelector(".patterns-intro").getBoundingClientRect();
+      const scrubber = document.querySelector(".scrubber").getBoundingClientRect();
+      return {
+        introBottom: intro.bottom,
+        scrubberTop: scrubber.top,
+        scrubberLeft: scrubber.left,
+        scrubberRight: scrubber.right,
+        viewport: innerWidth,
+      };
+    });
+    if (layout.introBottom > layout.scrubberTop - 12) throw new Error("patterns panels overlap");
+    if (layout.scrubberLeft < 11 || layout.scrubberRight > layout.viewport - 11) {
+      throw new Error("timeline is not centered within the viewport");
+    }
   });
 
   await browser.close();

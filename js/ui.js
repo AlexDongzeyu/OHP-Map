@@ -6,6 +6,9 @@ import { C, GROUP_COLOR, esc } from "./config.js";
 
 const roman = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 const RAIL_PAGE = 140;
+const icon = (name) => `<svg class="icon icon-${name}" aria-hidden="true" focusable="false">
+  <use href="#icon-${name}"></use>
+</svg>`;
 
 // ---- LANDING ----------------------------------------------------------------
 export function landing(store) {
@@ -20,14 +23,14 @@ export function landing(store) {
         and war veterans. This map follows their journeys — from where their lives began,
         through the places history carried them, to the homes they built afterward.</p>
       <div class="cta-row">
-        <button class="btn btn-primary" data-act="follow">Begin with one story <span aria-hidden="true">→</span></button>
+        <button class="btn btn-primary" data-act="follow">Begin with one story ${icon("arrow-right")}</button>
         <button class="btn btn-ghost" data-act="explore">Explore the map</button>
       </div>
       <p class="scale">
-        <b>${store.journeys.length}</b> people <span class="sep">·</span>
-        <b>${store.placeCount}</b> places <span class="sep">·</span>
-        <b>${groups}</b> communities <span class="sep">·</span>
-        <b>${conflicts}</b> eras
+        <span class="metric"><b>${store.journeys.length}</b> <span>people</span></span>
+        <span class="metric"><b>${store.placeCount}</b> <span>places</span></span>
+        <span class="metric"><b>${groups}</b> <span>communities</span></span>
+        <span class="metric"><b>${conflicts}</b> <span>eras</span></span>
       </p>
       <p class="care">A school project, collected by students. Each path is drawn from a
         recorded testimony; where memory is uncertain, we leave it uncertain.
@@ -73,7 +76,7 @@ export function guided(store, state) {
         <h3 class="serif-lg">A life, continued.</h3>
         <p class="bio">This route is only the shape of a life, not the whole of it.</p>
         <a class="archive-link" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">
-          Read ${esc(first)}’s full archive entry <span aria-hidden="true">↗</span></a>
+          Read ${esc(first)}’s full archive entry ${icon("external-link")}</a>
       </section>
     </div>
   </div>`;
@@ -93,6 +96,7 @@ export function explore(store, state) {
   <div class="ov ov-explore ${state.selectedId ? "has-sel" : ""}">
     <aside class="rail scroll">
       <div class="rail-search">
+        ${icon("search")}
         <input id="search" class="search-input" type="search" placeholder="Search a name, place, or keyword…"
           value="${esc(state.query || "")}" autocomplete="off" aria-label="Search people">
       </div>
@@ -161,7 +165,7 @@ function panel(store, state) {
     : { c: C.accentSoft, t: "Auto-extracted — pending verification" };
   return `
     <aside class="panel scroll">
-      <button class="panel-close" data-act="clear" aria-label="Close">×</button>
+      <button class="panel-close" data-act="clear" aria-label="Close">${icon("close")}</button>
       <span class="medal medal-lg" style="--gc:${col}">${esc(j.initials)}</span>
       <div class="panel-group" style="--gc:${col}">${esc(j.group)}</div>
       <h2 class="serif-lg">${esc(j.name)}</h2>
@@ -174,8 +178,8 @@ function panel(store, state) {
       <ol class="journey">${steps}</ol>
       <div class="tags">${tags}</div>
       <div class="ver" style="color:${ver.c}"><span class="ver-dot" style="background:${ver.c}"></span>${ver.t}</div>
-      ${wp.length > 1 ? `<button class="guided-pill" data-guided="${esc(j.id)}">Follow this journey as a story →</button>` : ""}
-      <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Open full archive entry <span aria-hidden="true">↗</span></a>
+      ${wp.length > 1 ? `<button class="guided-pill" data-guided="${esc(j.id)}">Follow this journey as a story ${icon("arrow-right")}</button>` : ""}
+      <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Open full archive entry ${icon("external-link")}</a>
     </aside>`;
 }
 
@@ -222,11 +226,11 @@ export function patterns(store, state) {
         <span><span class="lg-line"></span>journey</span>
         <span><span class="lg-ring"></span>shared place</span>
       </div>
-    </div>
-    <div class="cross-note">
-      <div class="cross-title">Threads that cross</div>
-      <p>${crossLine}</p>
-      <p class="cross-sub">${store.connections.length} candidate overlaps — shown only where two records place people together in time, never as a claim they met.</p>
+      <div class="cross-note">
+        <div class="cross-title">Threads that cross</div>
+        <p>${crossLine}</p>
+        <p class="cross-sub">${store.connections.length} candidate overlaps — shown only where two records place people together in time, never as a claim they met.</p>
+      </div>
     </div>
     <div class="scrubber">
       <div class="scrub-head"><span class="micro-label">Year</span>
@@ -272,7 +276,7 @@ export function about(store) {
           <a href="https://github.com/AlexDongzeyu/OHP-Map" target="_blank" rel="noopener">AlexDongzeyu/OHP-Map</a>.</p></div>
       </div>
       <div class="cta-row">
-        <button class="btn btn-primary" data-act="follow">Begin with one story →</button>
+        <button class="btn btn-primary" data-act="follow">Begin with one story ${icon("arrow-right")}</button>
         <button class="btn btn-ghost" data-act="home">Back to the start</button>
       </div>
     </div>

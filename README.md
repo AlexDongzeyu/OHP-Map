@@ -156,12 +156,13 @@ map.
 **Deep links:** `#/guided`, `#/explore`, `#/patterns`, `#/about`, `#/survivor/<id>`,
 `#/place/<slug>`.
 
-**Visual craft (docs 10–12):** a dignified landing that explains itself in five seconds
-(purpose, live scale, two clear actions); Spectral (serif) + Public Sans (sans),
-self-hosted; one ember accent over warm archival paper; self-drawing curved journey arcs;
-initials medallions; a side panel with an inline mini-route; the 1933–1950 time scrubber
-that softens uncertain dates to a glow; slow non-looping motion, `prefers-reduced-motion`
-honoured. All 221 journeys converge visibly in Patterns — what no alphabetical list shows.
+**Visual craft (docs 10–12):** an "Alpine archive" direction pairs cool mineral neutrals,
+Public Sans interface typography, and restrained Spectral story moments with one deep-pine
+accent. A thin route trace links the landing, guided chapters, journey list, and timeline;
+consistent inline SVG icons replace text glyphs. On small screens, map-aware bottom sheets
+keep geography visible behind Guided, Explore, and person details. Motion remains slow and
+non-looping, `prefers-reduced-motion` is honoured, and all journeys converge visibly in
+Patterns — what no alphabetical list shows.
 
 **Accessibility (doc 02 N1):** keyboard-navigable tabs, a focusable survivor list mirroring
 the map, ARIA labels, a skip link, AA-contrast palette, and a fully honoured

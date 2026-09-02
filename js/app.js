@@ -86,7 +86,11 @@ function atlasCtx() {
 
 function render() {
   const v = state.view;
-  document.querySelectorAll(".nav-tab").forEach((b) => b.classList.toggle("on", b.dataset.view === v));
+  document.querySelectorAll(".nav-tab").forEach((b) => {
+    const on = b.dataset.view === v;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-selected", String(on));
+  });
   document.body.dataset.view = v;
   atlas.render(v, atlasCtx());
   mountOverlay();

@@ -173,10 +173,10 @@ export function createAtlas(container) {
     if (!countrySel) return;
     if (!on) { countrySel.attr("fill", C.land); return; }
     const max = Math.max(1, ...[...store.originCounts.values()]);
-    const ramp = d3.interpolateRgb("#EEE6D6", C.accentDeep);
+    const ramp = d3.interpolateRgb(C.densityLow, C.accentDeep);
     countrySel.attr("fill", (d) => {
       const n = store.originCounts.get(d.properties.name) || 0;
-      return n ? ramp(Math.pow(n / max, 0.5)) : "#EFEADF";
+      return n ? ramp(Math.pow(n / max, 0.5)) : C.densityNone;
     });
   }
 
@@ -190,10 +190,10 @@ export function createAtlas(container) {
     globeG.selectAll("*").remove();
     const c = gProjection.translate(), r = gProjection.scale();
     globeG.append("circle").attr("cx", c[0]).attr("cy", c[1]).attr("r", r)
-      .attr("fill", "#F2EDE3").attr("stroke", C.landStroke).attr("stroke-width", 1);
+      .attr("fill", C.ocean).attr("stroke", C.landStroke).attr("stroke-width", 1);
     const land = globeG.append("g");
     land.selectAll("path").data(world.features).enter().append("path")
-      .attr("fill", "#E3DCCC").attr("stroke", "#D6CDBB").attr("stroke-width", 0.4);
+      .attr("fill", C.land).attr("stroke", C.landStroke).attr("stroke-width", 0.4);
     const dots = globeG.append("g");
     globeG._land = land; globeG._dots = dots;
     redrawGlobe();
