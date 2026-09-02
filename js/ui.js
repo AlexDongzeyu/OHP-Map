@@ -17,8 +17,8 @@ export function landing(store) {
   return `
   <div class="ov ov-landing">
     <div class="landing-card">
-      <p class="kicker">Crestwood Oral History Project</p>
       <h1 class="display">Journeys</h1>
+      <p class="kicker">Crestwood Oral History Project</p>
       <p class="lede">For years, Crestwood students have interviewed Holocaust survivors
         and war veterans. This map follows their journeys — from where their lives began,
         through the places history carried them, to the homes they built afterward.</p>
@@ -64,8 +64,8 @@ export function guided(store, state) {
   <div class="ov ov-guided">
     <div class="narr scroll" data-narr>
       <div class="narr-head">
-        <p class="kicker">${esc(j.group)} · a guided journey</p>
         <h2 class="serif-xl">${esc(j.name)}</h2>
+        <p class="kicker">${esc(j.group)} · a guided journey</p>
         <p class="narr-meta">${j.born ? "Born " + j.born + " · " : ""}${esc(j.hometown)}</p>
         <p class="bio">${esc(j.bio)}</p>
         <div class="follow-another"><div class="micro-label">Follow another life</div>
@@ -200,8 +200,8 @@ export function patterns(store, state) {
     return `
     <div class="ov ov-patterns">
       <div class="patterns-intro">
-        <p class="kicker">Density · where people came from</p>
         <h2 class="serif-xl">The darker the country, the more lives began there</h2>
+        <p class="kicker">Density · where people came from</p>
         <p class="lede sm">A count of birthplaces across the whole archive.
           ${topOrigin ? `Most — <b>${topOrigin[1]}</b> — began in <span class="accent">${esc(topOrigin[0])}</span>.` : ""}</p>
         ${toggle}
@@ -217,8 +217,8 @@ export function patterns(store, state) {
   return `
   <div class="ov ov-patterns">
     <div class="patterns-intro">
-      <p class="kicker">Patterns · every journey at once</p>
       <h2 class="serif-xl">What no single story shows</h2>
+      <p class="kicker">Patterns · every journey at once</p>
       <p class="lede sm">Move the years to watch each life travel its route. Where dates are
         uncertain, the point softens to a glow.</p>
       ${toggle}
@@ -247,8 +247,8 @@ export function about(store) {
   return `
   <div class="ov ov-about scroll">
     <div class="about-wrap">
-      <p class="kicker">About this project</p>
       <h1 class="display sm">A map made of remembering.</h1>
+      <p class="kicker">About this project</p>
       <p class="lede">For years, students at Crestwood Preparatory College have sat with
         Holocaust survivors, war veterans, and community members and recorded their
         testimonies. This map traces those lives across geography — so a stranger can follow
