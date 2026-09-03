@@ -377,7 +377,10 @@ export function createAtlas(container) {
     clearOverlay();
     if (v === "guided") drawGuided(ctx);
     else if (v === "explore") { drawExplore(ctx); if (changed) api.resetCamera(); }
-    else if (v === "patterns") { drawPatterns(ctx); if (changed) api.resetCamera(); }
+    else if (v === "patterns") {
+      drawPatterns(ctx);
+      if (changed && !ctx.activePatternEvent) api.resetCamera();
+    }
   };
 
   function drawGuided(ctx) {
@@ -434,19 +437,18 @@ export function createAtlas(container) {
   function drawPatterns(ctx) {
     const g = overlayG;
     if (ctx.patternsLayer === "origins") { drawOrigins(g); return; }
+    const activeEvent = ctx.activePatternEvent;
+    const activeIds = new Set(activeEvent?.people.map((person) => person.id) || []);
     // One faint path per journey (keeps thousands of legs cheap).
     for (const j of store.journeys) {
       const wp = j.waypoints.filter((w) => w.px != null);
       if (wp.length < 2) continue;
       let d = `M${wp[0].px},${wp[0].py}`;
       for (let i = 1; i < wp.length; i++) d += `L${wp[i].px},${wp[i].py}`;
+      const active = activeIds.has(j.id);
       g.append("path").attr("d", d).attr("fill", "none").attr("stroke", GROUP_COLOR[j.group] || C.accent)
-        .attr("stroke-width", 0.8).attr("vector-effect", "non-scaling-stroke").attr("opacity", 0.08);
-    }
-    for (const sp of store.shared.slice(0, 8)) {
-      const w0 = findWaypoint(sp.canonical); if (!w0 || w0.px == null) continue;
-      dot(g, w0.px, w0.py, { r: 12, fill: "none", stroke: C.accent, sw: 1.1, op: 0.5 });
-      dot(g, w0.px, w0.py, { r: 7, fill: "none", stroke: C.accent, sw: 1, op: 0.3 });
+        .attr("stroke-width", active ? 1.3 : 0.55).attr("vector-effect", "non-scaling-stroke")
+        .attr("opacity", active ? 0.34 : 0.016);
     }
     const year = ctx.scrubYear;
     for (const j of store.journeys) {
@@ -455,6 +457,44 @@ export function createAtlas(container) {
       if (pos.glow) { dot(g, pos.x, pos.y, { r: 10, fill: col, op: 0.12 }); dot(g, pos.x, pos.y, { r: 6, fill: col, op: 0.24 }); }
       dot(g, pos.x, pos.y, { r: 3.2, fill: pos.before ? C.dotIdle : col, stroke: C.paperSoft, sw: 0.8, op: pos.before ? 0.55 : 1 });
     }
+
+    let activePoint = null;
+    for (const event of ctx.patternEvents || []) {
+      const point = projection([event.lng, event.lat]);
+      if (!point) continue;
+      const active = event.key === activeEvent?.key;
+      const radius = Math.min(16, 5 + Math.sqrt(event.count) * 2.2);
+      if (active) {
+        dot(g, point[0], point[1], { r: radius + 7, fill: C.accent, op: 0.1 });
+        dot(g, point[0], point[1], { r: radius + 3, fill: "none", stroke: C.accent, sw: 1.4, op: 0.65 });
+        activePoint = { x: point[0], y: point[1] };
+      }
+      const marker = dot(g, point[0], point[1], {
+        r: radius,
+        fill: active ? C.accentDeep : C.paperSoft,
+        stroke: C.accent,
+        sw: active ? 2 : 1.2,
+        op: active ? 0.96 : 0.82,
+      });
+      marker.attr("class", "pattern-event-marker")
+        .style("cursor", "pointer").attr("pointer-events", "all")
+        .on("click", () => ctx.onEvent && ctx.onEvent(event.key))
+        .on("mouseenter", (pointerEvent) => showTip(
+          pointerEvent,
+          `${event.year} · ${event.place} · ${event.count} ${event.count === 1 ? "testimony" : "testimonies"}`,
+        ))
+        .on("mousemove", (pointerEvent) => moveTip(pointerEvent))
+        .on("mouseleave", hideTip);
+      if (event.count > 1) {
+        label(g, point[0], point[1], `${event.count}`, {
+          fs: 10,
+          dy: -3,
+          weight: 600,
+          fill: active ? C.paperSoft : C.accentDeep,
+        });
+      }
+    }
+    if (activePoint) moveCamera(activePoint, size.w <= 820 ? 1.45 : 1.8);
   }
 
   function drawOrigins(g) {
@@ -471,11 +511,6 @@ export function createAtlas(container) {
       dot(g, cx, cy, { r: 3, fill: C.accentDeep, op: 0.85 });
       label(g, cx, cy, `${n}`, { fs: 12, dy: 10, weight: 600, fill: C.accentDeep });
     }
-  }
-
-  function findWaypoint(canonical) {
-    for (const j of store.journeys) for (const w of j.waypoints) if (w.canonical === canonical) return w;
-    return null;
   }
 
   // ---- mini route (side panel) ----------------------------------------------

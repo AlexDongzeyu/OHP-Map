@@ -7,6 +7,14 @@ import { ROLE_LABEL, GROUPS, parseYear, initials, slug, TIME } from "./config.js
 
 const BASE = "data";
 const COUNTRY_ALIAS = { Czechoslovakia: "Czechia", Galicia: "Poland" };
+const EVENT_ROLE_ORDER = {
+  camp: 0,
+  ghetto: 1,
+  liberation: 2,
+  transit: 3,
+  resettlement: 4,
+  birthplace: 5,
+};
 
 async function getJSON(name) {
   const res = await fetch(`${BASE}/${name}`, { cache: "no-cache" });
@@ -95,6 +103,12 @@ export async function loadData() {
   const journeys = geojson.features.map((f) => toJourney(f.properties));
   journeys.sort((a, b) => a.surname.localeCompare(b.surname) || a.name.localeCompare(b.name));
   const byId = new Map(journeys.map((j) => [j.id, j]));
+  const events = buildEvents(journeys);
+  const eventsByYear = new Map();
+  for (const event of events) {
+    if (!eventsByYear.has(event.year)) eventsByYear.set(event.year, []);
+    eventsByYear.get(event.year).push(event);
+  }
 
   // Counts per archive category (in canonical order) + per conflict.
   const order = (geojson.metadata && geojson.metadata.group_order) || GROUPS.map((g) => g.name);
@@ -130,6 +144,9 @@ export async function loadData() {
     meta,
     journeys,
     byId,
+    events,
+    eventsByYear,
+    eventYears: [...eventsByYear.keys()].sort((a, b) => a - b),
     groups,
     conflicts: [...conflicts.entries()].sort((a, b) => b[1] - a[1]),
     placeIndex,
@@ -141,6 +158,52 @@ export async function loadData() {
     defaultGuidedId: richDefault ? richDefault.id : (journeys[0] && journeys[0].id),
     time: { min: meta.time_min || TIME.min, max: meta.time_max || TIME.max },
   };
+}
+
+function buildEvents(journeys) {
+  const grouped = new Map();
+  for (const journey of journeys) {
+    for (const waypoint of journey.waypoints) {
+      if (!waypoint.year || !waypoint.canonical) continue;
+      if (waypoint.year < TIME.min || waypoint.year > TIME.max) continue;
+      const key = `${waypoint.year}|${waypoint.roleKey}|${waypoint.canonical}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          year: waypoint.year,
+          place: waypoint.canonical,
+          role: waypoint.role,
+          roleKey: waypoint.roleKey,
+          lat: waypoint.lat,
+          lng: waypoint.lng,
+          approximate: 0,
+          people: [],
+          groups: new Set(),
+        });
+      }
+      const event = grouped.get(key);
+      if (!event.people.some((person) => person.id === journey.id)) {
+        event.people.push({
+          id: journey.id,
+          name: journey.name,
+          portrait: journey.portrait,
+          portraitRights: journey.portraitRights,
+        });
+      }
+      if (waypoint.approx) event.approximate++;
+      event.groups.add(journey.group);
+    }
+  }
+  return [...grouped.values()].map((event) => ({
+    ...event,
+    count: event.people.length,
+    groups: [...event.groups],
+  })).sort((a, b) => (
+    a.year - b.year ||
+    (EVENT_ROLE_ORDER[a.roleKey] ?? 6) - (EVENT_ROLE_ORDER[b.roleKey] ?? 6) ||
+    b.count - a.count ||
+    a.place.localeCompare(b.place)
+  ));
 }
 
 function sharedPlaces(journeys) {

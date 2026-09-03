@@ -141,12 +141,26 @@ const BASE = process.argv[2] || "http://localhost:8124";
     const after = await page.$eval("#map .camera", (g) => g.getAttribute("transform") || "");
     if (before === after) throw new Error("zoom did not change camera transform");
   });
-  await check("patterns + scrubber + density toggle", async () => {
+  await check("patterns: historical events + timeline + density", async () => {
     await page.click(".nav-tab[data-view='patterns']");
     await page.waitForSelector(".scrubber .range", { timeout: 5000 });
+    await page.waitForSelector(".event-card", { timeout: 5000 });
+    await page.waitForSelector(".pattern-event-marker", { timeout: 5000 });
     await page.$eval(".scrubber .range", (el) => { el.value = "1944"; el.dispatchEvent(new Event("input", { bubbles: true })); });
     const yr = await page.$eval(".scrub-year", (el) => el.textContent);
     if (yr !== "1944") throw new Error("year=" + yr);
+    const eventState = await page.evaluate(() => ({
+      cards: document.querySelectorAll(".event-card").length,
+      active: document.querySelectorAll(".event-card.on").length,
+      markers: document.querySelectorAll(".pattern-event-marker").length,
+    }));
+    if (!eventState.cards || eventState.active !== 1 || eventState.markers < eventState.cards) {
+      throw new Error("historical event browser is not synchronized");
+    }
+    const beforeYear = Number(yr);
+    await page.click("[data-act='next-year']");
+    const nextYear = await page.$eval(".scrub-year", (el) => Number(el.textContent));
+    if (nextYear <= beforeYear) throw new Error("next event year did not advance");
     await page.click(".seg[data-layer='origins']");
     await page.waitForSelector(".origin-list li", { timeout: 5000 });
   });

@@ -163,14 +163,15 @@ Public Sans interface typography, and restrained Spectral story moments with one
 accent. The interface relies on spacing and type rather than decorative rules, and
 consistent inline SVG icons replace text glyphs. On small screens, map-aware bottom sheets
 keep geography visible behind Guided, Explore, and person details. Motion remains slow and
-non-looping, `prefers-reduced-motion` is honoured, and all journeys converge visibly in
-Patterns — what no alphabetical list shows.
+non-blocking; reduced-motion environments receive immediate content and gentler ambient
+speeds. Patterns opens at 1944 as a testimony-grounded history explorer: year navigation,
+event cards, portraits, testimony counts, map markers, and focused journeys stay synchronized.
 
 The landing includes six full-viewport portrait belts moving at distinct speeds behind the
 content and rotating globe. Every tile independently changes every 4.8–8 seconds without
 blocking interaction; the globe cycles through five real journeys at a time with moving
 traveler marks, so routes remain legible. All ambient motion pauses when hidden and stays
-static for reduced-motion visitors. The mosaic includes only rights-cleared, face-validated
+slower for reduced-motion visitors. The mosaic includes only rights-cleared, face-validated
 OHP portraits; pages without a usable gallery image remain available elsewhere with their
 initials fallback but never enter the landing wall.
 

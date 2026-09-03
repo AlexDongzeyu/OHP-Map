@@ -133,6 +133,14 @@ export function animateChapter(section) {
   });
 }
 
+export function animatePatternEvent() {
+  if (!canAnimate()) return;
+  reveal(".event-card, .event-empty", { autoAlpha: 0, x: -8 }, {
+    duration: .38,
+    stagger: .025,
+  });
+}
+
 function startMosaic() {
   stopMosaic();
   if (!canAnimate()) {

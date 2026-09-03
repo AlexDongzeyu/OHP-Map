@@ -250,7 +250,6 @@ function profileMedal(journey, color, large = false) {
 // ---- PATTERNS ---------------------------------------------------------------
 export function patterns(store, state) {
   const layer = state.patternsLayer || "journeys";
-  const top = store.shared[0];
   const topOrigin = [...store.originCounts.entries()].sort((a, b) => b[1] - a[1])[0];
   const toggle = `
     <div class="layer-toggle" role="tablist" aria-label="Pattern layer">
@@ -275,34 +274,60 @@ export function patterns(store, state) {
     </div>`;
   }
 
-  const crossLine = top
-    ? `${top.count} people describe being at <span class="accent">${esc(top.canonical.split(" (")[0])}</span>. The ringed places mark where separate lives passed through the same ground.`
-    : `The ringed places mark where separate lives passed through the same ground.`;
   return `
   <div class="ov ov-patterns">
-    <div class="patterns-intro">
-      <h2 class="serif-xl">What no single story shows</h2>
-      <p class="kicker">Patterns · every journey at once</p>
-      <p class="lede sm">Move the years to watch each life travel its route. Where dates are
-        uncertain, the point softens to a glow.</p>
+    <div class="patterns-intro historical-patterns">
+      <h2 class="serif-xl">History through testimony</h2>
+      <p class="kicker">Patterns · time, place, and memory</p>
+      <p class="lede sm">Move through the archive year by year. Every event below is grounded
+        in a dated place named by one or more people.</p>
       ${toggle}
-      <div class="legend">
-        <span><span class="lg-line"></span>journey</span>
-        <span><span class="lg-ring"></span>shared place</span>
-      </div>
-      <div class="cross-note">
-        <div class="cross-title">Threads that cross</div>
-        <p>${crossLine}</p>
-        <p class="cross-sub">${store.connections.length} candidate overlaps — shown only where two records place people together in time, never as a claim they met.</p>
-      </div>
+      <div class="pattern-events" data-pattern-events>${patternsEvents(store, state)}</div>
     </div>
     <div class="scrubber">
-      <div class="scrub-head"><span class="micro-label">Year</span>
+      <div class="scrub-head"><span class="micro-label">Archive timeline</span>
         <span class="scrub-year" data-year>${state.scrubYear}</span></div>
       <input class="range" type="range" min="${store.time.min}" max="${store.time.max}" step="1" value="${state.scrubYear}" data-scrub aria-label="Year, ${store.time.min} to ${store.time.max}">
       <div class="scrub-ticks"><span>${store.time.min}</span><span>1939</span><span>1945</span><span>${store.time.max}</span></div>
     </div>
   </div>`;
+}
+
+export function patternsEvents(store, state) {
+  const events = store.eventsByYear.get(state.scrubYear) || [];
+  const activeKey = state.patternEventKey || events[0]?.key;
+  const yearIndex = store.eventYears.indexOf(state.scrubYear);
+  const previousDisabled = yearIndex <= 0 ? " disabled" : "";
+  const nextDisabled = yearIndex < 0 || yearIndex >= store.eventYears.length - 1 ? " disabled" : "";
+  const cards = events.slice(0, 6).map((event) => {
+    const portraits = event.people.filter((person) => person.portrait).slice(0, 4)
+      .map((person) => `<img src="${esc(person.portrait)}" alt="" loading="lazy" decoding="async">`).join("");
+    const names = event.people.slice(0, 3).map((person) => person.name).join(", ");
+    const more = event.people.length > 3 ? ` +${event.people.length - 3}` : "";
+    return `<button class="event-card ${event.key === activeKey ? "on" : ""}" data-event="${esc(event.key)}">
+      <span class="event-card-top"><span class="event-role">${esc(event.role)}</span>
+        <span class="event-count">${event.count} ${event.count === 1 ? "testimony" : "testimonies"}</span></span>
+      <span class="event-place">${esc(event.place)}</span>
+      <span class="event-people">
+        <span class="event-portraits">${portraits}</span>
+        <span class="event-names">${esc(names)}${more}</span>
+      </span>
+    </button>`;
+  }).join("");
+  const empty = `<p class="event-empty">No dated place is recorded for this year.</p>`;
+  return `
+    <div class="event-year-nav">
+      <button class="event-step prev" data-act="prev-year" aria-label="Previous year with archive events"${previousDisabled}>
+        ${icon("arrow-right")}
+      </button>
+      <div><span class="micro-label">Selected year</span><strong data-year>${state.scrubYear}</strong></div>
+      <button class="event-step" data-act="next-year" aria-label="Next year with archive events"${nextDisabled}>
+        ${icon("arrow-right")}
+      </button>
+    </div>
+    <div class="event-list scroll">${cards || empty}</div>
+    <p class="event-footnote">${events.length} ${events.length === 1 ? "place event" : "place events"} in the archive
+      ${events.some((event) => event.approximate) ? " · includes approximate dates" : ""}</p>`;
 }
 
 // ---- ABOUT ------------------------------------------------------------------
