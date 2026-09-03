@@ -204,6 +204,7 @@ def build(group: str | None, limit: int | None, workers: int, force: bool) -> di
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     entries: dict[str, dict] = {}
     failures: list[dict] = []
+    missing: list[dict] = []
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(_build_one, record, force): record for record in records}
         for index, future in enumerate(as_completed(futures), 1):
@@ -212,6 +213,14 @@ def build(group: str | None, limit: int | None, workers: int, force: bool) -> di
                 result = future.result()
                 if result:
                     entries[result["survivor_id"]] = result
+                else:
+                    missing.append({
+                        "survivor_id": record["survivor_id"],
+                        "name": record.get("name", ""),
+                        "group": record.get("group", ""),
+                        "archive_url": record.get("archive_url", ""),
+                        "reason": "no-gallery-image",
+                    })
             except (requests.RequestException, OSError, ValueError) as error:
                 failures.append({
                     "survivor_id": record["survivor_id"],
@@ -232,6 +241,10 @@ def build(group: str | None, limit: int | None, workers: int, force: bool) -> di
         "records_considered": len(records),
         "portraits_built": len(entries),
         "failures": failures,
+        "missing_profiles": sorted(
+            missing,
+            key=lambda record: record["survivor_id"],
+        ),
         "portraits": [entries[key] for key in sorted(entries)],
     }
     if not group and not limit:

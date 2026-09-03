@@ -11079,5 +11079,322 @@
       "selection_score": 42.0,
       "faces_detected": 1
     }
+  ],
+  "missing_profiles": [
+    {
+      "survivor_id": "azarov-vladimir",
+      "name": "Vladimir Azarov",
+      "group": "Community Members",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/azarov-vladimir/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "bradley-tom",
+      "name": "Tom Bradley",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/bradley-tom/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "bronia-becker",
+      "name": "Bronia Becker",
+      "group": "Holocaust Survivors",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/bronia-becker/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "cameron-gord",
+      "name": "Gord Cameron",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/cameron-gord/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "chang-shiying",
+      "name": "Shiying Chang",
+      "group": "Community Members",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/chang-shiying/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "clarke-george-elliott",
+      "name": "George Elliott Clarke",
+      "group": "Community Members",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/clarke-george-elliott/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "colhoun-jack",
+      "name": "Jack Colhoun",
+      "group": "Community Members",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/colhoun-jack/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "corbett-raymond",
+      "name": "Raymond Corbett",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/corbett-raymond/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "daniel-carmi",
+      "name": "Carmi Daniel",
+      "group": "Community Members",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/daniel-carmi/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "deverell-rita",
+      "name": "Rita Deverell",
+      "group": "Community Members",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/deverell-rita/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "eichler-george",
+      "name": "George Eichler",
+      "group": "Crestwood Families",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/eichler-george/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "elliott-elaine",
+      "name": "Elaine Elliott",
+      "group": "Crestwood Families",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/elliott-elaine/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "fowler-jim-2",
+      "name": "Jim Fowler",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/fowler-jim-2/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "foyle-gerry",
+      "name": "Gerry Foyle",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/foyle-gerry/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "george-brady",
+      "name": "George Brady",
+      "group": "Holocaust Survivors",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/george-brady/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "gerquest-peter",
+      "name": "Peter Gerquest",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/gerquest-peter/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "gerrard-gerry",
+      "name": "Gerry Gerrard",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/gerrard-gerry/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "gould-dennis-and-raybell",
+      "name": "Dennis and Raybell Gould",
+      "group": "Community Members",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/gould-dennis-and-raybell/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "javasky-ruth",
+      "name": "Ruth Javasky",
+      "group": "Holocaust Survivors",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/javasky-ruth/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "johns-everett",
+      "name": "Everett Johns",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/johns-everett/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "joyce-kossman",
+      "name": "Joyce Kossman",
+      "group": "Crestwood Families",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/joyce-kossman/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "kingsley-craig",
+      "name": "Craig Kingsley",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/kingsley-craig/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "kutas-george",
+      "name": "George Kutas",
+      "group": "Crestwood Families",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/kutas-george/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "lewis-chris",
+      "name": "Chris Lewis",
+      "group": "Community Members",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/lewis-chris/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "li-chun-san",
+      "name": "Chun San Li",
+      "group": "Crestwood Families",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/li-chun-san/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "lummiss-william",
+      "name": "William Lummiss",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/lummiss-william/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "macinnis-lyman",
+      "name": "Lyman MacInnis",
+      "group": "Crestwood Families",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/macinnis-lyman/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "mcgill-kathryn",
+      "name": "Kathryn McGill",
+      "group": "Community Members",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/mcgill-kathryn/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "mohammed-tahir",
+      "name": "Tahir Mohammed",
+      "group": "Community Members",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/mohammed-tahir/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "morgan-don",
+      "name": "Don Morgan",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/morgan-don/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "mutabazi-eugene-et-rosalie-uwimabera",
+      "name": "Eugene et Rosalie Uwimabera Mutabazi",
+      "group": "Community Members",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/mutabazi-eugene-et-rosalie-uwimabera/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "pasternak-susan",
+      "name": "Susan Pasternak",
+      "group": "Holocaust Survivors",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/pasternak-susan/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "patil-raj",
+      "name": "Raj Patil",
+      "group": "Community Members",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/patil-raj/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "procto-george",
+      "name": "George Procto",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/procto-george/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "remembrance-day",
+      "name": "Remembrance Day",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/remembrance-day/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "smith-mike",
+      "name": "Mike Smith",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/smith-mike/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "stachevich-ron",
+      "name": "Ron Stachevich",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/stachevich-ron/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "steiman-esther",
+      "name": "Esther Steiman",
+      "group": "Crestwood Families",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/steiman-esther/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "stewart-william-2",
+      "name": "William Stewart",
+      "group": "Crestwood Families",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/stewart-william-2/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "tuns-adrien",
+      "name": "Adrien Tuns",
+      "group": "Crestwood Families",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/tuns-adrien/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "vermes-sophie",
+      "name": "Sophie Vermes",
+      "group": "Crestwood Families",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/vermes-sophie/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "wagar-karl",
+      "name": "Karl Wagar",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/wagar-karl/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "weiss-arthur",
+      "name": "Arthur Weiss",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/weiss-arthur/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "world-war-two-compilation",
+      "name": "World War Two Compilation",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/world-war-two-compilation/",
+      "reason": "no-gallery-image"
+    },
+    {
+      "survivor_id": "zuber-pieter",
+      "name": "Pieter Zuber",
+      "group": "Military Veterans",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/zuber-pieter/",
+      "reason": "no-gallery-image"
+    }
   ]
 }

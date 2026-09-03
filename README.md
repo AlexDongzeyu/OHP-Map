@@ -177,6 +177,8 @@ and granted reuse permission on 2026-09-02. `data/portraits/manifest.json` recor
 permission, the exact OHP source URL, selected profile, and generated asset path for every
 portrait. Rebuild with `pip install -r tools/portrait_requirements.txt`,
 `python tools/build_portraits.py`, then `python -m pipeline.build`.
+Profiles whose live OHP pages contain no uploaded image are listed individually under
+`missing_profiles` and retain initials rather than receiving an unrelated photograph.
 
 **Accessibility (doc 02 N1):** keyboard-navigable tabs, a focusable survivor list mirroring
 the map, ARIA labels, a skip link, AA-contrast palette, and a fully honoured

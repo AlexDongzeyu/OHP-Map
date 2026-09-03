@@ -18,6 +18,14 @@ def test_portrait_manifest_records_permission_and_sources():
     assert manifest["portraits_built"] >= 900
     assert "permission granted" in manifest["permission_basis"].lower()
     assert not manifest["failures"]
+    assert (
+        manifest["portraits_built"] + len(manifest["missing_profiles"])
+        == manifest["records_considered"]
+    )
+    assert all(
+        record["reason"] == "no-gallery-image"
+        for record in manifest["missing_profiles"]
+    )
     assert all(
         entry["source_url"].startswith(
             "https://ohp.crestwood.on.ca/wp-content/uploads/"
