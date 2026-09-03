@@ -168,7 +168,7 @@ Patterns — what no alphabetical list shows.
 
 The landing includes six full-viewport portrait belts moving at distinct speeds behind the
 content and rotating globe. Every tile independently changes every 4.8–8 seconds without
-blocking interaction; the globe cycles through seven real journeys at a time with moving
+blocking interaction; the globe cycles through five real journeys at a time with moving
 traveler marks, so routes remain legible. All ambient motion pauses when hidden and stays
 static for reduced-motion visitors. The mosaic includes only rights-cleared, face-validated
 OHP portraits; pages without a usable gallery image remain available elsewhere with their
