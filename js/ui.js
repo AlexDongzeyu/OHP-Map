@@ -91,9 +91,6 @@ function clearedPortrait(journey) {
 export function guided(store, state) {
   const j = store.byId.get(state.guidedId) || store.journeys[0];
   const first = j.name.split(" ")[0];
-  const others = store.journeys.filter((s) => s.id !== j.id && s.waypoints.length >= 3).slice(0, 6);
-  const chips = [j, ...others].map((s) =>
-    `<button class="chip ${s.id === j.id ? "on" : ""}" data-guided="${esc(s.id)}">${esc(shortName(s))}</button>`).join("");
   const wp = j.waypoints;
   const chapters = wp.map((w, i) => `
     <section class="chapter" data-chapter="${i}">
@@ -111,8 +108,6 @@ export function guided(store, state) {
         <p class="kicker">${esc(j.group)} · a guided journey</p>
         <p class="narr-meta">${j.born ? "Born " + j.born + " · " : ""}${esc(j.hometown)}</p>
         <p class="bio">${esc(j.bio)}</p>
-        <div class="follow-another"><div class="micro-label">Follow another life</div>
-          <div class="chips">${chips}</div></div>
       </div>
       ${chapters}
       <section class="chapter closing">

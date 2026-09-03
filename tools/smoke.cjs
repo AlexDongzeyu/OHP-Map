@@ -56,6 +56,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
   await check("follow -> guided narrative + flat map", async () => {
     await page.click(".landing-card [data-act='follow']");
     await page.waitForSelector(".narr .chapter", { timeout: 5000 });
+    if (await page.$(".follow-another")) throw new Error("Guided chooser should not render");
     const flatPaths = await page.$$eval("#map .camera path", (e) => e.length);
     if (flatPaths < 20) throw new Error("flat map not drawn (" + flatPaths + ")");
   });
