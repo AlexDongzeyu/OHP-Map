@@ -112,14 +112,19 @@ export function guided(store, state) {
   const j = store.byId.get(state.guidedId) || store.journeys[0];
   const first = j.name.split(" ")[0];
   const wp = j.waypoints;
-  const chapters = wp.map((w, i) => `
+  const chapters = wp.map((w, i) => {
+    const context = store.warForJourney(j, w.year);
+    const showContext = context && !["birthplace", "resettlement"].includes(w.roleKey);
+    return `
     <section class="chapter" data-chapter="${i}">
       <div class="ch-head"><span class="ch-num">${roman[i] || i + 1}</span>
         <span class="ch-role">${esc(w.role)}</span></div>
       <h3 class="ch-title">${esc(w.canonical)}</h3>
       <div class="ch-sub">${esc(metaLine(w))}</div>
+      ${showContext ? `<div class="chapter-war"><i></i><span>War context</span>${esc(context.phase)}</div>` : ""}
       ${w.quote ? `<blockquote>“${esc(trimQuote(w.quote))}”</blockquote>` : ""}
-    </section>`).join("");
+    </section>`;
+  }).join("");
   return `
   <div class="ov ov-guided">
     <div class="narr scroll" data-narr>
@@ -127,6 +132,7 @@ export function guided(store, state) {
         <h2 class="serif-xl">${esc(j.name)}</h2>
         <p class="kicker">${esc(j.group)} · a guided journey</p>
         <p class="narr-meta">${j.born ? "Born " + j.born + " · " : ""}${esc(j.hometown)}</p>
+        ${serviceContext(store, j)}
         <p class="bio">${esc(j.bio)}</p>
       </div>
       ${chapters}
@@ -227,6 +233,7 @@ function panel(store, state) {
       <h2 class="serif-lg">${esc(j.name)}</h2>
       <div class="panel-meta">${j.born ? "Born " + j.born + " · " : ""}${esc(j.hometown)}</div>
       <p class="panel-intro">${esc(j.intro)}</p>
+      ${serviceContext(store, j)}
       <p class="bio">${esc(j.bio)}</p>
       ${wp.length > 1 ? `<svg class="mini" viewBox="0 0 340 150" data-mini></svg>
       <div class="mini-cap">Their route, as named in the archive.</div>` : ""}
@@ -253,7 +260,7 @@ export function patterns(store, state) {
   const topOrigin = [...store.originCounts.entries()].sort((a, b) => b[1] - a[1])[0];
   const toggle = `
     <div class="layer-toggle" role="tablist" aria-label="Pattern layer">
-      <button class="seg ${layer === "journeys" ? "on" : ""}" data-layer="journeys">Journeys &amp; years</button>
+      <button class="seg ${layer === "journeys" ? "on" : ""}" data-layer="journeys">War &amp; journeys</button>
       <button class="seg ${layer === "origins" ? "on" : ""}" data-layer="origins">Where people came from</button>
     </div>`;
 
@@ -277,15 +284,15 @@ export function patterns(store, state) {
   return `
   <div class="ov ov-patterns">
     <div class="patterns-intro historical-patterns">
-      <h2 class="serif-xl">History through testimony</h2>
-      <p class="kicker">Patterns · time, place, and memory</p>
-      <p class="lede sm">Move through the archive year by year. Every event below is grounded
-        in a dated place named by one or more people.</p>
+      <h2 class="serif-xl">War &amp; testimony</h2>
+      <p class="kicker">Patterns · conflict, time, and place</p>
+      <p class="lede sm">Move year by year. Country shading shows who was fighting while
+        testimony routes remain visible above the historical context.</p>
       ${toggle}
       <div class="pattern-events" data-pattern-events>${patternsEvents(store, state)}</div>
     </div>
     <div class="scrubber">
-      <div class="scrub-head"><span class="micro-label">Archive timeline</span>
+      <div class="scrub-head"><span class="micro-label">Historical timeline</span>
         <span class="scrub-year" data-year>${state.scrubYear}</span></div>
       <input class="range" type="range" min="${store.time.min}" max="${store.time.max}" step="1" value="${state.scrubYear}" data-scrub aria-label="Year, ${store.time.min} to ${store.time.max}">
       <div class="scrub-ticks"><span>${store.time.min}</span><span>1939</span><span>1945</span><span>${store.time.max}</span></div>
@@ -296,9 +303,8 @@ export function patterns(store, state) {
 export function patternsEvents(store, state) {
   const events = store.eventsByYear.get(state.scrubYear) || [];
   const activeKey = state.patternEventKey || events[0]?.key;
-  const yearIndex = store.eventYears.indexOf(state.scrubYear);
-  const previousDisabled = yearIndex <= 0 ? " disabled" : "";
-  const nextDisabled = yearIndex < 0 || yearIndex >= store.eventYears.length - 1 ? " disabled" : "";
+  const previousDisabled = state.scrubYear <= store.time.min ? " disabled" : "";
+  const nextDisabled = state.scrubYear >= store.time.max ? " disabled" : "";
   const cards = events.slice(0, 6).map((event) => {
     const portraits = event.people.filter((person) => person.portrait).slice(0, 4)
       .map((person) => `<img src="${esc(person.portrait)}" alt="" loading="lazy" decoding="async">`).join("");
@@ -316,15 +322,7 @@ export function patternsEvents(store, state) {
   }).join("");
   const empty = `<p class="event-empty">No dated place is recorded for this year.</p>`;
   return `
-    <div class="event-year-nav">
-      <button class="event-step prev" data-act="prev-year" aria-label="Previous year with archive events"${previousDisabled}>
-        ${icon("arrow-right")}
-      </button>
-      <div><span class="micro-label">Selected year</span><strong data-year>${state.scrubYear}</strong></div>
-      <button class="event-step" data-act="next-year" aria-label="Next year with archive events"${nextDisabled}>
-        ${icon("arrow-right")}
-      </button>
-    </div>
+    ${warBrief(store, state.scrubYear, previousDisabled, nextDisabled)}
     <div class="event-list scroll">${cards || empty}</div>
     <p class="event-footnote">${events.length} ${events.length === 1 ? "place event" : "place events"} in the archive
       ${events.some((event) => event.approximate) ? " · includes approximate dates" : ""}</p>`;
@@ -360,7 +358,9 @@ export function about(store) {
           entry; “same place, same time” links are shown only as candidates.</p></div>
         <div><h2>Credits</h2><p>Testimonies: the Crestwood Oral History Project
           (<a href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">ohp.crestwood.on.ca</a>).
-          Basemap geometry: Natural Earth via world-atlas. Built with restraint, in memory of
+          Historical belligerents: Correlates of War Project, Inter-State War Data v4.0.
+          Basemap geometry: Natural Earth via world-atlas; present-day outlines are retained
+          for orientation and do not claim to reconstruct every historical border. Built in memory of
           those who told their stories so that others would know. Source:
           <a href="https://github.com/AlexDongzeyu/OHP-Map" target="_blank" rel="noopener">AlexDongzeyu/OHP-Map</a>.</p></div>
       </div>
@@ -392,6 +392,50 @@ function metaLine(w) {
   const written = w.asWritten && w.asWritten.toLowerCase() !== (w.canonical || "").toLowerCase()
     ? `  ·  remembered as “${esc(w.asWritten)}”` : "";
   return `${yr}${written}`;
+}
+function serviceContext(store, journey) {
+  const context = store.warForJourney(journey);
+  if (!context) return "";
+  return `<div class="service-context">
+    <span class="micro-label">Conflict shown behind this route</span>
+    <strong>${esc(journey.serviceConflict)}</strong>
+    <span>${esc(context.coalition_label)} <b>against</b> ${esc(context.opposition_label)}</span>
+  </div>`;
+}
+function warBrief(store, year, previousDisabled, nextDisabled) {
+  const context = store.warAt(year);
+  if (!context) return "";
+  const veterans = context.archive_conflict
+    ? store.journeys.filter((journey) => (
+      journey.group === "Military Veterans" &&
+      journey.conflicts.includes(context.archive_conflict)
+    )).length
+    : 0;
+  const legend = context.coalition_label ? `
+    <div class="war-legend" aria-label="Historical alignment legend">
+      <span><i class="coalition"></i>${esc(context.coalition_label)}</span>
+      <span><i class="opposition"></i>${esc(context.opposition_label)}</span>
+      ${context.occupied.length ? '<span><i class="occupied"></i>Occupied / contested</span>' : ""}
+      ${veterans ? `<span><i class="route"></i>${veterans} archive veterans</span>` : ""}
+    </div>` : "";
+  return `<section class="war-brief" data-war-context>
+    <div class="war-brief-top">
+      <span class="micro-label">${esc(context.conflict)}</span>
+      <span class="war-stepper">
+        <button class="event-step prev" data-act="prev-year" aria-label="Previous year"${previousDisabled}>
+          ${icon("arrow-right")}
+        </button>
+        <b data-year>${year}</b>
+        <button class="event-step" data-act="next-year" aria-label="Next year"${nextDisabled}>
+          ${icon("arrow-right")}
+        </button>
+      </span>
+    </div>
+    <strong>${esc(context.phase)}</strong>
+    <p>${esc(context.summary)}</p>
+    ${legend}
+    <small>Historical alignment on present-day outlines · COW v4.0</small>
+  </section>`;
 }
 function trimQuote(q) {
   const s = String(q).trim().replace(/\s+/g, " ");

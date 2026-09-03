@@ -5,9 +5,8 @@ An interactive memorial map of the whole **Crestwood Oral History Project**
 community members, and others** whom Crestwood students have interviewed. It turns
 hundreds of testimonies that are stored alphabetically — and so hide their own patterns —
 into one living map: a **Guided** scrollytelling story, a free **Explore** map (search,
-filter by community, click anyone), and a **Patterns** view with all journeys at once,
-a **time scrubber**, and a **density** layer ("the darker the country, the more lives
-began there").
+filter by community, click anyone), and a **Patterns** view with a year-driven historical
+war alignment layer, testimony journeys, and birthplace density.
 
 **Live data:** the map is populated with **real people across the archive's six
 categories**, scraped from the public OHP listings and auto-extracted from each public
@@ -165,7 +164,8 @@ consistent inline SVG icons replace text glyphs. On small screens, map-aware bot
 keep geography visible behind Guided, Explore, and person details. Motion remains slow and
 non-blocking; reduced-motion environments receive immediate content and gentler ambient
 speeds. Patterns opens at 1944 as a testimony-grounded history explorer: year navigation,
-event cards, portraits, testimony counts, map markers, and focused journeys stay synchronized.
+belligerent and occupation context, veteran service traces, event cards, portraits, testimony
+counts, and map markers stay synchronized.
 
 The landing includes six full-viewport portrait belts moving at distinct speeds behind the
 content and rotating globe. Every tile independently changes every 4.8–8 seconds without
@@ -196,6 +196,9 @@ geometry at the hometown (coordinate order **`[lng, lat]`**). Each waypoint keep
 **as-written** name and the **canonical** one. Properties also carry `review_status`
 (`pending`/`reviewed`) and `featured`. Also emitted: `place_index.json`
 (`canonical place → [survivor_id]`) and `connections.json` (each with a `verified` flag).
+`war_context.json` supplies the sourced 1914–1955 belligerent, occupation, and phase
+context used by Patterns and veteran routes; modern Natural Earth outlines remain visible
+for orientation rather than claiming exact historical borders.
 `geocode_cache.json` + `data/source/ohp_scraped.json` are committed so rebuilds are
 reproducible and offline. Validated against `data/schema/survivors.schema.json`.
 
@@ -290,7 +293,10 @@ by **Ilya Ilyankou & Jack Dougherty**; the visual direction is informed by the A
 Archives' *Transnational Remembrance* map. The vector-atlas front end and the
 ingest/extraction pipeline are custom. Built with **D3** (ISC) and **TopoJSON**
 (build-time, ISC); basemap geometry from **Natural Earth** via
-[**world-atlas**](https://github.com/topojson/world-atlas) (public domain); type set in
+[**world-atlas**](https://github.com/topojson/world-atlas) (public domain); historical
+belligerent participation and entry/exit years derive from the
+[**Correlates of War Project Inter-State War Data v4.0**](https://correlatesofwar.org/data-sets/cow-war/);
+type set in
 **Spectral** and **Public Sans** (SIL OFL). Testimony content belongs to the Crestwood OHP
 and the survivors and families — used here only as short excerpts linking back to the
 archive. See [`LICENSE`](LICENSE). Code in this repo is MIT.

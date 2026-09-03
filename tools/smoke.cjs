@@ -194,11 +194,20 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (!/of \d+ shown/.test(cnt)) throw new Error("count='" + cnt + "'");
   });
   await check("select a person shows panel", async () => {
-    await page.$eval("#search", (el) => { el.value = ""; el.dispatchEvent(new Event("input", { bubbles: true })); });
+    await page.$eval("#search", (el) => { el.value = "Norman Baker"; el.dispatchEvent(new Event("input", { bubbles: true })); });
     await wait(250);
     await page.click(".rail .rail-card");
     await page.waitForSelector(".panel .journey", { timeout: 5000 });
     await page.waitForSelector(".panel .panel-group", { timeout: 3000 });
+    await page.waitForSelector(".panel .service-context", { timeout: 3000 });
+    const serviceMap = await page.evaluate(() => ({
+      context: document.querySelector(".service-context strong")?.textContent,
+      coalition: document.querySelectorAll("#map [data-war-side='coalition']").length,
+      opposition: document.querySelectorAll("#map [data-war-side='opposition']").length,
+    }));
+    if (serviceMap.context !== "Second World War" || !serviceMap.coalition || !serviceMap.opposition) {
+      throw new Error(`veteran service context is incomplete ${JSON.stringify(serviceMap)}`);
+    }
   });
   await check("free zoom changes camera transform", async () => {
     await page.click(".panel-close").catch(() => {});
@@ -215,6 +224,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
     await page.waitForSelector(".scrubber .range", { timeout: 5000 });
     await page.waitForSelector(".event-card", { timeout: 5000 });
     await page.waitForSelector(".pattern-event-marker", { timeout: 5000 });
+    await page.waitForSelector("[data-war-context]", { timeout: 5000 });
     await page.$eval(".scrubber .range", (el) => { el.value = "1944"; el.dispatchEvent(new Event("input", { bubbles: true })); });
     const yr = await page.$eval(".scrub-year", (el) => el.textContent);
     if (yr !== "1944") throw new Error("year=" + yr);
@@ -222,20 +232,44 @@ const BASE = process.argv[2] || "http://localhost:8124";
       cards: document.querySelectorAll(".event-card").length,
       active: document.querySelectorAll(".event-card.on").length,
       markers: document.querySelectorAll(".pattern-event-marker").length,
+      phase: document.querySelector(".war-brief > strong")?.textContent,
+      canada: document.querySelector("[data-country='Canada']")?.getAttribute("data-war-side"),
+      germany: document.querySelector("[data-country='Germany']")?.getAttribute("data-war-side"),
+      netherlands: document.querySelector("[data-country='Netherlands']")?.getAttribute("data-war-side"),
+      veteranRoutes: document.querySelectorAll(".war-veteran-route").length,
     }));
     if (!eventState.cards || eventState.active !== 1 || eventState.markers < eventState.cards) {
       throw new Error("historical event browser is not synchronized");
     }
+    if (eventState.phase !== "Liberation from west and east" ||
+        eventState.canada !== "coalition" ||
+        eventState.germany !== "opposition" ||
+        eventState.netherlands !== "occupied" ||
+        !eventState.veteranRoutes) {
+      throw new Error(`historical war layer is incomplete ${JSON.stringify(eventState)}`);
+    }
     const beforeYear = Number(yr);
     await page.click("[data-act='next-year']");
     const nextYear = await page.$eval(".scrub-year", (el) => Number(el.textContent));
-    if (nextYear <= beforeYear) throw new Error("next event year did not advance");
+    if (nextYear !== beforeYear + 1) throw new Error("timeline did not advance exactly one year");
     await page.click(".seg[data-layer='origins']");
     await page.waitForSelector(".origin-list li", { timeout: 5000 });
   });
   await check("about renders", async () => {
     await page.click(".nav-plain[data-view='about']");
     await page.waitForSelector(".about-wrap .about-grid", { timeout: 5000 });
+  });
+  await check("patterns deep link opens at the 1944 war map", async () => {
+    await page.goto(BASE + "/?deep-link=patterns#/patterns", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("[data-war-context]", { timeout: 15000 });
+    const state = await page.evaluate(() => ({
+      year: document.querySelector(".scrub-year")?.textContent,
+      phase: document.querySelector(".war-brief > strong")?.textContent,
+      coalition: document.querySelectorAll("[data-war-side='coalition']").length,
+    }));
+    if (state.year !== "1944" || state.phase !== "Liberation from west and east" || !state.coalition) {
+      throw new Error(`direct war map did not initialize ${JSON.stringify(state)}`);
+    }
   });
 
   await page.setViewport({ width: 390, height: 844 });

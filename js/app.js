@@ -19,7 +19,7 @@ const state = {
   query: "",
   groupFilter: new Set(),        // populated from the data (all on by default)
   railLimit: RAIL_PAGE,
-  scrubYear: 1942,
+  scrubYear: 1944,
   patternsLayer: "journeys",
   patternEventKey: null,
 };
@@ -41,7 +41,6 @@ async function main() {
   }
 
   state.guidedId = store.defaultGuidedId;
-  state.scrubYear = nearestEventYear(1944);
   state.patternEventKey = eventsForYear()[0]?.key || null;
   store.groups.forEach((g) => state.groupFilter.add(g.name));
   document.getElementById("portrait-field").innerHTML = ui.livingMosaic(store);
@@ -87,6 +86,16 @@ function hay(j) {
 
 function atlasCtx() {
   const patternEvents = eventsForYear();
+  const guided = store.byId.get(state.guidedId);
+  const selected = store.byId.get(state.selectedId);
+  let warPeriod = null;
+  if (state.view === "patterns" && state.patternsLayer === "journeys") {
+    warPeriod = store.warAt(state.scrubYear);
+  } else if (state.view === "guided" && guided) {
+    warPeriod = store.warForJourney(guided, guided.waypoints[state.guidedIndex]?.year);
+  } else if (state.view === "explore" && selected) {
+    warPeriod = store.warForJourney(selected);
+  }
   return {
     selectedId: state.selectedId,
     guidedId: state.guidedId,
@@ -96,6 +105,7 @@ function atlasCtx() {
     patternsLayer: state.patternsLayer,
     patternEvents,
     activePatternEvent: patternEvents.find((event) => event.key === state.patternEventKey) || patternEvents[0] || null,
+    warPeriod,
     matches: matchPredicate(),
     onSelect: (id) => selectSurvivor(id),
     onEvent: (key) => setPatternEvent(key),
@@ -199,10 +209,11 @@ function setLayer(layer) {
   }
 }
 function setScrub(year) {
-  state.scrubYear = nearestEventYear(year);
+  state.scrubYear = Math.max(store.time.min, Math.min(store.time.max, year));
   state.patternEventKey = eventsForYear()[0]?.key || null;
   refreshPatternEvents();
   atlas.render("patterns", atlasCtx());
+  if (!state.patternEventKey) atlas.resetCamera();
 }
 
 function setPatternEvent(key) {
@@ -215,20 +226,7 @@ function setPatternEvent(key) {
 }
 
 function stepEventYear(direction) {
-  const years = store.eventYears;
-  if (!years.length) return;
-  let index = years.indexOf(state.scrubYear);
-  if (index < 0) index = 0;
-  index = Math.max(0, Math.min(years.length - 1, index + direction));
-  setScrub(years[index]);
-}
-
-function nearestEventYear(year) {
-  const years = store?.eventYears || [];
-  if (!years.length) return year;
-  return years.reduce((nearest, candidate) => (
-    Math.abs(candidate - year) < Math.abs(nearest - year) ? candidate : nearest
-  ), years[0]);
+  setScrub(state.scrubYear + direction);
 }
 
 function eventsForYear() {

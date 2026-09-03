@@ -27,6 +27,11 @@ export const C = {
   dotIdle: "#A8B3BC",
   anchorInk: "#34414C",
   verified: "#3F6688",
+  warCoalition: "#66849B",
+  warOpposition: "#8A6563",
+  warOccupied: "#948B94",
+  warNeutral: "#DDE3E6",
+  warBorder: "#B5C0C7",
 };
 
 // Group order follows the OHP archive. Muted, similarly weighted hues preserve equality.

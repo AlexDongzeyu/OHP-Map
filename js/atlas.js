@@ -39,6 +39,14 @@ export function createAtlas(container) {
     container.innerHTML = "";
     svg = d3.select(container).append("svg")
       .attr("width", "100%").attr("height", "100%").style("display", "block");
+    const occupiedPattern = svg.append("defs").append("pattern")
+      .attr("id", "war-occupied")
+      .attr("width", 7).attr("height", 7)
+      .attr("patternUnits", "userSpaceOnUse")
+      .attr("patternTransform", "rotate(35)");
+    occupiedPattern.append("rect").attr("width", 7).attr("height", 7).attr("fill", C.warOccupied);
+    occupiedPattern.append("line").attr("x1", 0).attr("y1", 0).attr("x2", 0).attr("y2", 7)
+      .attr("stroke", C.paperSoft).attr("stroke-width", 2).attr("opacity", 0.38);
     svg.append("rect").attr("class", "atlas-bg")
       .attr("width", "100%").attr("height", "100%").attr("fill", C.ocean);
     globeG = svg.append("g").attr("class", "globe").style("display", "none");
@@ -77,7 +85,7 @@ export function createAtlas(container) {
 
     const land = countriesG.selectAll("path").data(world.features);
     countrySel = land.enter().append("path").merge(land)
-      .attr("d", path).attr("fill", C.land)
+      .attr("d", path).attr("data-country", (d) => d.properties.name).attr("fill", C.land)
       .attr("stroke", C.landStroke).attr("stroke-width", 0.5)
       .attr("vector-effect", "non-scaling-stroke");
     land.exit().remove();
@@ -187,6 +195,12 @@ export function createAtlas(container) {
   // ---- choropleth ------------------------------------------------------------
   function paintChoropleth(on) {
     if (!countrySel) return;
+    countrySel.interrupt("country-fill")
+      .on(".war", null)
+      .style("pointer-events", null)
+      .attr("data-war-side", null)
+      .attr("stroke", C.landStroke)
+      .attr("stroke-width", 0.5);
     if (!on) { countrySel.attr("fill", C.land); return; }
     const max = Math.max(1, ...[...store.originCounts.values()]);
     const ramp = d3.interpolateRgb(C.densityLow, C.accentDeep);
@@ -194,6 +208,44 @@ export function createAtlas(container) {
       const n = store.originCounts.get(d.properties.name) || 0;
       return n ? ramp(Math.pow(n / max, 0.5)) : C.densityNone;
     });
+  }
+
+  function paintWarContext(period) {
+    if (!countrySel || !period) { paintChoropleth(false); return; }
+    const coalition = new Set(period.coalition || []);
+    const opposition = new Set(period.opposition || []);
+    const occupied = new Set(period.occupied || []);
+    const statusFor = (name) => {
+      if (occupied.has(name)) return "occupied";
+      if (coalition.has(name)) return "coalition";
+      if (opposition.has(name)) return "opposition";
+      return "neutral";
+    };
+    const fillFor = (status) => ({
+      coalition: C.warCoalition,
+      opposition: C.warOpposition,
+      occupied: "url(#war-occupied)",
+      neutral: C.warNeutral,
+    }[status]);
+    countrySel.interrupt("country-fill")
+      .attr("fill", (d) => fillFor(statusFor(d.properties.name)))
+      .attr("stroke", C.warBorder)
+      .attr("stroke-width", 0.6)
+      .attr("data-war-side", (d) => statusFor(d.properties.name))
+      .style("pointer-events", (d) => statusFor(d.properties.name) === "neutral" ? "none" : "all")
+      .on("mouseenter.war", (event, d) => {
+        const name = d.properties.name;
+        const status = statusFor(name);
+        const aligned = coalition.has(name)
+          ? period.coalition_label
+          : (opposition.has(name) ? period.opposition_label : null);
+        const detail = status === "occupied"
+          ? [aligned, "occupied / contested"].filter(Boolean).join(" · ")
+          : aligned;
+        showTip(event, `${name} · ${detail || period.conflict}`);
+      })
+      .on("mousemove.war", (event) => moveTip(event))
+      .on("mouseleave.war", hideTip);
   }
 
   function buildGlobeRoutePool() {
@@ -382,7 +434,9 @@ export function createAtlas(container) {
     showGlobe(false);
     const interactive = v === "explore" || v === "patterns";
     svg.style("pointer-events", interactive ? "auto" : "none");
-    paintChoropleth(v === "patterns" && ctx.patternsLayer === "origins");
+    if (v === "patterns" && ctx.patternsLayer === "origins") paintChoropleth(true);
+    else if (ctx.warPeriod) paintWarContext(ctx.warPeriod);
+    else paintChoropleth(false);
     if (v === "guided") {
       if (changed) clearOverlay();
       drawGuided(ctx);
@@ -502,6 +556,7 @@ export function createAtlas(container) {
     if (ctx.patternsLayer === "origins") { drawOrigins(g); return; }
     const activeEvent = ctx.activePatternEvent;
     const activeIds = new Set(activeEvent?.people.map((person) => person.id) || []);
+    const activeConflict = ctx.warPeriod?.archive_conflict;
     // One faint path per journey (keeps thousands of legs cheap).
     for (const j of store.journeys) {
       const wp = j.waypoints.filter((w) => w.px != null);
@@ -509,9 +564,14 @@ export function createAtlas(container) {
       let d = `M${wp[0].px},${wp[0].py}`;
       for (let i = 1; i < wp.length; i++) d += `L${wp[i].px},${wp[i].py}`;
       const active = activeIds.has(j.id);
-      g.append("path").attr("d", d).attr("fill", "none").attr("stroke", GROUP_COLOR[j.group] || C.accent)
-        .attr("stroke-width", active ? 1.3 : 0.55).attr("vector-effect", "non-scaling-stroke")
-        .attr("opacity", active ? 0.34 : 0.016);
+      const warVeteran = activeConflict && j.group === "Military Veterans" &&
+        j.conflicts.includes(activeConflict);
+      g.append("path")
+        .attr("class", warVeteran ? "war-veteran-route" : "pattern-route")
+        .attr("d", d).attr("fill", "none").attr("stroke", GROUP_COLOR[j.group] || C.accent)
+        .attr("stroke-width", active ? 1.4 : (warVeteran ? 0.72 : 0.5))
+        .attr("vector-effect", "non-scaling-stroke")
+        .attr("opacity", active ? 0.4 : (warVeteran ? 0.052 : 0.008));
     }
     const year = ctx.scrubYear;
     for (const j of store.journeys) {
@@ -557,7 +617,7 @@ export function createAtlas(container) {
         });
       }
     }
-    if (activePoint) moveCamera(activePoint, size.w <= 820 ? 1.45 : 1.8);
+    if (activePoint) moveCamera(activePoint, size.w <= 820 ? 1.2 : 1.35);
   }
 
   function drawOrigins(g) {

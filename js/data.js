@@ -15,6 +15,11 @@ const EVENT_ROLE_ORDER = {
   resettlement: 4,
   birthplace: 5,
 };
+const SERVICE_WINDOWS = {
+  "First World War": { start: 1914, end: 1918, fallback: 1917 },
+  "Second World War": { start: 1939, end: 1945, fallback: 1944 },
+  "Korean War": { start: 1950, end: 1953, fallback: 1951 },
+};
 
 async function getJSON(name) {
   const res = await fetch(`${BASE}/${name}`, { cache: "no-cache" });
@@ -89,15 +94,27 @@ function toJourney(props) {
     reviewStatus: props.review_status || "pending",
     waypoints: wps,
   };
+  j.serviceConflicts = j.conflicts.filter((conflict) => SERVICE_WINDOWS[conflict]);
+  j.serviceConflict = j.serviceConflicts[0] || null;
+  if (j.serviceConflict) {
+    const window = SERVICE_WINDOWS[j.serviceConflict];
+    const serviceYears = wps.map((waypoint) => waypoint.year)
+      .filter((year) => year >= window.start && year <= window.end)
+      .sort((a, b) => a - b);
+    j.serviceYear = serviceYears[Math.floor(serviceYears.length / 2)] || window.fallback;
+  } else {
+    j.serviceYear = null;
+  }
   j.intro = shortIntro(j);
   return j;
 }
 
 export async function loadData() {
-  const [geojson, placeIndex, connections] = await Promise.all([
+  const [geojson, placeIndex, connections, warContext] = await Promise.all([
     getJSON("survivors.geojson"),
     getJSON("place_index.json"),
     getJSON("connections.json"),
+    getJSON("war_context.json"),
   ]);
 
   const journeys = geojson.features.map((f) => toJourney(f.properties));
@@ -140,6 +157,15 @@ export async function loadData() {
     || journeys.find((j) => j.waypoints.length >= 4) || journeys[0];
 
   const meta = geojson.metadata || {};
+  const warAt = (year) => warContext.periods.find(
+    (period) => year >= period.start && year <= period.end,
+  ) || null;
+  const warForJourney = (journey, year = null) => {
+    if (!journey?.serviceConflict) return null;
+    const dated = year == null ? null : warAt(year);
+    if (journey.serviceConflicts.includes(dated?.archive_conflict)) return dated;
+    return warAt(journey.serviceYear);
+  };
   return {
     meta,
     journeys,
@@ -157,6 +183,9 @@ export async function loadData() {
     shared: sharedPlaces(journeys),
     defaultGuidedId: richDefault ? richDefault.id : (journeys[0] && journeys[0].id),
     time: { min: meta.time_min || TIME.min, max: meta.time_max || TIME.max },
+    warContext,
+    warAt,
+    warForJourney,
   };
 }
 

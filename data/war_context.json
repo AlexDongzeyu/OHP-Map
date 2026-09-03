@@ -1,0 +1,243 @@
+{
+  "_about": "A compact, year-driven historical alignment layer for the OHP Map. Belligerent participation and entry/exit years are derived from Correlates of War Inter-State War Data v4.0. Occupied and contested countries are broad annual context, not precise front lines. Present-day Natural Earth outlines remain visible for orientation; this file does not claim to reconstruct historical borders.",
+  "sources": [
+    {
+      "label": "Correlates of War Project, Inter-State War Data v4.0",
+      "url": "https://correlatesofwar.org/data-sets/cow-war/",
+      "use": "Interstate war participants and years of participation"
+    },
+    {
+      "label": "United States Holocaust Memorial Museum, World War II in Europe",
+      "url": "https://encyclopedia.ushmm.org/content/en/article/world-war-ii-in-europe",
+      "use": "Broad occupation and liberation chronology in Europe"
+    },
+    {
+      "label": "Natural Earth",
+      "url": "https://www.naturalearthdata.com/about/terms-of-use/",
+      "use": "Public-domain present-day country outlines used for orientation"
+    }
+  ],
+  "periods": [
+    {
+      "start": 1914,
+      "end": 1914,
+      "conflict": "First World War",
+      "archive_conflict": "First World War",
+      "phase": "War begins in Europe",
+      "summary": "Canada entered the war with Britain. Fighting concentrated along the Western and Eastern Fronts while the Ottoman Empire joined the Central Powers.",
+      "coalition_label": "Allied / Entente powers",
+      "opposition_label": "Central Powers",
+      "coalition": ["Australia", "Belgium", "Canada", "France", "Japan", "Montenegro", "New Zealand", "Russia", "Serbia", "South Africa", "United Kingdom"],
+      "opposition": ["Austria", "Bosnia and Herz.", "Croatia", "Czechia", "Germany", "Hungary", "Slovakia", "Slovenia", "Turkey"],
+      "occupied": ["Belgium"]
+    },
+    {
+      "start": 1915,
+      "end": 1915,
+      "conflict": "First World War",
+      "archive_conflict": "First World War",
+      "phase": "The war widens",
+      "summary": "Italy joined the Allies, Bulgaria joined the Central Powers, and the Gallipoli campaign opened another major theatre.",
+      "coalition_label": "Allied powers",
+      "opposition_label": "Central Powers",
+      "coalition": ["Australia", "Belgium", "Canada", "France", "Italy", "Japan", "Montenegro", "New Zealand", "Russia", "Serbia", "South Africa", "United Kingdom"],
+      "opposition": ["Austria", "Bosnia and Herz.", "Bulgaria", "Croatia", "Czechia", "Germany", "Hungary", "Slovakia", "Slovenia", "Turkey"],
+      "occupied": ["Belgium", "Serbia"]
+    },
+    {
+      "start": 1916,
+      "end": 1916,
+      "conflict": "First World War",
+      "archive_conflict": "First World War",
+      "phase": "Verdun, the Somme, and total war",
+      "summary": "The Western Front consumed armies at Verdun and the Somme. Romania and Portugal entered on the Allied side.",
+      "coalition_label": "Allied powers",
+      "opposition_label": "Central Powers",
+      "coalition": ["Australia", "Belgium", "Canada", "France", "Italy", "Japan", "Montenegro", "New Zealand", "Portugal", "Romania", "Russia", "Serbia", "South Africa", "United Kingdom"],
+      "opposition": ["Austria", "Bosnia and Herz.", "Bulgaria", "Croatia", "Czechia", "Germany", "Hungary", "Slovakia", "Slovenia", "Turkey"],
+      "occupied": ["Belgium", "Montenegro", "Romania", "Serbia"]
+    },
+    {
+      "start": 1917,
+      "end": 1917,
+      "conflict": "First World War",
+      "archive_conflict": "First World War",
+      "phase": "The United States enters",
+      "summary": "The United States and Greece joined the Allies. Revolution took Russia out of sustained fighting by the end of the year.",
+      "coalition_label": "Allied powers",
+      "opposition_label": "Central Powers",
+      "coalition": ["Australia", "Belgium", "Canada", "France", "Greece", "Italy", "Japan", "Montenegro", "New Zealand", "Portugal", "Romania", "Russia", "Serbia", "South Africa", "United Kingdom", "United States of America"],
+      "opposition": ["Austria", "Bosnia and Herz.", "Bulgaria", "Croatia", "Czechia", "Germany", "Hungary", "Slovakia", "Slovenia", "Turkey"],
+      "occupied": ["Belgium", "Montenegro", "Romania", "Serbia"]
+    },
+    {
+      "start": 1918,
+      "end": 1918,
+      "conflict": "First World War",
+      "archive_conflict": "First World War",
+      "phase": "Final offensives and armistice",
+      "summary": "After Germany's spring offensive, Allied armies advanced through the Hundred Days. The armistice took effect on November 11.",
+      "coalition_label": "Allied powers",
+      "opposition_label": "Central Powers",
+      "coalition": ["Australia", "Belgium", "Canada", "France", "Greece", "Italy", "Japan", "Montenegro", "New Zealand", "Portugal", "Romania", "Serbia", "South Africa", "United Kingdom", "United States of America"],
+      "opposition": ["Austria", "Bosnia and Herz.", "Bulgaria", "Croatia", "Czechia", "Germany", "Hungary", "Slovakia", "Slovenia", "Turkey"],
+      "occupied": ["Belgium", "Montenegro", "Romania", "Serbia"]
+    },
+    {
+      "start": 1919,
+      "end": 1938,
+      "conflict": "Between world wars",
+      "archive_conflict": null,
+      "phase": "An unsettled peace",
+      "summary": "No world-war belligerent layer is shown. Borders and governments changed across Europe while veterans returned home and new crises gathered.",
+      "coalition_label": null,
+      "opposition_label": null,
+      "coalition": [],
+      "opposition": [],
+      "occupied": []
+    },
+    {
+      "start": 1939,
+      "end": 1939,
+      "conflict": "Second World War",
+      "archive_conflict": "Second World War",
+      "phase": "The invasion of Poland",
+      "summary": "Germany invaded Poland in September. Britain, France, Canada, and other Commonwealth countries entered the war.",
+      "coalition_label": "Allied powers",
+      "opposition_label": "Axis powers",
+      "coalition": ["Australia", "Canada", "France", "New Zealand", "Poland", "South Africa", "United Kingdom"],
+      "opposition": ["Austria", "Germany", "Slovakia"],
+      "occupied": ["Czechia", "Poland"]
+    },
+    {
+      "start": 1940,
+      "end": 1940,
+      "conflict": "Second World War",
+      "archive_conflict": "Second World War",
+      "phase": "Western Europe falls",
+      "summary": "Germany occupied much of western Europe. Britain and the Commonwealth continued the war as Italy entered on the Axis side.",
+      "coalition_label": "Allied powers",
+      "opposition_label": "Axis powers",
+      "coalition": ["Australia", "Belgium", "Canada", "France", "Greece", "Netherlands", "New Zealand", "Norway", "Poland", "South Africa", "United Kingdom"],
+      "opposition": ["Austria", "Germany", "Hungary", "Italy", "Romania", "Slovakia"],
+      "occupied": ["Belgium", "Czechia", "Denmark", "France", "Luxembourg", "Netherlands", "Norway", "Poland"]
+    },
+    {
+      "start": 1941,
+      "end": 1941,
+      "conflict": "Second World War",
+      "archive_conflict": "Second World War",
+      "phase": "A global war",
+      "summary": "Germany invaded the Soviet Union and Japan attacked across the Pacific. The Soviet Union, China, and the United States joined the Allied war.",
+      "coalition_label": "Allied powers",
+      "opposition_label": "Axis powers and co-belligerents",
+      "coalition": ["Australia", "Canada", "China", "Greece", "India", "New Zealand", "Poland", "Russia", "South Africa", "United Kingdom", "United States of America"],
+      "opposition": ["Austria", "Bulgaria", "Finland", "Germany", "Hungary", "Italy", "Japan", "Romania", "Slovakia"],
+      "occupied": ["Albania", "Belarus", "Belgium", "Bosnia and Herz.", "Croatia", "Czechia", "Denmark", "Estonia", "France", "Greece", "Latvia", "Lithuania", "Luxembourg", "Macedonia", "Montenegro", "Netherlands", "Norway", "Poland", "Serbia", "Slovenia", "Ukraine"]
+    },
+    {
+      "start": 1942,
+      "end": 1942,
+      "conflict": "Second World War",
+      "archive_conflict": "Second World War",
+      "phase": "War at its widest reach",
+      "summary": "Axis armies reached deep into the Soviet Union and North Africa while Japan held a vast Pacific empire. Allied resistance began to turn the war.",
+      "coalition_label": "Allied powers",
+      "opposition_label": "Axis powers and co-belligerents",
+      "coalition": ["Australia", "Canada", "China", "India", "New Zealand", "Poland", "Russia", "South Africa", "United Kingdom", "United States of America"],
+      "opposition": ["Austria", "Bulgaria", "Finland", "Germany", "Hungary", "Italy", "Japan", "Romania", "Slovakia"],
+      "occupied": ["Albania", "Belarus", "Belgium", "Bosnia and Herz.", "Croatia", "Czechia", "Denmark", "Estonia", "France", "Greece", "Indonesia", "Latvia", "Lithuania", "Luxembourg", "Macedonia", "Malaysia", "Montenegro", "Myanmar", "Netherlands", "Norway", "Philippines", "Poland", "Serbia", "Slovenia", "Ukraine"]
+    },
+    {
+      "start": 1943,
+      "end": 1943,
+      "conflict": "Second World War",
+      "archive_conflict": "Second World War",
+      "phase": "The Axis retreats",
+      "summary": "Allied armies advanced through Italy and the Pacific while Soviet forces pushed west. Italy changed sides, leaving the country divided and contested.",
+      "coalition_label": "Allied powers",
+      "opposition_label": "Axis powers and co-belligerents",
+      "coalition": ["Australia", "Canada", "China", "India", "Italy", "New Zealand", "Poland", "Russia", "South Africa", "United Kingdom", "United States of America"],
+      "opposition": ["Austria", "Bulgaria", "Finland", "Germany", "Hungary", "Japan", "Romania", "Slovakia"],
+      "occupied": ["Albania", "Belarus", "Belgium", "Bosnia and Herz.", "Croatia", "Czechia", "Denmark", "Estonia", "France", "Greece", "Indonesia", "Italy", "Latvia", "Lithuania", "Luxembourg", "Macedonia", "Malaysia", "Montenegro", "Myanmar", "Netherlands", "Norway", "Philippines", "Poland", "Serbia", "Slovenia", "Ukraine"]
+    },
+    {
+      "start": 1944,
+      "end": 1944,
+      "conflict": "Second World War",
+      "archive_conflict": "Second World War",
+      "phase": "Liberation from west and east",
+      "summary": "The Normandy landings opened a western front while Soviet armies advanced across eastern Europe. Canadian forces fought through France, Belgium, and the Netherlands.",
+      "coalition_label": "Allied powers",
+      "opposition_label": "Axis powers",
+      "coalition": ["Australia", "Belgium", "Brazil", "Bulgaria", "Canada", "China", "France", "Greece", "India", "Italy", "Netherlands", "New Zealand", "Poland", "Romania", "Russia", "South Africa", "United Kingdom", "United States of America"],
+      "opposition": ["Austria", "Germany", "Hungary", "Japan", "Slovakia"],
+      "occupied": ["Albania", "Bosnia and Herz.", "Croatia", "Czechia", "Denmark", "Hungary", "Indonesia", "Latvia", "Lithuania", "Macedonia", "Malaysia", "Montenegro", "Myanmar", "Netherlands", "Norway", "Philippines", "Poland", "Serbia", "Slovenia"]
+    },
+    {
+      "start": 1945,
+      "end": 1945,
+      "conflict": "Second World War",
+      "archive_conflict": "Second World War",
+      "phase": "Defeat of Germany and Japan",
+      "summary": "Allied armies entered Germany and liberated the remaining camps. Germany surrendered in May and Japan in September.",
+      "coalition_label": "Allied powers",
+      "opposition_label": "Axis powers",
+      "coalition": ["Australia", "Belgium", "Brazil", "Bulgaria", "Canada", "China", "France", "Greece", "India", "Italy", "Mongolia", "Netherlands", "New Zealand", "Poland", "Romania", "Russia", "South Africa", "United Kingdom", "United States of America"],
+      "opposition": ["Austria", "Germany", "Hungary", "Japan", "Slovakia"],
+      "occupied": ["Czechia", "Denmark", "Indonesia", "Malaysia", "Myanmar", "Netherlands", "Norway", "Philippines"]
+    },
+    {
+      "start": 1946,
+      "end": 1949,
+      "conflict": "Postwar transition",
+      "archive_conflict": null,
+      "phase": "Return, rebuilding, and displacement",
+      "summary": "The world war had ended. Veterans returned, displaced people searched for family, and new homes were built as Cold War divisions hardened.",
+      "coalition_label": null,
+      "opposition_label": null,
+      "coalition": [],
+      "opposition": [],
+      "occupied": []
+    },
+    {
+      "start": 1950,
+      "end": 1950,
+      "conflict": "Korean War",
+      "archive_conflict": "Korean War",
+      "phase": "War crosses the Korean peninsula",
+      "summary": "North Korea invaded South Korea. United Nations forces, including Canadians, intervened; Chinese forces entered later in the year.",
+      "coalition_label": "United Nations Command",
+      "opposition_label": "North Korea and China",
+      "coalition": ["Australia", "Canada", "Philippines", "South Korea", "Turkey", "United Kingdom", "United States of America"],
+      "opposition": ["China", "North Korea"],
+      "occupied": []
+    },
+    {
+      "start": 1951,
+      "end": 1953,
+      "conflict": "Korean War",
+      "archive_conflict": "Korean War",
+      "phase": "A war around the 38th parallel",
+      "summary": "The front stabilized near the 38th parallel. Canadian and other United Nations forces fought until the armistice of July 1953.",
+      "coalition_label": "United Nations Command",
+      "opposition_label": "North Korea and China",
+      "coalition": ["Australia", "Belgium", "Canada", "Colombia", "Ethiopia", "France", "Greece", "Netherlands", "Philippines", "South Korea", "Thailand", "Turkey", "United Kingdom", "United States of America"],
+      "opposition": ["China", "North Korea"],
+      "occupied": []
+    },
+    {
+      "start": 1954,
+      "end": 1955,
+      "conflict": "After the Korean armistice",
+      "archive_conflict": null,
+      "phase": "An armed peace",
+      "summary": "Major fighting in Korea had stopped, but the peninsula remained divided and Canadian personnel continued to serve in the region.",
+      "coalition_label": null,
+      "opposition_label": null,
+      "coalition": [],
+      "opposition": [],
+      "occupied": []
+    }
+  ]
+}
