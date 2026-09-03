@@ -166,6 +166,11 @@ keep geography visible behind Guided, Explore, and person details. Motion remain
 non-looping, `prefers-reduced-motion` is honoured, and all journeys converge visibly in
 Patterns — what no alphabetical list shows.
 
+The landing includes a low-opacity living identity mosaic behind the content. It cycles
+through the full archive without blocking interaction, pauses when hidden, and stays static
+for reduced-motion visitors. Tiles use names and initials by default; a real portrait is
+rendered only when both `portrait` and explicitly cleared `portrait_rights` metadata exist.
+
 **Accessibility (doc 02 N1):** keyboard-navigable tabs, a focusable survivor list mirroring
 the map, ARIA labels, a skip link, AA-contrast palette, and a fully honoured
 `prefers-reduced-motion`.

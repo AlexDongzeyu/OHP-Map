@@ -75,6 +75,8 @@ function toJourney(props) {
     themes: props.theme_tags || [],
     bio: props.bio_excerpt || "",
     archiveUrl: props.archive_url || "",
+    portrait: props.portrait || null,
+    portraitRights: props.portrait_rights || null,
     reviewStatus: props.review_status || "pending",
     waypoints: wps,
   };

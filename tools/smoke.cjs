@@ -35,12 +35,23 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (!icon) throw new Error("primary action is missing its SVG icon");
     const motion = await page.evaluate(() => ({
       mode: document.documentElement.dataset.motion,
+      mosaic: document.documentElement.dataset.mosaicMotion,
       version: window.gsap && window.gsap.version,
       hasReviewBadge: Boolean(document.querySelector(".status-pill")),
+      mosaicTiles: document.querySelectorAll(".mosaic-tile").length,
+      mosaicPeople: [...document.querySelectorAll(".mosaic-tile")].reduce((total, tile) => (
+        total + JSON.parse(tile.dataset.people || "[]").length
+      ), 0),
+      journeyCount: Number(document.querySelector(".metric b")?.textContent),
+      mosaicHidden: document.querySelector(".portrait-mosaic[data-mosaic]")?.getAttribute("aria-hidden"),
     }));
     if (motion.mode !== "gsap") throw new Error("GSAP motion mode is not active");
+    if (motion.mosaic !== "animated") throw new Error("living mosaic is not animated");
     if (motion.version !== "3.15.0") throw new Error("unexpected GSAP version " + motion.version);
     if (motion.hasReviewBadge) throw new Error("header review badge should not render");
+    if (motion.mosaicTiles < 64) throw new Error("living mosaic has too few tiles");
+    if (motion.mosaicPeople !== motion.journeyCount) throw new Error("living mosaic does not cover the full archive");
+    if (motion.mosaicHidden !== "true") throw new Error("decorative mosaic is exposed to assistive technology");
   });
   await check("follow -> guided narrative + flat map", async () => {
     await page.click(".landing-card [data-act='follow']");
@@ -165,12 +176,14 @@ const BASE = process.argv[2] || "http://localhost:8124";
       const style = getComputedStyle(title);
       return {
         mode: document.documentElement.dataset.motion,
+        mosaic: document.documentElement.dataset.mosaicMotion,
         opacity: Number(style.opacity),
         visibility: style.visibility,
       };
     });
     await reduced.close();
     if (result.mode !== "reduced") throw new Error("reduced-motion mode was not detected");
+    if (result.mosaic !== "static") throw new Error("mosaic should remain static in reduced motion");
     if (result.opacity !== 1 || result.visibility !== "visible") {
       throw new Error("reduced-motion content is not immediately visible");
     }

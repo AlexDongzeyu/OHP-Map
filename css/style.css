@@ -302,8 +302,87 @@ a { color:var(--accent-soft); }
   padding-top:var(--header-height);
   background:linear-gradient(90deg, rgba(244,246,243,.99) 0%, rgba(244,246,243,.95) 38%, rgba(244,246,243,.48) 60%, rgba(244,246,243,0) 78%);
 }
+.portrait-mosaic {
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  z-index:0;
+  height:min(46vh, 420px);
+  overflow:hidden;
+  opacity:.46;
+  pointer-events:none;
+  mask-image:linear-gradient(to bottom, transparent 0%, rgba(0,0,0,.18) 20%, #000 72%);
+  -webkit-mask-image:linear-gradient(to bottom, transparent 0%, rgba(0,0,0,.18) 20%, #000 72%);
+}
+.portrait-mosaic::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(90deg, rgba(244,246,243,.96) 0%, rgba(244,246,243,.74) 44%, rgba(244,246,243,.08) 100%);
+}
+.mosaic-grid {
+  position:absolute;
+  left:-2vw;
+  right:-2vw;
+  bottom:-18px;
+  display:grid;
+  grid-template-columns:repeat(18, minmax(0, 1fr));
+  gap:6px;
+  transform:rotate(-1.2deg) scale(1.025);
+}
+.mosaic-tile {
+  position:relative;
+  aspect-ratio:1;
+  overflow:hidden;
+  border-radius:6px;
+  color:var(--accent-deep);
+  background:rgba(49,92,78,.16);
+}
+.mosaic-side {
+  position:absolute;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  padding:5px;
+}
+.mosaic-side.is-back { opacity:0; visibility:hidden; }
+.mosaic-side img {
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  filter:grayscale(1) contrast(.92);
+}
+.mosaic-side img:not([hidden]) + .mosaic-initials + .mosaic-name {
+  position:absolute;
+  left:5px;
+  right:5px;
+  bottom:4px;
+  z-index:1;
+  color:#fff;
+  text-shadow:0 1px 5px rgba(0,0,0,.55);
+}
+.mosaic-initials {
+  font-family:var(--serif);
+  font-size:clamp(13px, 1.4vw, 19px);
+  line-height:1;
+}
+.mosaic-name {
+  max-width:100%;
+  overflow:hidden;
+  color:var(--muted);
+  font-size:clamp(7px, .62vw, 9px);
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
 .landing-card {
   position:relative;
+  z-index:2;
   width:min(630px, 47vw);
   margin-left:clamp(28px, 6vw, 96px);
   padding:0;
@@ -359,6 +438,7 @@ a { color:var(--accent-soft); }
 }
 .legend-mini {
   position:absolute;
+  z-index:2;
   right:clamp(24px, 4vw, 64px);
   bottom:var(--space-6);
   display:flex;
@@ -866,6 +946,21 @@ a { color:var(--accent-soft); }
     display:block;
     overflow-y:auto;
     background:linear-gradient(0deg, rgba(244,246,243,.99) 0%, rgba(244,246,243,.93) 55%, rgba(244,246,243,.32) 82%, rgba(244,246,243,0) 100%);
+  }
+  .portrait-mosaic {
+    height:42vh;
+    opacity:.3;
+  }
+  .portrait-mosaic::after {
+    background:linear-gradient(0deg, rgba(244,246,243,.28), rgba(244,246,243,.86));
+  }
+  .mosaic-grid {
+    left:-12px;
+    right:-12px;
+    bottom:-8px;
+    grid-template-columns:repeat(9, minmax(0, 1fr));
+    gap:4px;
+    transform:rotate(-1deg) scale(1.02);
   }
   .landing-card {
     width:auto;

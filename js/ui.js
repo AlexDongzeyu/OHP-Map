@@ -16,6 +16,7 @@ export function landing(store) {
   const conflicts = store.conflicts.length;
   return `
   <div class="ov ov-landing">
+    ${livingMosaic(store)}
     <div class="landing-card">
       <h1 class="display">Journeys</h1>
       <p class="kicker">Crestwood Oral History Project</p>
@@ -42,6 +43,48 @@ export function landing(store) {
       <span><span class="lm-shade"></span> where more came from</span>
     </div>
   </div>`;
+}
+
+function livingMosaic(store) {
+  const tileCount = Math.min(72, store.journeys.length);
+  const people = store.journeys.map((journey) => ({
+    i: journey.initials,
+    n: shortName(journey),
+    p: clearedPortrait(journey),
+  }));
+  const tiles = Array.from({ length: tileCount }, (_, tileIndex) => {
+    const sequence = [];
+    for (let index = tileIndex; index < people.length; index += tileCount) {
+      sequence.push(people[index]);
+    }
+    const first = sequence[0];
+    return `<span class="mosaic-tile" data-people="${esc(JSON.stringify(sequence))}">
+      ${mosaicSide(first, "is-front")}
+      ${mosaicSide(sequence[1] || first, "is-back")}
+    </span>`;
+  }).join("");
+  return `<div class="portrait-mosaic" data-mosaic aria-hidden="true">
+    <div class="mosaic-grid">${tiles}</div>
+  </div>`;
+}
+
+function mosaicSide(person, className) {
+  const portrait = person.p
+    ? `<img src="${esc(person.p)}" alt="" loading="lazy" decoding="async">`
+    : "";
+  return `<span class="mosaic-side ${className}">
+    ${portrait}
+    <span class="mosaic-initials"${person.p ? " hidden" : ""}>${esc(person.i)}</span>
+    <span class="mosaic-name">${esc(person.n)}</span>
+  </span>`;
+}
+
+function clearedPortrait(journey) {
+  if (!journey.portrait) return null;
+  const rights = String(journey.portraitRights || "").toLowerCase();
+  return /\b(cleared|licensed|public domain|permission granted)\b/.test(rights)
+    ? journey.portrait
+    : null;
 }
 
 // ---- GUIDED -----------------------------------------------------------------
