@@ -86,7 +86,7 @@ export function createAtlas(container) {
     const { w, h } = size;
     const r = Math.min(w, h) * 0.44;
     gProjection = d3.geoOrthographic().scale(r)
-      .translate([w * 0.54, h * 0.54]).rotate(rot).clipAngle(90);
+      .translate([w * 0.56, h * 0.54]).rotate(rot).clipAngle(90);
     gPath = d3.geoPath(gProjection);
   }
 
@@ -350,7 +350,7 @@ export function createAtlas(container) {
     stopRotate();
     if (!motionEnabled()) { redrawGlobe(); return; }
     const step = (now) => {
-      rot[0] += SYSTEM_REDUCED_MOTION ? 0.1 : 0.12;
+      rot[0] += SYSTEM_REDUCED_MOTION ? 0.12 : 0.14;
       globePhase = (globePhase + 0.0011) % 1;
       redrawGlobe(now);
       rotateRAF = requestAnimationFrame(step);

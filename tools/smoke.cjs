@@ -73,7 +73,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (motion.mosaicUnvalidatedPortraits) throw new Error("non-face gallery assets entered the landing mosaic");
     if (motion.mosaicHidden !== "true") throw new Error("decorative mosaic is exposed to assistive technology");
     if (motion.globeRoutes < 5 || motion.globeTravelers < 5) throw new Error("landing globe journeys are missing");
-    if (Math.abs(motion.globeCenterX - motion.viewportWidth * .54) > 2 ||
+    if (Math.abs(motion.globeCenterX - motion.viewportWidth * .56) > 2 ||
         Math.abs(motion.globeCenterY - motion.viewportHeight * .54) > 2) {
       throw new Error("landing globe is not positioned correctly");
     }
