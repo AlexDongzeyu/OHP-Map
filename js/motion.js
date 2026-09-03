@@ -1,4 +1,4 @@
-import { REDUCED_MOTION } from "./config.js";
+import { motionEnabled } from "./config.js";
 
 const gsap = window.gsap;
 let warned = false;
@@ -6,7 +6,7 @@ let mosaicStates = [];
 let beltTweens = [];
 
 function canAnimate() {
-  if (REDUCED_MOTION) return false;
+  if (!motionEnabled()) return false;
   if (gsap) return true;
   if (!warned) {
     console.warn("GSAP did not load; interface motion is disabled.");
@@ -28,12 +28,24 @@ function reveal(targets, from, options = {}) {
 }
 
 export function init() {
-  document.documentElement.dataset.motion = REDUCED_MOTION ? "reduced" : gsap ? "gsap" : "static";
+  updateMotionMode();
   canAnimate();
+  window.addEventListener("ohp:motion-change", ({ detail }) => {
+    updateMotionMode();
+    if (!detail.enabled) {
+      stopMosaic();
+    } else if (document.body.dataset.view === "landing") {
+      startMosaic();
+    }
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopMosaic();
     else if (document.body.dataset.view === "landing") startMosaic();
   });
+}
+
+function updateMotionMode() {
+  document.documentElement.dataset.motion = motionEnabled() ? (gsap ? "gsap" : "static") : "reduced";
 }
 
 export function animateShell() {

@@ -5,7 +5,7 @@ import { loadData } from "./data.js";
 import { createAtlas } from "./atlas.js";
 import * as ui from "./ui.js";
 import * as motion from "./motion.js";
-import { GROUPS, REDUCED_MOTION, slug } from "./config.js";
+import { GROUPS, motionEnabled, setMotionEnabled, slug } from "./config.js";
 
 const VIEWS = ["landing", "guided", "explore", "patterns", "about"];
 const RAIL_PAGE = 140;
@@ -53,6 +53,7 @@ async function main() {
   loadingEl.hidden = true;
   document.getElementById("topbar").hidden = false;
   motion.init();
+  updateMotionControl();
 
   if (window.ResizeObserver) {
     let t;
@@ -144,7 +145,7 @@ function startGuided(id) {
   state.guidedId = id; state.guidedIndex = 0; state.prevIndex = null; state.view = "guided";
   setHash("#/guided"); render();
   const narr = document.querySelector("[data-narr]");
-  if (narr) narr.scrollTo({ top: 0, behavior: REDUCED_MOTION ? "auto" : "smooth" });
+  if (narr) narr.scrollTo({ top: 0, behavior: motionEnabled() ? "smooth" : "auto" });
 }
 function selectSurvivor(id) {
   state.selectedId = id; state.view = "explore"; setHash(`#/survivor/${id}`); render();
@@ -219,12 +220,22 @@ function teardownGuidedScroll() {
 // ---- event wiring ------------------------------------------------------------
 function wireGlobal() {
   document.getElementById("topbar").addEventListener("click", onActivate);
+  window.addEventListener("ohp:motion-change", updateMotionControl);
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (state.view === "about") go("explore");
       else if (state.selectedId) clearSel();
     }
   });
+}
+function updateMotionControl() {
+  const button = document.getElementById("motion-toggle");
+  if (!button) return;
+  const enabled = motionEnabled();
+  button.setAttribute("aria-pressed", String(enabled));
+  button.setAttribute("aria-label", enabled ? "Pause ambient motion" : "Play ambient motion");
+  button.querySelector(".motion-label").textContent = enabled ? "Pause motion" : "Play motion";
+  button.querySelector("use").setAttribute("href", enabled ? "#icon-pause" : "#icon-play");
 }
 function wireOverlay() {
   const host = document.getElementById("overlay");
@@ -253,6 +264,7 @@ function onActivate(e) {
     case "explore": return go("explore");
     case "about": return go("about");
     case "home": return go("landing");
+    case "motion": return setMotionEnabled(!motionEnabled());
     case "clear": return clearSel();
     case "more": return showMore();
   }

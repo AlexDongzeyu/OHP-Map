@@ -10,7 +10,7 @@
 // The 2D map is the canonical product; the globe is a calm overview with a graceful
 // reduced-motion fallback. People are coloured quietly by archive group — equal, never
 // a hierarchy (doc 13 §4.3).
-import { C, GROUP_COLOR, REDUCED_MOTION } from "./config.js";
+import { C, GROUP_COLOR, motionEnabled } from "./config.js";
 
 const d3 = window.d3;
 
@@ -49,6 +49,11 @@ export function createAtlas(container) {
     zoom = d3.zoom().scaleExtent([1, 14])
       .on("zoom", (ev) => { currentK = ev.transform.k; camera.attr("transform", ev.transform.toString()); rescale(); });
     svg.call(zoom).on("dblclick.zoom", null).on("wheel", (e) => e.preventDefault());
+    window.addEventListener("ohp:motion-change", ({ detail }) => {
+      if (view !== "landing") return;
+      if (detail.enabled) startRotate();
+      else { stopRotate(); redrawGlobe(); }
+    });
   }
 
   function rescale() {
@@ -138,7 +143,7 @@ export function createAtlas(container) {
       .attr("stroke", o.color || C.accent).attr("stroke-width", o.width || 2)
       .attr("vector-effect", "non-scaling-stroke").attr("stroke-linecap", "round")
       .attr("opacity", o.op == null ? 1 : o.op);
-    if (o.animate && !REDUCED_MOTION) {
+    if (o.animate && motionEnabled()) {
       const len = p.node().getTotalLength();
       p.attr("stroke-dasharray", len).attr("stroke-dashoffset", len)
         .transition().duration(900).ease(d3.easeCubicInOut).attr("stroke-dashoffset", 0);
@@ -158,7 +163,7 @@ export function createAtlas(container) {
     const t = target
       ? d3.zoomIdentity.translate(w / 2 - k * target.x, h / 2 - k * target.y).scale(k)
       : d3.zoomIdentity;
-    const sel = REDUCED_MOTION ? svg : svg.transition().duration(850).ease(d3.easeCubicInOut);
+    const sel = motionEnabled() ? svg.transition().duration(850).ease(d3.easeCubicInOut) : svg;
     sel.call(zoom.transform, t);
   }
   api.resetCamera = () => moveCamera(null, 1);
@@ -271,11 +276,11 @@ export function createAtlas(container) {
     globeG.selectAll("*").remove();
     const c = gProjection.translate(), r = gProjection.scale();
     globeG.append("circle").attr("cx", c[0]).attr("cy", c[1]).attr("r", r)
-      .attr("fill", C.ocean).attr("fill-opacity", 0.58)
+      .attr("fill", C.ocean).attr("fill-opacity", 0.44)
       .attr("stroke", C.landStroke).attr("stroke-width", 1);
     const land = globeG.append("g");
     land.selectAll("path").data(world.features).enter().append("path")
-      .attr("fill", C.land).attr("fill-opacity", 0.82)
+      .attr("fill", C.land).attr("fill-opacity", 0.76)
       .attr("stroke", C.landStroke).attr("stroke-width", 0.4);
     const routes = globeG.append("g").attr("class", "globe-routes");
     const travelers = globeG.append("g").attr("class", "globe-travelers");
@@ -291,7 +296,7 @@ export function createAtlas(container) {
     const land = globeG._land, routes = globeG._routes;
     const travelers = globeG._travelers, dots = globeG._dots;
     if (!land) return;
-    if (!REDUCED_MOTION && now - globeRouteChangedAt > 14000) rotateGlobeRoutes();
+    if (motionEnabled() && now - globeRouteChangedAt > 14000) rotateGlobeRoutes();
     gProjection.rotate(rot);
     land.selectAll("path").attr("d", gPath);
     const center = [-rot[0], -rot[1]];
@@ -327,7 +332,7 @@ export function createAtlas(container) {
   }
   function startRotate() {
     stopRotate();
-    if (REDUCED_MOTION) { redrawGlobe(); return; }
+    if (!motionEnabled()) { redrawGlobe(); return; }
     const step = (now) => {
       rot[0] += 0.055;
       globePhase = (globePhase + 0.0007) % 1;
@@ -343,7 +348,7 @@ export function createAtlas(container) {
     api._last = () => api.render(v, ctx);
     if (!overlayG) return;
     const changed = v !== view; view = v;
-    svg.select(".atlas-bg").attr("fill-opacity", v === "landing" ? 0.56 : 1);
+    svg.select(".atlas-bg").attr("fill-opacity", v === "landing" ? 0.28 : 1);
     if (v === "landing") { svg.style("pointer-events", "none"); showGlobe(true); return; }
     showGlobe(false);
     const interactive = v === "explore" || v === "patterns";

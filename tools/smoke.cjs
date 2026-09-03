@@ -55,6 +55,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
       globeRoutes: document.querySelectorAll(".globe-route").length,
       globeTravelers: document.querySelectorAll(".globe-traveler").length,
       firstTravelerX: Number(document.querySelector(".globe-traveler")?.getAttribute("cx")),
+      motionLabel: document.querySelector(".motion-label")?.textContent,
     }));
     if (motion.mode !== "gsap") throw new Error("GSAP motion mode is not active");
     if (motion.mosaic !== "animated") throw new Error("living mosaic is not animated");
@@ -67,6 +68,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (motion.mosaicUnvalidatedPortraits) throw new Error("non-face gallery assets entered the landing mosaic");
     if (motion.mosaicHidden !== "true") throw new Error("decorative mosaic is exposed to assistive technology");
     if (motion.globeRoutes < 5 || motion.globeTravelers < 5) throw new Error("landing globe journeys are missing");
+    if (motion.motionLabel !== "Pause motion") throw new Error("motion control does not reflect playback");
     await wait(6200);
     const cadence = await page.$$eval(".mosaic-tile:not([data-clone])", (tiles) => ({
       changed: tiles.filter((tile) => Number(tile.dataset.swapCount) >= 1).length,
@@ -207,14 +209,32 @@ const BASE = process.argv[2] || "http://localhost:8124";
         mosaic: document.documentElement.dataset.mosaicMotion,
         opacity: Number(style.opacity),
         visibility: style.visibility,
+        label: document.querySelector(".motion-label")?.textContent,
       };
     });
-    await reduced.close();
     if (result.mode !== "reduced") throw new Error("reduced-motion mode was not detected");
     if (result.mosaic !== "static") throw new Error("mosaic should remain static in reduced motion");
+    if (result.label !== "Play motion") throw new Error("reduced-motion control does not offer playback");
     if (result.opacity !== 1 || result.visibility !== "visible") {
       throw new Error("reduced-motion content is not immediately visible");
     }
+    const before = await reduced.$eval(".mosaic-track", (track) => getComputedStyle(track).transform);
+    const travelerBefore = await reduced.$eval(".globe-traveler", (traveler) => Number(traveler.getAttribute("cx")));
+    await reduced.click("#motion-toggle");
+    await wait(1200);
+    const enabled = await reduced.evaluate((previous) => ({
+      mode: document.documentElement.dataset.motion,
+      mosaic: document.documentElement.dataset.mosaicMotion,
+      label: document.querySelector(".motion-label")?.textContent,
+      beltMoved: getComputedStyle(document.querySelector(".mosaic-track")).transform !== previous,
+      travelerX: Number(document.querySelector(".globe-traveler")?.getAttribute("cx")),
+    }), before);
+    await reduced.close();
+    if (enabled.mode !== "gsap" || enabled.mosaic !== "animated" || !enabled.beltMoved) {
+      throw new Error("explicit motion opt-in did not start the landing");
+    }
+    if (enabled.travelerX === travelerBefore) throw new Error("explicit motion opt-in did not start the globe");
+    if (enabled.label !== "Pause motion") throw new Error("motion control did not update after opt-in");
   });
 
   await browser.close();
