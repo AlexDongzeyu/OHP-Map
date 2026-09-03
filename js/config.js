@@ -4,7 +4,7 @@
 export const C = {
   paper: "#F1F3F5",
   paperSoft: "#FAFBFC",
-  panel: "#FAFBFC",
+  panel: "#EEF2F5",
   ink: "#18212A",
   inkSoft: "#34414C",
   muted: "#68737D",

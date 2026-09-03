@@ -86,7 +86,7 @@ export function createAtlas(container) {
     const { w, h } = size;
     const r = Math.min(w, h) * 0.44;
     gProjection = d3.geoOrthographic().scale(r)
-      .translate([w * 0.56, h * 0.54]).rotate(rot).clipAngle(90);
+      .translate([w * 0.58, h * 0.51]).rotate(rot).clipAngle(90);
     gPath = d3.geoPath(gProjection);
   }
 
