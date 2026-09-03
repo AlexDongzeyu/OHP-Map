@@ -46,9 +46,15 @@ export function createAtlas(container) {
     countriesG = camera.append("g");
     overlayG = camera.append("g");
 
+    const interruptCamera = () => svg.interrupt().interrupt("camera");
     zoom = d3.zoom().scaleExtent([1, 14])
+      .on("start", (ev) => { if (ev.sourceEvent) interruptCamera(); })
       .on("zoom", (ev) => { currentK = ev.transform.k; camera.attr("transform", ev.transform.toString()); rescale(); });
-    svg.call(zoom).on("dblclick.zoom", null).on("wheel", (e) => e.preventDefault());
+    svg.call(zoom)
+      .on("dblclick.zoom", null)
+      .on("wheel.camera-interrupt", interruptCamera, { capture: true, passive: true })
+      .on("pointerdown.camera-interrupt", interruptCamera, { capture: true })
+      .on("wheel", (e) => e.preventDefault());
   }
 
   function rescale() {
@@ -128,7 +134,9 @@ export function createAtlas(container) {
   };
 
   // ---- draw primitives -------------------------------------------------------
-  function clearOverlay() { overlayG.selectAll("*").remove(); }
+  function clearOverlay() {
+    overlayG.selectAll("*").interrupt().interrupt("guided-reveal").remove();
+  }
   function dot(g, x, y, o = {}) {
     const r = o.r || 4;
     return g.append("circle").attr("cx", x).attr("cy", y).attr("data-r", r).attr("r", r / currentK)
@@ -162,7 +170,8 @@ export function createAtlas(container) {
     const t = target
       ? d3.zoomIdentity.translate(w / 2 - k * target.x, h / 2 - k * target.y).scale(k)
       : d3.zoomIdentity;
-    const sel = motionEnabled() ? svg.transition().duration(850).ease(d3.easeCubicInOut) : svg;
+    svg.interrupt("camera");
+    const sel = motionEnabled() ? svg.transition("camera").duration(850).ease(d3.easeCubicInOut) : svg;
     sel.call(zoom.transform, t);
   }
   api.resetCamera = () => moveCamera(null, 1);
@@ -374,10 +383,15 @@ export function createAtlas(container) {
     const interactive = v === "explore" || v === "patterns";
     svg.style("pointer-events", interactive ? "auto" : "none");
     paintChoropleth(v === "patterns" && ctx.patternsLayer === "origins");
-    clearOverlay();
-    if (v === "guided") drawGuided(ctx);
-    else if (v === "explore") { drawExplore(ctx); if (changed) api.resetCamera(); }
-    else if (v === "patterns") {
+    if (v === "guided") {
+      if (changed) clearOverlay();
+      drawGuided(ctx);
+    } else if (v === "explore") {
+      clearOverlay();
+      drawExplore(ctx);
+      if (changed) api.resetCamera();
+    } else if (v === "patterns") {
+      clearOverlay();
       drawPatterns(ctx);
       if (changed && !ctx.activePatternEvent) api.resetCamera();
     }
@@ -390,17 +404,66 @@ export function createAtlas(container) {
     const idx = Math.min(ctx.guidedIndex || 0, wp.length - 1);
     const g = overlayG;
     const col = GROUP_COLOR[j.group] || C.accent;
-    for (let i = 0; i < idx; i++) {
-      const animate = i === idx - 1 && ctx.prevIndex != null && ctx.prevIndex < idx;
-      leg(g, wp[i], wp[i + 1], { color: col, width: 2.4, op: 0.92, animate });
-    }
-    wp.forEach((w, i) => {
-      const active = i === idx, visited = i <= idx;
-      if (active) {
-        dot(g, w.px, w.py, { r: 9, fill: "none", stroke: col, sw: 1.5, op: 0.4 });
-        dot(g, w.px, w.py, { r: 5, fill: col });
-      } else dot(g, w.px, w.py, { r: 3.4, fill: visited ? col : C.dotIdle, op: visited ? 0.85 : 0.55 });
+
+    const segments = wp.slice(0, idx).map((a, i) => ({
+      a,
+      b: wp[i + 1],
+      key: `${j.id}-${i}`,
+      animate: i === idx - 1 && ctx.prevIndex != null && ctx.prevIndex < idx,
+    }));
+    const routes = g.selectAll(".guided-leg").data(segments, (d) => d.key);
+    routes.exit().interrupt("guided-reveal").remove();
+    routes.interrupt("guided-reveal")
+      .attr("stroke-dasharray", null)
+      .attr("stroke-dashoffset", null);
+    const enteredRoutes = routes.enter().append("path")
+      .attr("class", "guided-leg")
+      .attr("fill", "none")
+      .attr("vector-effect", "non-scaling-stroke")
+      .attr("stroke-linecap", "round");
+    enteredRoutes.merge(routes)
+      .attr("d", (d) => legPath(d.a, d.b))
+      .attr("stroke", col)
+      .attr("stroke-width", 2.4)
+      .attr("opacity", 0.92);
+    enteredRoutes.each(function (d) {
+      if (!d.animate || !motionEnabled()) return;
+      const route = d3.select(this);
+      const length = this.getTotalLength();
+      route.attr("stroke-dasharray", length).attr("stroke-dashoffset", length)
+        .transition("guided-reveal").duration(900).ease(d3.easeCubicInOut)
+        .attr("stroke-dashoffset", 0)
+        .on("end", () => route.attr("stroke-dasharray", null).attr("stroke-dashoffset", null));
     });
+
+    const ring = wp[idx] ? [{ ...wp[idx], key: `${j.id}-${idx}` }] : [];
+    g.selectAll(".guided-ring").data(ring, (d) => d.key).join(
+      (enter) => enter.append("circle").attr("class", "guided-ring")
+        .attr("fill", "none").attr("vector-effect", "non-scaling-stroke"),
+      (update) => update,
+      (exit) => exit.remove(),
+    )
+      .attr("cx", (d) => d.px).attr("cy", (d) => d.py)
+      .attr("data-r", 9).attr("r", 9 / currentK)
+      .attr("stroke", col).attr("stroke-width", 1.5).attr("opacity", 0.4);
+
+    const points = wp.map((point, i) => ({
+      ...point,
+      key: `${j.id}-${i}`,
+      active: i === idx,
+      visited: i <= idx,
+    }));
+    g.selectAll(".guided-point").data(points, (d) => d.key).join(
+      (enter) => enter.append("circle").attr("class", "guided-point"),
+      (update) => update,
+      (exit) => exit.remove(),
+    )
+      .attr("cx", (d) => d.px).attr("cy", (d) => d.py)
+      .attr("data-r", (d) => d.active ? 5 : 3.4)
+      .attr("r", (d) => (d.active ? 5 : 3.4) / currentK)
+      .attr("fill", (d) => d.visited ? col : C.dotIdle)
+      .attr("opacity", (d) => d.visited ? 0.85 : 0.55);
+
     if (wp[idx]) moveCamera({ x: wp[idx].px, y: wp[idx].py }, 3.2);
   }
 

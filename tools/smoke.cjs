@@ -110,6 +110,36 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (await page.$(".follow-another")) throw new Error("Guided chooser should not render");
     const flatPaths = await page.$$eval("#map .camera path", (e) => e.length);
     if (flatPaths < 20) throw new Error("flat map not drawn (" + flatPaths + ")");
+    const target = await page.evaluate(() => {
+      const narrative = document.querySelector("[data-narr]");
+      const chapters = [...narrative.querySelectorAll("[data-chapter]")];
+      const last = Math.min(3, chapters.length - 1);
+      if (last < 1) return -1;
+      const activate = (index) => {
+        const chapter = chapters[index];
+        narrative.scrollTop = chapter.offsetTop -
+          narrative.clientHeight / 2 + chapter.offsetHeight / 2;
+        narrative.dispatchEvent(new Event("scroll"));
+      };
+      activate(last);
+      activate(Math.max(0, last - 1));
+      activate(last);
+      return last;
+    });
+    if (target < 1) throw new Error("guided journey has no route to test");
+    await wait(1000);
+    const guidedRoute = await page.evaluate(() => {
+      const active = Number(document.querySelector("[data-chapter].is-active")?.dataset.chapter);
+      const paths = [...document.querySelectorAll("#map .guided-leg")];
+      return {
+        active,
+        count: paths.length,
+        unfinished: paths.filter((path) => Number(path.getAttribute("stroke-dashoffset")) > 0.1).length,
+      };
+    });
+    if (guidedRoute.active !== target || guidedRoute.count !== target || guidedRoute.unfinished) {
+      throw new Error(`unstable route state ${JSON.stringify(guidedRoute)}`);
+    }
   });
   await check("explore: group chips + grouped rail", async () => {
     await page.click(".nav-tab[data-view='explore']");
@@ -117,6 +147,16 @@ const BASE = process.argv[2] || "http://localhost:8124";
     await page.waitForSelector(".rail .rail-ghead", { timeout: 5000 });
     const chips = await page.$$eval(".gchip", (e) => e.length);
     if (chips < 1) throw new Error("no group chips");
+    const mapBounds = await page.$eval("#map", (map) => map.getBoundingClientRect().toJSON());
+    await page.mouse.move(mapBounds.x + mapBounds.width / 2, mapBounds.y + mapBounds.height / 2);
+    await page.mouse.wheel({ deltaY: -300 });
+    await wait(250);
+    const userTransform = await page.$eval("#map .camera", (g) => g.getAttribute("transform") || "");
+    await wait(850);
+    const settledTransform = await page.$eval("#map .camera", (g) => g.getAttribute("transform") || "");
+    if (userTransform !== settledTransform) {
+      throw new Error(`camera transition overrode user zoom (${userTransform} -> ${settledTransform})`);
+    }
   });
   await check("search filters the rail", async () => {
     await page.type("#search", "auschwitz");

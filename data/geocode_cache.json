@@ -138,6 +138,12 @@
     "source": "curated",
     "precision": "city"
   },
+  "Lublin, Poland": {
+    "lat": 51.2465,
+    "lng": 22.5684,
+    "source": "curated",
+    "precision": "city"
+  },
   "Budapest, Hungary": {
     "lat": 47.4979,
     "lng": 19.0402,
@@ -666,15 +672,27 @@
     "source": "curated",
     "precision": "city"
   },
-  "England, UK": {
-    "lat": 52.3555,
-    "lng": -1.1743,
-    "source": "curated",
-    "precision": "city"
-  },
   "Scotland": {
     "lat": 56.4907,
     "lng": -4.2026,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Glasgow, Scotland": {
+    "lat": 55.8642,
+    "lng": -4.2518,
+    "source": "curated",
+    "precision": "city"
+  },
+  "New Glasgow, Canada": {
+    "lat": 45.5893,
+    "lng": -62.6452,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Edinburgh, Scotland": {
+    "lat": 55.9533,
+    "lng": -3.1883,
     "source": "curated",
     "precision": "city"
   },
@@ -684,9 +702,21 @@
     "source": "curated",
     "precision": "city"
   },
+  "Dublin, Ireland": {
+    "lat": 53.3498,
+    "lng": -6.2603,
+    "source": "curated",
+    "precision": "city"
+  },
   "Russia": {
     "lat": 61.524,
     "lng": 105.3188,
+    "source": "curated",
+    "precision": "city"
+  },
+  "Moscow, Russia": {
+    "lat": 55.7558,
+    "lng": 37.6173,
     "source": "curated",
     "precision": "city"
   }

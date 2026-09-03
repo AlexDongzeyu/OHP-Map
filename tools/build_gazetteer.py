@@ -12,19 +12,19 @@ import os
 # canonical -> dict(lat, lng, role(optional known-site role), aliases[list of exonyms/spellings])
 PLACES = {
     # ---- Origin countries / regions (fuzzy birthplaces) --------------------
-    "Poland":            {"lat": 52.2370, "lng": 19.0000, "aliases": ["poland", "polish"]},
-    "Hungary":           {"lat": 47.1625, "lng": 19.5033, "aliases": ["hungary", "hungarian"]},
-    "Romania":           {"lat": 45.9432, "lng": 24.9668, "aliases": ["romania", "romanian", "roumania"]},
-    "Germany":           {"lat": 51.1657, "lng": 10.4515, "aliases": ["germany", "german"]},
-    "Austria":           {"lat": 47.5162, "lng": 14.5501, "aliases": ["austria", "austrian"]},
-    "Czechoslovakia":    {"lat": 49.8175, "lng": 15.4730, "aliases": ["czechoslovakia", "czech", "bohemia", "moravia"]},
-    "Netherlands":       {"lat": 52.1326, "lng": 5.2913,  "aliases": ["netherlands", "holland", "dutch"]},
-    "France":            {"lat": 46.2276, "lng": 2.2137,  "aliases": ["france", "french"]},
-    "Lithuania":         {"lat": 55.1694, "lng": 23.8813, "aliases": ["lithuania", "lithuanian"]},
-    "Greece":            {"lat": 39.0742, "lng": 21.8243, "aliases": ["greece", "greek"]},
-    "Transnistria":      {"lat": 47.5000, "lng": 29.5000, "role": "ghetto", "aliases": ["transnistria"]},
+    "Poland":            {"lat": 52.2370, "lng": 19.0000, "aliases": ["poland"]},
+    "Hungary":           {"lat": 47.1625, "lng": 19.5033, "aliases": ["hungary"]},
+    "Romania":           {"lat": 45.9432, "lng": 24.9668, "aliases": ["romania", "roumania"]},
+    "Germany":           {"lat": 51.1657, "lng": 10.4515, "aliases": ["germany"]},
+    "Austria":           {"lat": 47.5162, "lng": 14.5501, "aliases": ["austria"]},
+    "Czechoslovakia":    {"lat": 49.8175, "lng": 15.4730, "aliases": ["czechoslovakia", "bohemia", "moravia"]},
+    "Netherlands":       {"lat": 52.1326, "lng": 5.2913,  "aliases": ["netherlands", "holland"]},
+    "France":            {"lat": 46.2276, "lng": 2.2137,  "aliases": ["france"]},
+    "Lithuania":         {"lat": 55.1694, "lng": 23.8813, "aliases": ["lithuania"]},
+    "Greece":            {"lat": 39.0742, "lng": 21.8243, "aliases": ["greece"]},
+    "Transnistria":      {"lat": 47.5000, "lng": 29.5000, "role": "transit", "aliases": ["transnistria"]},
     "Transylvania, Romania": {"lat": 46.7700, "lng": 23.5900, "aliases": ["transylvania"]},
-    "Galicia":           {"lat": 49.5000, "lng": 22.5000, "aliases": ["galicia", "galician"]},
+    "Galicia":           {"lat": 49.5000, "lng": 22.5000, "aliases": ["galicia"]},
 
     # ---- Cities / hometowns (with historical exonyms) ----------------------
     "Lodz, Poland":      {"lat": 51.7592, "lng": 19.4560, "aliases": ["lodz", "łódź", "litzmannstadt"]},
@@ -37,6 +37,7 @@ PLACES = {
     "Bedzin, Poland":    {"lat": 50.3266, "lng": 19.1280, "aliases": ["bedzin", "będzin", "bendin"]},
     "Sosnowiec, Poland": {"lat": 50.2863, "lng": 19.1041, "aliases": ["sosnowiec"]},
     "Radom, Poland":     {"lat": 51.4027, "lng": 21.1471, "aliases": ["radom"]},
+    "Lublin, Poland":    {"lat": 51.2465, "lng": 22.5684, "aliases": ["lublin"]},
     "Budapest, Hungary": {"lat": 47.4979, "lng": 19.0402, "aliases": ["budapest"]},
     "Debrecen, Hungary": {"lat": 47.5316, "lng": 21.6273, "aliases": ["debrecen"]},
     "Munkacs, Ukraine":  {"lat": 48.4390, "lng": 22.7178, "aliases": ["munkacs", "mukachevo", "munkács"]},
@@ -63,7 +64,7 @@ PLACES = {
     "Treblinka, Poland":     {"lat": 52.6314, "lng": 22.0520, "role": "camp", "aliases": ["treblinka"]},
     "Sobibor, Poland":       {"lat": 51.4470, "lng": 23.5950, "role": "camp", "aliases": ["sobibor", "sobibór"]},
     "Belzec, Poland":        {"lat": 50.3717, "lng": 23.4586, "role": "camp", "aliases": ["belzec", "bełżec"]},
-    "Majdanek (Lublin), Poland": {"lat": 51.2200, "lng": 22.6100, "role": "camp", "aliases": ["majdanek", "lublin"]},
+    "Majdanek (Lublin), Poland": {"lat": 51.2200, "lng": 22.6100, "role": "camp", "aliases": ["majdanek"]},
     "Plaszow (Krakow), Poland": {"lat": 50.0330, "lng": 19.9610, "role": "camp", "aliases": ["plaszow", "płaszów", "plaszów"]},
     "Janowska (Lviv), Ukraine": {"lat": 49.8500, "lng": 23.9800, "role": "camp", "aliases": ["janowska"]},
     "Stutthof, Poland":      {"lat": 54.3280, "lng": 19.1660, "role": "camp", "aliases": ["stutthof"]},
@@ -125,28 +126,32 @@ PLACES = {
 
     # ---- Second World War theatres (where veterans served) -----------------
     "Normandy, France":  {"lat": 49.2000, "lng": -0.3700, "role": "liberation", "aliases": ["normandy", "juno beach", "d-day", "d day"]},
-    "Dieppe, France":    {"lat": 49.9220, "lng": 1.0780, "role": "camp", "aliases": ["dieppe"]},
+    "Dieppe, France":    {"lat": 49.9220, "lng": 1.0780, "role": "transit", "aliases": ["dieppe"]},
     "Caen, France":      {"lat": 49.1829, "lng": -0.3707, "aliases": ["caen", "falaise"]},
     "Antwerp, Belgium":  {"lat": 51.2194, "lng": 4.4025, "aliases": ["antwerp", "scheldt"]},
     "Arnhem, Netherlands": {"lat": 51.9851, "lng": 5.8987, "aliases": ["arnhem"]},
-    "Ortona, Italy":     {"lat": 42.3550, "lng": 14.4030, "role": "camp", "aliases": ["ortona"]},
-    "Monte Cassino, Italy": {"lat": 41.4870, "lng": 13.8140, "role": "camp", "aliases": ["monte cassino", "cassino"]},
+    "Ortona, Italy":     {"lat": 42.3550, "lng": 14.4030, "role": "transit", "aliases": ["ortona"]},
+    "Monte Cassino, Italy": {"lat": 41.4870, "lng": 13.8140, "role": "transit", "aliases": ["monte cassino", "cassino"]},
     "Sicily, Italy":     {"lat": 37.6000, "lng": 14.0150, "aliases": ["sicily"]},
     "Rome, Italy":       {"lat": 41.9028, "lng": 12.4964, "aliases": ["rome"]},
-    "Hong Kong":         {"lat": 22.3193, "lng": 114.1694, "role": "camp", "aliases": ["hong kong"]},
+    "Hong Kong":         {"lat": 22.3193, "lng": 114.1694, "role": "transit", "aliases": ["hong kong"]},
 
     # ---- Korean War --------------------------------------------------------
     "Korea":             {"lat": 37.5000, "lng": 127.5000, "aliases": ["korea", "korean peninsula"]},
-    "Kapyong, Korea":    {"lat": 37.8870, "lng": 127.4890, "role": "camp", "aliases": ["kapyong", "kap'yong"]},
+    "Kapyong, Korea":    {"lat": 37.8870, "lng": 127.4890, "role": "transit", "aliases": ["kapyong", "kap'yong"]},
     "Seoul, Korea":      {"lat": 37.5665, "lng": 126.9780, "aliases": ["seoul"]},
     "Busan, Korea":      {"lat": 35.1796, "lng": 129.0756, "aliases": ["busan", "pusan"]},
 
     # ---- Other world origins (community members) ---------------------------
-    "United States":     {"lat": 39.8283, "lng": -98.5795, "aliases": ["united states", "u.s.a.", "u.s.", "america", "american"]},
-    "England, UK":       {"lat": 52.3555, "lng": -1.1743, "aliases": ["english"]},
-    "Scotland":          {"lat": 56.4907, "lng": -4.2026, "aliases": ["scotland", "scottish", "glasgow", "edinburgh"]},
-    "Ireland":           {"lat": 53.1424, "lng": -7.6921, "aliases": ["ireland", "irish", "dublin"]},
-    "Russia":            {"lat": 61.5240, "lng": 105.3188, "aliases": ["russia", "russian", "soviet union", "ussr", "moscow"]},
+    "United States":     {"lat": 39.8283, "lng": -98.5795, "aliases": ["united states", "america"]},
+    "Scotland":          {"lat": 56.4907, "lng": -4.2026, "aliases": ["scotland"]},
+    "Glasgow, Scotland": {"lat": 55.8642, "lng": -4.2518, "aliases": ["glasgow"]},
+    "New Glasgow, Canada": {"lat": 45.5893, "lng": -62.6452, "aliases": ["new glasgow"]},
+    "Edinburgh, Scotland": {"lat": 55.9533, "lng": -3.1883, "aliases": ["edinburgh"]},
+    "Ireland":           {"lat": 53.1424, "lng": -7.6921, "aliases": ["ireland"]},
+    "Dublin, Ireland":   {"lat": 53.3498, "lng": -6.2603, "aliases": ["dublin"]},
+    "Russia":            {"lat": 61.5240, "lng": 105.3188, "aliases": ["russia", "soviet union", "ussr"]},
+    "Moscow, Russia":    {"lat": 55.7558, "lng": 37.6173, "aliases": ["moscow"]},
 }
 
 def main():
