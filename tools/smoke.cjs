@@ -55,6 +55,11 @@ const BASE = process.argv[2] || "http://localhost:8124";
       globeRoutes: document.querySelectorAll(".globe-route").length,
       globeTravelers: document.querySelectorAll(".globe-traveler").length,
       firstTravelerX: Number(document.querySelector(".globe-traveler")?.getAttribute("cx")),
+      globeCenterX: Number(document.querySelector(".globe-shell")?.getAttribute("cx")),
+      globeCenterY: Number(document.querySelector(".globe-shell")?.getAttribute("cy")),
+      graticule: document.querySelector(".globe-graticule")?.getAttribute("d"),
+      viewportWidth: innerWidth,
+      viewportHeight: innerHeight,
       motionControl: Boolean(document.querySelector("#motion-toggle")),
     }));
     if (motion.mode !== "gsap") throw new Error("GSAP motion mode is not active");
@@ -68,6 +73,10 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (motion.mosaicUnvalidatedPortraits) throw new Error("non-face gallery assets entered the landing mosaic");
     if (motion.mosaicHidden !== "true") throw new Error("decorative mosaic is exposed to assistive technology");
     if (motion.globeRoutes < 5 || motion.globeTravelers < 5) throw new Error("landing globe journeys are missing");
+    if (Math.abs(motion.globeCenterX - motion.viewportWidth * .54) > 2 ||
+        Math.abs(motion.globeCenterY - motion.viewportHeight * .54) > 2) {
+      throw new Error("landing globe is not positioned correctly");
+    }
     if (motion.motionControl) throw new Error("motion control should not render");
     await wait(6200);
     const cadence = await page.$$eval(".mosaic-tile:not([data-clone])", (tiles) => ({
@@ -76,11 +85,13 @@ const BASE = process.argv[2] || "http://localhost:8124";
       intervals: tiles.map((tile) => Number(tile.dataset.cycleSeconds)),
     }));
     const travelerX = await page.$eval(".globe-traveler", (traveler) => Number(traveler.getAttribute("cx")));
+    const graticule = await page.$eval(".globe-graticule", (grid) => grid.getAttribute("d"));
     if (cadence.changed !== cadence.total) throw new Error(`${cadence.total - cadence.changed} mosaic tiles did not change`);
     if (cadence.intervals.some((seconds) => seconds < 4.8 || seconds > 8.01)) {
       throw new Error("mosaic repeat interval is outside the expected range");
     }
     if (travelerX === motion.firstTravelerX) throw new Error("globe traveler did not move");
+    if (graticule === motion.graticule) throw new Error("Earth graticule did not rotate");
   });
   await check("follow -> guided narrative + flat map", async () => {
     await page.click(".landing-card [data-act='follow']");

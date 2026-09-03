@@ -86,7 +86,7 @@ export function createAtlas(container) {
     const { w, h } = size;
     const r = Math.min(w, h) * 0.44;
     gProjection = d3.geoOrthographic().scale(r)
-      .translate([w * 0.5, h * 0.53]).rotate(rot).clipAngle(90);
+      .translate([w * 0.54, h * 0.54]).rotate(rot).clipAngle(90);
     gPath = d3.geoPath(gProjection);
   }
 
@@ -283,16 +283,24 @@ export function createAtlas(container) {
     const c = gProjection.translate(), r = gProjection.scale();
     globeG.append("circle").attr("class", "globe-shell")
       .attr("cx", c[0]).attr("cy", c[1]).attr("r", r)
-      .attr("fill", C.ocean).attr("fill-opacity", 0.66)
+      .attr("fill", C.globeOcean).attr("fill-opacity", 0.68)
       .attr("stroke", C.accentSoft).attr("stroke-opacity", 0.5).attr("stroke-width", 1.1);
     const land = globeG.append("g");
     land.selectAll("path").data(world.features).enter().append("path")
-      .attr("fill", C.land).attr("fill-opacity", 0.88)
+      .attr("fill", C.globeLand).attr("fill-opacity", 0.78)
       .attr("stroke", C.landStroke).attr("stroke-width", 0.4);
+    const graticule = globeG.append("path")
+      .attr("class", "globe-graticule")
+      .datum(d3.geoGraticule10())
+      .attr("fill", "none")
+      .attr("stroke", C.globeGrid)
+      .attr("stroke-width", 0.55)
+      .attr("stroke-opacity", 0.34);
     const routes = globeG.append("g").attr("class", "globe-routes");
     const travelers = globeG.append("g").attr("class", "globe-travelers");
     const dots = globeG.append("g");
     globeG._land = land;
+    globeG._graticule = graticule;
     globeG._routes = routes;
     globeG._travelers = travelers;
     globeG._dots = dots;
@@ -300,12 +308,13 @@ export function createAtlas(container) {
     redrawGlobe();
   }
   function redrawGlobe(now = performance.now()) {
-    const land = globeG._land, routes = globeG._routes;
+    const land = globeG._land, graticule = globeG._graticule, routes = globeG._routes;
     const travelers = globeG._travelers, dots = globeG._dots;
     if (!land) return;
     if (motionEnabled() && now - globeRouteChangedAt > 11000) rotateGlobeRoutes();
     gProjection.rotate(rot);
     land.selectAll("path").attr("d", gPath);
+    graticule.attr("d", gPath);
     const center = [-rot[0], -rot[1]];
     routes.selectAll("path").attr("d", (journey) => gPath({
       type: "LineString",
@@ -341,7 +350,7 @@ export function createAtlas(container) {
     stopRotate();
     if (!motionEnabled()) { redrawGlobe(); return; }
     const step = (now) => {
-      rot[0] += SYSTEM_REDUCED_MOTION ? 0.075 : 0.09;
+      rot[0] += SYSTEM_REDUCED_MOTION ? 0.1 : 0.12;
       globePhase = (globePhase + 0.0011) % 1;
       redrawGlobe(now);
       rotateRAF = requestAnimationFrame(step);
@@ -355,7 +364,7 @@ export function createAtlas(container) {
     api._last = () => api.render(v, ctx);
     if (!overlayG) return;
     const changed = v !== view; view = v;
-    svg.select(".atlas-bg").attr("fill-opacity", v === "landing" ? 0.22 : 1);
+    svg.select(".atlas-bg").attr("fill-opacity", v === "landing" ? 0.12 : 1);
     if (v === "landing") { svg.style("pointer-events", "none"); showGlobe(true); return; }
     showGlobe(false);
     const interactive = v === "explore" || v === "patterns";

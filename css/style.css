@@ -297,7 +297,7 @@ body[data-view="landing"] #map .globe {
   display:flex;
   align-items:center;
   padding-top:var(--header-height);
-  background:linear-gradient(90deg, rgba(241,243,245,.34) 0%, rgba(241,243,245,.24) 42%, rgba(241,243,245,.08) 72%, rgba(241,243,245,0) 100%);
+  background:linear-gradient(90deg, rgba(20,31,43,.8) 0%, rgba(20,31,43,.68) 34%, rgba(20,31,43,.28) 58%, rgba(20,31,43,.05) 78%, transparent 100%);
 }
 .portrait-mosaic {
   position:absolute;
@@ -398,13 +398,26 @@ body[data-view="landing"] #map .globe {
   margin-left:clamp(28px, 6vw, 96px);
   padding:0;
 }
-.landing-card::before {
-  content:"";
-  position:absolute;
-  z-index:-1;
-  inset:-48px -64px;
-  background:radial-gradient(ellipse at 34% 46%, rgba(241,243,245,.94) 0%, rgba(241,243,245,.84) 52%, rgba(241,243,245,.45) 72%, transparent 88%);
-  pointer-events:none;
+.ov-landing .display { color:#F8FAFC; }
+.ov-landing .kicker { color:#B8CEE0; }
+.ov-landing .lede { color:#E1E8EE; }
+.ov-landing .metric { color:#B8C3CC; }
+.ov-landing .metric b { color:#F8FAFC; }
+.ov-landing .care { color:#C2CBD2; }
+.ov-landing .link { color:#D7E6F2; }
+.ov-landing .btn-ghost {
+  color:#F8FAFC;
+  border-color:rgba(248,250,252,.52);
+  background:rgba(24,33,42,.18);
+}
+.ov-landing .btn-ghost:hover {
+  color:var(--ink);
+  border-color:var(--paper-soft);
+  background:var(--paper-soft);
+}
+.ov-landing .legend-mini {
+  color:#F8FAFC;
+  text-shadow:0 1px 7px rgba(24,33,42,.72);
 }
 .display {
   margin:0 0 var(--space-3);
@@ -974,7 +987,7 @@ body[data-view="landing"] #map .globe {
   .ov-landing {
     display:block;
     overflow-y:auto;
-    background:rgba(241,243,245,.2);
+    background:linear-gradient(90deg, rgba(20,31,43,.76), rgba(20,31,43,.5));
   }
   .portrait-mosaic {
     opacity:.76;
@@ -1004,11 +1017,6 @@ body[data-view="landing"] #map .globe {
     width:auto;
     margin:0 var(--space-6);
     padding:clamp(64px, 9vh, 92px) 0 var(--space-8) var(--space-6);
-  }
-  .landing-card::before {
-    inset:24px -18px -24px;
-    background:linear-gradient(90deg, rgba(241,243,245,.88), rgba(241,243,245,.76) 78%, rgba(241,243,245,.32));
-    border-radius:18px;
   }
   .display { font-size:clamp(50px, 15vw, 72px); }
   .lede { max-width:34em; font-size:16px; line-height:1.58; }
