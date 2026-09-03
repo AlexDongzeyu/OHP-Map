@@ -4,6 +4,7 @@
 import { loadData } from "./data.js";
 import { createAtlas } from "./atlas.js";
 import * as ui from "./ui.js";
+import * as motion from "./motion.js";
 import { GROUPS, REDUCED_MOTION, slug } from "./config.js";
 
 const VIEWS = ["landing", "guided", "explore", "patterns", "about"];
@@ -24,6 +25,7 @@ const state = {
 
 let store, atlas;
 let scrollHandler = null;
+let rendered = { view: null, selectedId: null, patternsLayer: null, guidedId: null };
 
 async function main() {
   const loadingEl = document.getElementById("loading");
@@ -49,6 +51,7 @@ async function main() {
   catch (err) { loadingEl.hidden = true; errorEl.hidden = false; console.error(err); return; }
   loadingEl.hidden = true;
   document.getElementById("topbar").hidden = false;
+  motion.init();
 
   if (window.ResizeObserver) {
     let t;
@@ -59,6 +62,7 @@ async function main() {
   wireGlobal();
   window.addEventListener("hashchange", route);
   route();
+  motion.animateShell();
 }
 
 function matchPredicate() {
@@ -86,6 +90,12 @@ function atlasCtx() {
 
 function render() {
   const v = state.view;
+  const changes = {
+    viewChanged: rendered.view !== v,
+    selectionChanged: rendered.selectedId !== state.selectedId,
+    layerChanged: rendered.patternsLayer !== state.patternsLayer,
+    storyChanged: rendered.guidedId !== state.guidedId,
+  };
   document.querySelectorAll(".nav-tab").forEach((b) => {
     const on = b.dataset.view === v;
     b.classList.toggle("on", on);
@@ -94,6 +104,13 @@ function render() {
   document.body.dataset.view = v;
   atlas.render(v, atlasCtx());
   mountOverlay();
+  motion.animateOverlay(v, changes);
+  rendered = {
+    view: v,
+    selectedId: state.selectedId,
+    patternsLayer: state.patternsLayer,
+    guidedId: state.guidedId,
+  };
 }
 
 function mountOverlay() {
@@ -186,6 +203,7 @@ function setupGuidedScroll() {
       state.prevIndex = state.guidedIndex; state.guidedIndex = best;
       atlas.render("guided", atlasCtx());
       secs.forEach((s) => s.classList.toggle("is-active", parseInt(s.dataset.chapter, 10) === best));
+      motion.animateChapter(secs[best]);
     }
   };
   root.addEventListener("scroll", scrollHandler, { passive: true });

@@ -13,8 +13,8 @@ execSync("node tools/build_atlas.cjs", { cwd: ROOT, stdio: "inherit" });
 
 // Whole directories copied verbatim.
 const DIRS = ["css", "js", "assets"];
-// Only the vendor libraries the runtime actually loads (D3 + fonts).
-const VENDOR = ["vendor/d3", "vendor/fonts"];
+// Only the vendor libraries the runtime actually loads.
+const VENDOR = ["vendor/d3", "vendor/fonts", "vendor/gsap"];
 // Individual files.
 const FILES = ["index.html", "embed.html"];
 // Only the JSON the front end fetches at runtime.

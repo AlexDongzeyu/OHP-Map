@@ -138,7 +138,8 @@ overlaps as **candidates**.
 ## The front end (`index.html`, `js/`, `css/`, `vendor/`)
 
 Vanilla ES modules, no bundler. Libraries are **vendored and pinned** in `vendor/` (no
-fragile CDNs). The map is a **custom D3 + TopoJSON vector atlas of Europe** drawn as a
+fragile CDNs). D3 owns the cartography while GSAP owns the restrained interface
+orchestration. The map is a **custom D3 + TopoJSON vector atlas of Europe** drawn as a
 single full-bleed stage — paper-toned countries, curved journey arcs that draw
 themselves, a CSS-transform camera that pans and zooms cinematically, and an off-map
 "new life across the Atlantic" anchor. Each view is an overlay over that one persistent
@@ -150,6 +151,7 @@ map.
 | `js/data.js` | Loads the three JSON artifacts; reshapes them into the journey model (initials, themes, hometown, per-waypoint year/uncertainty) |
 | `js/atlas.js` | The vector-map engine: projection, country rendering, camera, curved self-drawing arcs, off-map anchor, `pointAtYear` for the scrubber, mini-routes, tooltip |
 | `js/ui.js` | The overlay panels (landing, guided, explore, patterns, about) as class-based markup |
+| `js/motion.js` | Reduced-motion-aware GSAP orchestration for view sheets and narrative focus |
 | `js/app.js` | The state machine: view switching, the guided scroll observer, hash deep links, event delegation |
 | `tools/build_atlas.cjs` | Build step: trims the vendored world-atlas TopoJSON to a compact ~51 KB Europe GeoJSON (`data/atlas-europe.json`) |
 
@@ -158,7 +160,7 @@ map.
 
 **Visual craft (docs 10–12):** an "Alpine archive" direction pairs cool mineral neutrals,
 Public Sans interface typography, and restrained Spectral story moments with one deep-pine
-accent. A thin route trace links the landing, guided chapters, journey list, and timeline;
+accent. The interface relies on spacing and type rather than decorative rules, and
 consistent inline SVG icons replace text glyphs. On small screens, map-aware bottom sheets
 keep geography visible behind Guided, Explore, and person details. Motion remains slow and
 non-looping, `prefers-reduced-motion` is honoured, and all journeys converge visibly in
@@ -195,18 +197,17 @@ data*. Deployment is handled by Cloudflare (below), not by this workflow.
 
 **B. Cloudflare Worker** (`wrangler.toml`, `worker/`) — **the live deployment**. On push,
 Cloudflare Workers Builds runs `wrangler deploy`; a `[build]` step assembles a clean
-`public/` and the Worker serves it. The Cloudflare-native auto-update from doc 09 is an
-opt-in enhancement: a **Cron Trigger** fires `scheduled()`, which scrapes the archive,
-diffs against **Workers KV**, enriches only NEW survivors (reusing the committed
-gazetteer + geocode cache), and writes merged GeoJSON to KV; `fetch()` then serves the
-dataset straight from KV — no external call on page load. It deploys with zero setup
-(KV optional).
+`public/` and the Worker serves it. An hourly **Cron Trigger** checks all six archive
+listings, including both Military Veterans indexes, for new interviews. It immediately
+processes new profiles and refreshes a rotating bounded batch of existing profiles, so the
+entire archive is revisited roughly every two days without hammering Crestwood's site.
+Merged GeoJSON and sync status are written to **Workers KV**; `fetch()` serves the current
+dataset straight from KV with no OHP request on page load. Human-reviewed records are
+never overwritten by automatic extraction.
 
-```bash
-npx wrangler kv namespace create OHP_DATA   # paste the id into wrangler.toml
-npx wrangler dev --test-scheduled           # then GET /__scheduled or /__sync to test
-npx wrangler deploy
-```
+`GET /__sync/status` reports the last run without exposing private data. Manual refreshes
+require a `SYNC_TOKEN` Worker secret and `POST /__sync`; the scheduled refresh needs no
+secret.
 
 The LLM key (when the LLM extractor is used) lives in CI/Worker secrets, never in the repo.
 **Embed for Mr. Masters:** paste [`embed.html`](embed.html) (one `<iframe>`) — nothing else

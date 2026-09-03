@@ -3,19 +3,21 @@
 //   fetch()     — serves the static site and the dataset. /data/survivors.geojson is
 //                 served from KV (the cache the cron keeps warm) and falls back to the
 //                 committed file, so a page load never calls the external archive.
-//   scheduled() — the daily Cron Trigger; refreshes the dataset from the OHP archive
-//                 into KV, staging any NEW survivors as verified:false (pending review).
+//   scheduled() — hourly discovery across the full OHP taxonomy plus a bounded rotating
+//                 profile refresh, written to Workers KV.
 //
 // "Auto-updating" here means auto-detected and auto-staged, never auto-published as
 // fact: new entries arrive pending until a human verifies them (doc 09 Step 2.5).
-import { syncSurvivors } from "./sync.js";
+import { DATA_KEY, STATUS_KEY, syncSurvivors } from "./sync.js";
 
-const DATA_KEY = "survivors.geojson";
+const JSON_HEADERS = {
+  "content-type": "application/json; charset=utf-8",
+  "cache-control": "no-store",
+};
 
 export default {
   async scheduled(controller, env, ctx) {
-    // No-op unless a KV namespace is bound (see wrangler.toml "Enabling auto-update").
-    if (env.OHP_DATA) ctx.waitUntil(syncSurvivors(env));
+    ctx.waitUntil(syncSurvivors(env));
   },
 
   async fetch(request, env, ctx) {
@@ -36,10 +38,24 @@ export default {
       // Cold cache → fall through to the committed file via ASSETS.
     }
 
-    // Manual trigger for testing: GET /__sync runs the refresh now (needs KV).
+    if (url.pathname === "/__sync/status") {
+      const status = await env.OHP_DATA.get(STATUS_KEY);
+      return new Response(status || JSON.stringify({ state: "waiting-for-first-sync" }), {
+        status: status ? 200 : 202,
+        headers: JSON_HEADERS,
+      });
+    }
+
+    // Manual refreshes are disabled unless a secret is explicitly configured.
     if (url.pathname === "/__sync") {
-      if (!env.OHP_DATA) {
-        return new Response("KV not configured; auto-update is disabled.\n", { status: 503 });
+      if (request.method !== "POST") {
+        return new Response("Use POST.\n", { status: 405, headers: { allow: "POST" } });
+      }
+      if (!env.SYNC_TOKEN) {
+        return new Response("Manual sync is disabled; the hourly schedule remains active.\n", { status: 503 });
+      }
+      if (request.headers.get("authorization") !== `Bearer ${env.SYNC_TOKEN}`) {
+        return new Response("Unauthorized.\n", { status: 401 });
       }
       ctx.waitUntil(syncSurvivors(env));
       return new Response("sync started\n", { status: 202 });

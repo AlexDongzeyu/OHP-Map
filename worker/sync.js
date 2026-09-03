@@ -1,17 +1,33 @@
-// The cron-side refresh (doc 09 Part 2.4–2.5): scrape the OHP archive, diff against
-// what KV already has, enrich only NEW survivors, and write a merged GeoJSON back.
-//
-// It reuses the SAME committed gazetteer + geocode cache the Python pipeline uses, so
-// place normalization and coordinates match exactly. New survivors are always staged
-// verified:false — auto-detected, never auto-asserted as fact.
+// Hourly archive refresh: check every OHP category for additions, then refresh a bounded
+// rotating batch of existing profiles. New data is auto-extracted and remains unverified.
 import gazetteer from "../data/gazetteer.json";
 import geocodeCache from "../data/geocode_cache.json";
 
 const BASE = "https://ohp.crestwood.on.ca";
-const LISTING = `${BASE}/ohp-type/holocaust-survivors/`;
-const UA = "CrestwoodOHP-Map-Worker/1.0 (+https://github.com/AlexDongzeyu/OHP-Map)";
-const DATA_KEY = "survivors.geojson";
+const UA = "CrestwoodOHP-Map-Worker/2.0 (+https://github.com/AlexDongzeyu/OHP-Map)";
+export const DATA_KEY = "survivors.geojson";
+export const STATUS_KEY = "ohp-sync-status.json";
+const SEEN_KEY = "ohp-seen-slugs.json";
+const FAILURE_KEY = "ohp-fetch-failures.json";
+const CURSOR_KEY = "ohp-refresh-cursor";
+const DETAIL_BUDGET = 30;
+const RUN_LOCK_MINUTES = 15;
 
+const CATEGORIES = [
+  ["holocaust-survivors", "Holocaust Survivors"],
+  ["military-veterans-al", "Military Veterans"],
+  ["military-veterans-mz", "Military Veterans"],
+  ["community-members", "Community Members"],
+  ["first-nations", "First Nations"],
+  ["crestwood-families", "Crestwood Families"],
+];
+const GROUP_ORDER = [
+  "Holocaust Survivors",
+  "Military Veterans",
+  "Community Members",
+  "First Nations",
+  "Crestwood Families",
+];
 const RESETTLEMENT = new Set([
   "Toronto, Canada", "Canada", "Montreal, Canada", "Israel",
   "New York, USA", "Vienna, Austria", "Switzerland", "Italy",
@@ -19,200 +35,431 @@ const RESETTLEMENT = new Set([
 const ROLE_ORDER = { birthplace: 0, ghetto: 1, camp: 2, transit: 3, liberation: 4, resettlement: 5 };
 
 export async function syncSurvivors(env) {
-  if (!env.OHP_DATA) return { skipped: "no KV namespace bound" };
-  const slugs = await listSlugs();
-  const existing = await env.OHP_DATA.get(DATA_KEY, "json");
-  const features = existing && existing.features ? existing.features : [];
-  const known = new Set(features.map((f) => f.properties.survivor_id));
-
-  let added = 0;
-  for (const slug of slugs) {
-    if (known.has(slug)) continue; // only enrich NEW survivors (cheap diff)
-    const page = await fetchText(`${BASE}/ohp/${slug}/`);
-    if (!page) continue;
-    const rec = parseEntry(slug, page);
-    if (!rec.text) continue;
-    const feature = toFeature(rec);
-    if (feature) {
-      features.push(feature);
-      known.add(slug);
-      added++;
-    }
+  if (!env.OHP_DATA || !env.ASSETS) throw new Error("OHP_DATA and ASSETS bindings are required");
+  const startedAt = new Date().toISOString();
+  const previousStatus = await env.OHP_DATA.get(STATUS_KEY, "json");
+  if (
+    previousStatus?.state === "running" &&
+    Date.now() - Date.parse(previousStatus.started_at) < RUN_LOCK_MINUTES * 60 * 1000
+  ) {
+    return { state: "already-running", started_at: previousStatus.started_at };
   }
+  await env.OHP_DATA.put(STATUS_KEY, JSON.stringify({ state: "running", started_at: startedAt }));
 
-  const doc = {
-    type: "FeatureCollection",
-    metadata: {
-      generator: "worker/sync.js",
-      source: "scrape",
-      count: features.length,
-      reviewed: features.filter((f) => f.properties.review_status === "reviewed").length,
-      pending: features.filter((f) => f.properties.review_status !== "reviewed").length,
-      time_min: 1933,
-      time_max: 1950,
-      sample_data: false,
-      refreshed_at: new Date().toISOString(),
-      notice:
-        "Pending records are auto-extracted from public archive summaries and await " +
-        "human verification and permission; they are not authoritative.",
-    },
-    features,
-  };
-  await env.OHP_DATA.put(DATA_KEY, JSON.stringify(doc));
-  return { added, total: features.length };
+  try {
+    const current = await loadCurrentData(env);
+    const featuresById = new Map(
+      (current.features || []).map((feature) => [feature.properties.survivor_id, feature]),
+    );
+    const seenDoc = await env.OHP_DATA.get(SEEN_KEY, "json");
+    const seen = new Set(Array.isArray(seenDoc) ? seenDoc : featuresById.keys());
+    const failures = (await env.OHP_DATA.get(FAILURE_KEY, "json")) || {};
+    const listed = await listArchiveEntries();
+    const newlyListed = listed.filter((entry) => !seen.has(entry.slug));
+    const eligibleNew = newlyListed.filter((entry) => (
+      !failures[entry.slug] ||
+      Date.parse(failures[entry.slug].retry_after) <= Date.now()
+    ));
+    const newBatch = eligibleNew.slice(0, DETAIL_BUDGET);
+
+    const refreshable = listed.filter((entry) => (
+      seen.has(entry.slug) &&
+      featuresById.get(entry.slug)?.properties?.review_status !== "reviewed"
+    ));
+    const cursor = Number(await env.OHP_DATA.get(CURSOR_KEY)) || 0;
+    const refreshSlots = Math.max(0, DETAIL_BUDGET - newBatch.length);
+    const refreshBatch = circularSlice(refreshable, cursor, refreshSlots);
+    const batch = [...newBatch, ...refreshBatch];
+
+    let added = 0;
+    let updated = 0;
+    let unplaced = 0;
+    let failed = 0;
+
+    for (const entry of batch) {
+      const html = await fetchText(`${BASE}/ohp/${entry.slug}/`);
+      if (!html) {
+        failures[entry.slug] = nextFailure(failures[entry.slug]);
+        failed++;
+        continue;
+      }
+      delete failures[entry.slug];
+      seen.add(entry.slug);
+      const record = parseEntry(entry.slug, html, entry.group);
+      if (!record.text) {
+        unplaced++;
+        continue;
+      }
+      const fresh = toFeature(record);
+      if (!fresh) {
+        unplaced++;
+        continue;
+      }
+
+      const existing = featuresById.get(entry.slug);
+      if (!existing) {
+        featuresById.set(entry.slug, fresh);
+        added++;
+        continue;
+      }
+      const merged = mergeFeature(existing, fresh);
+      if (JSON.stringify(merged) !== JSON.stringify(existing)) {
+        featuresById.set(entry.slug, merged);
+        updated++;
+      }
+    }
+
+    const features = [...featuresById.values()];
+    const nextCursor = refreshable.length
+      ? (cursor + refreshBatch.length) % refreshable.length
+      : 0;
+    const completedAt = new Date().toISOString();
+    const groups = countGroups(features);
+    const doc = {
+      type: "FeatureCollection",
+      metadata: {
+        ...(current.metadata || {}),
+        generator: "worker/sync.js",
+        source: "cloudflare-live-sync",
+        count: features.length,
+        groups,
+        group_order: GROUP_ORDER,
+        reviewed: features.filter((feature) => feature.properties.review_status === "reviewed").length,
+        pending: features.filter((feature) => feature.properties.review_status !== "reviewed").length,
+        sample_data: false,
+        refreshed_at: completedAt,
+        notice:
+          "Auto-extracted records require human verification and permission; " +
+          "the source archive remains authoritative.",
+      },
+      features,
+    };
+    const status = {
+      state: "ready",
+      started_at: startedAt,
+      completed_at: completedAt,
+      categories_checked: CATEGORIES.length,
+      profiles_listed: listed.length,
+      profiles_checked: batch.length,
+      newly_listed: newlyListed.length,
+      deferred_failures: newlyListed.length - eligibleNew.length,
+      added,
+      updated,
+      unplaced,
+      failed,
+      total: features.length,
+      groups,
+      next_cursor: nextCursor,
+    };
+
+    await Promise.all([
+      env.OHP_DATA.put(DATA_KEY, JSON.stringify(doc)),
+      env.OHP_DATA.put(SEEN_KEY, JSON.stringify([...seen].sort())),
+      env.OHP_DATA.put(FAILURE_KEY, JSON.stringify(failures)),
+      env.OHP_DATA.put(CURSOR_KEY, String(nextCursor)),
+      env.OHP_DATA.put(STATUS_KEY, JSON.stringify(status)),
+    ]);
+    return status;
+  } catch (error) {
+    const status = {
+      state: "error",
+      started_at: startedAt,
+      failed_at: new Date().toISOString(),
+      message: error instanceof Error ? error.message : String(error),
+    };
+    await env.OHP_DATA.put(STATUS_KEY, JSON.stringify(status));
+    throw error;
+  }
 }
 
-// ---- scraping ---------------------------------------------------------------
+async function loadCurrentData(env) {
+  const cached = await env.OHP_DATA.get(DATA_KEY, "json");
+  if (cached?.features) return cached;
+
+  const response = await env.ASSETS.fetch(new Request("https://assets.local/data/survivors.geojson"));
+  if (!response.ok) throw new Error(`Unable to load the committed dataset: ${response.status}`);
+  const seed = await response.json();
+  if (!seed?.features) throw new Error("Committed dataset is not a FeatureCollection");
+  return seed;
+}
+
+async function listArchiveEntries() {
+  const pages = await Promise.all(CATEGORIES.map(async ([term, group]) => {
+    const html = await fetchText(`${BASE}/ohp-type/${term}/`);
+    if (!html) throw new Error(`Unable to load OHP category: ${term}`);
+    return extractSlugs(html).map((slug) => ({ slug, group }));
+  }));
+  const unique = new Map();
+  for (const entries of pages) {
+    for (const entry of entries) if (!unique.has(entry.slug)) unique.set(entry.slug, entry);
+  }
+  return [...unique.values()].sort((a, b) => a.slug.localeCompare(b.slug));
+}
 
 async function fetchText(url) {
-  for (let i = 0; i < 3; i++) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const r = await fetch(url, { headers: { "User-Agent": UA } });
-      if (r.ok) return await r.text();
-    } catch (_) { /* retry */ }
+      const response = await fetch(url, {
+        headers: { "User-Agent": UA },
+        redirect: "follow",
+      });
+      if (response.ok) return await response.text();
+      lastError = new Error(`${response.status} ${response.statusText}`);
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
   }
+  console.warn(`OHP fetch failed for ${url}:`, lastError);
   return null;
 }
 
-async function listSlugs() {
-  const html = await fetchText(LISTING);
-  if (!html) return [];
-  const re = /href="https:\/\/ohp\.crestwood\.on\.ca\/ohp\/([a-z0-9-]+)\//g;
-  return [...new Set([...html.matchAll(re)].map((m) => m[1]))].sort();
+function extractSlugs(html) {
+  const protectedSlugs = new Set();
+  const protectedPatterns = [
+    /<option[^>]+value=["'](?:https:\/\/ohp\.crestwood\.on\.ca)?\/ohp\/([a-z0-9-]+)\/?["'][^>]*>\s*Protected:/gi,
+    /<a[^>]+href=["'](?:https:\/\/ohp\.crestwood\.on\.ca)?\/ohp\/([a-z0-9-]+)\/?["'][^>]*>\s*Protected:/gi,
+  ];
+  for (const pattern of protectedPatterns) {
+    for (const match of html.matchAll(pattern)) protectedSlugs.add(match[1]);
+  }
+  const matches = html.matchAll(/href=["'](?:https:\/\/ohp\.crestwood\.on\.ca)?\/ohp\/([a-z0-9-]+)\/?["']/gi);
+  return [...new Set([...matches].map((match) => match[1]))]
+    .filter((slug) => !protectedSlugs.has(slug))
+    .sort();
+}
+
+function circularSlice(entries, cursor, count) {
+  if (!entries.length || count < 1) return [];
+  const size = Math.min(count, entries.length);
+  return Array.from({ length: size }, (_, index) => entries[(cursor + index) % entries.length]);
+}
+
+function nextFailure(previous) {
+  const attempts = (previous?.attempts || 0) + 1;
+  const hours = Math.min(24, 2 ** Math.min(attempts, 4));
+  return {
+    attempts,
+    retry_after: new Date(Date.now() + hours * 60 * 60 * 1000).toISOString(),
+  };
 }
 
 function clean(fragment) {
-  const txt = fragment.replace(/<[^>]+>/g, " ");
-  return decodeEntities(txt).replace(/\s+/g, " ").trim();
+  const text = fragment.replace(/<[^>]+>/g, " ");
+  return decodeEntities(text).replace(/\s+/g, " ").trim();
 }
 
-function decodeEntities(s) {
-  return s
+function decodeEntities(value) {
+  return value
     .replace(/&#8211;/g, "–").replace(/&#8217;/g, "’").replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"').replace(/&#039;/g, "'");
+    .replace(/&quot;/g, "\"").replace(/&#039;/g, "'");
 }
 
-function parseEntry(slug, html) {
-  const body = html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ");
-  let name = slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  const tm = body.match(/<title>([\s\S]*?)<\/title>/);
-  if (tm) {
-    const raw = clean(tm[1]).split(/\s*[–\-|]\s*CRESTWOOD/i)[0].trim();
+function parseEntry(slug, html, group) {
+  const body = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ");
+  let name = slug.replace(/-/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+  const titleMatch = body.match(/<title>([\s\S]*?)<\/title>/i);
+  if (titleMatch) {
+    const raw = clean(titleMatch[1]).split(/\s*[–\-|]\s*CRESTWOOD/i)[0].trim();
     if (raw && !/welcome/i.test(raw)) name = formatName(raw);
   }
-  const cm = body.match(/class="[^"]*entry-content[^"]*"[^>]*>([\s\S]*?)<\/div>/);
-  let text = cm ? clean(cm[1]) : "";
-  text = text.split(/\bVideos\b/)[0].trim();
-  return { survivor_id: slug, name, archive_url: `${BASE}/ohp/${slug}/`, text };
+  const contentMatch = body.match(/class="[^"]*entry-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+  let text = contentMatch ? clean(contentMatch[1]) : "";
+  text = text.split(/\bVideos\b/i)[0].trim();
+  return {
+    survivor_id: slug,
+    name,
+    group,
+    conflicts: deriveConflicts(group, text),
+    archive_url: `${BASE}/ohp/${slug}/`,
+    text,
+  };
 }
 
 function formatName(raw) {
   if (raw.includes(",")) {
-    const [last, first] = raw.split(",", 2).map((p) => p.trim());
+    const [last, first] = raw.split(",", 2).map((part) => part.trim());
     return `${first} ${last}`.trim();
   }
   return raw.trim();
 }
 
-// ---- extraction (port of pipeline/extract.OfflineExtractor) ------------------
+function deriveConflicts(group, text) {
+  if (group === "Holocaust Survivors") return ["The Holocaust"];
+  const found = [];
+  if (/\bkorea(n)?\b/i.test(text)) found.push("Korean War");
+  if (/\b(world war ii|wwii|second world war|1939|1940|1941|1942|1943|1944|1945|normandy|dieppe|d-?day)\b/i.test(text)) {
+    found.push("Second World War");
+  }
+  if (/\b(world war i|wwi|first world war|1914|1915|1916|1917|1918)\b/i.test(text)) {
+    found.push("First World War");
+  }
+  if (/\b(afghanistan|bosnia|peacekeep|cyprus|suez)\b/i.test(text)) {
+    found.push("Peacekeeping & later service");
+  }
+  if (group === "Military Veterans" && !found.length) found.push("Second World War");
+  return found;
+}
 
 function extract(text) {
   const aliases = gazetteer.aliases;
   const low = text.toLowerCase();
   const hits = [];
   for (const alias of Object.keys(aliases)) {
-    let idx = 0;
-    const re = new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g");
-    let m;
-    while ((m = re.exec(low))) hits.push([m.index, m.index + alias.length, alias]);
+    const pattern = new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g");
+    let match;
+    while ((match = pattern.exec(low))) hits.push([match.index, match.index + alias.length, alias]);
   }
   hits.sort((a, b) => a[0] - b[0] || (b[1] - b[0]) - (a[1] - a[0]));
-  const claimed = [], seen = new Set(), out = [];
+  const claimed = [];
+  const seen = new Set();
+  const output = [];
   for (const [start, end, alias] of hits) {
-    if (claimed.some(([cs, ce]) => start < ce && end > cs)) continue;
+    if (claimed.some(([claimStart, claimEnd]) => start < claimEnd && end > claimStart)) continue;
     claimed.push([start, end]);
     const canonical = aliases[alias];
     if (seen.has(canonical)) continue;
     seen.add(canonical);
-    const window = text.slice(Math.max(0, start - 40), end + 60);
-    const ym = window.match(/(19[3-5]\d)/);
-    out.push({
+    const context = text.slice(Math.max(0, start - 40), end + 60);
+    const yearMatch = context.match(/(19[3-5]\d)/);
+    output.push({
       as_written: text.slice(start, end),
       _canonical: canonical,
-      date: { start: ym ? ym[1] : null, end: ym ? ym[1] : null, precision: ym ? "year" : "unknown" },
+      date: {
+        start: yearMatch ? yearMatch[1] : null,
+        end: yearMatch ? yearMatch[1] : null,
+        precision: yearMatch ? "year" : "unknown",
+      },
       confidence: 0.5,
       verified: false,
-      source_quote: window.trim(),
+      source_quote: context.trim(),
     });
   }
   let firstAssigned = false;
-  for (const wp of out) {
-    const canonical = wp._canonical;
-    delete wp._canonical;
+  for (const waypoint of output) {
+    const canonical = waypoint._canonical;
+    delete waypoint._canonical;
     const siteRole = gazetteer.known_sites[canonical];
     const isFirst = !firstAssigned && !siteRole && !RESETTLEMENT.has(canonical);
-    wp.role = siteRole || (RESETTLEMENT.has(canonical) ? "resettlement" : (isFirst ? "birthplace" : "transit"));
-    wp.canonical = canonical;
+    waypoint.role = siteRole || (RESETTLEMENT.has(canonical) ? "resettlement" : (isFirst ? "birthplace" : "transit"));
+    waypoint.canonical = canonical;
     if (isFirst) firstAssigned = true;
   }
-  return out;
+  return output;
 }
 
-// ---- geocode + assemble -----------------------------------------------------
-
-function orderWaypoints(wps) {
-  const years = wps.map((w) => parseYear(w.date && w.date.start));
-  if (years.every((y) => y === null)) {
-    return wps
-      .map((w, i) => [w, i])
+function orderWaypoints(waypoints) {
+  const years = waypoints.map((waypoint) => parseYear(waypoint.date?.start));
+  if (years.every((year) => year === null)) {
+    return waypoints
+      .map((waypoint, index) => [waypoint, index])
       .sort((a, b) => (ROLE_ORDER[a[0].role] ?? 3) - (ROLE_ORDER[b[0].role] ?? 3) || a[1] - b[1])
-      .map(([w]) => w);
+      .map(([waypoint]) => waypoint);
   }
   const filled = years.slice();
   let last = null;
-  for (let i = 0; i < filled.length; i++) filled[i] === null ? (filled[i] = last) : (last = filled[i]);
-  let nxt = null;
-  for (let i = filled.length - 1; i >= 0; i--) filled[i] === null ? (filled[i] = nxt) : (nxt = filled[i]);
-  return wps
-    .map((w, i) => [w, i, filled[i] === null ? 1e9 : filled[i]])
+  for (let index = 0; index < filled.length; index++) {
+    if (filled[index] === null) filled[index] = last;
+    else last = filled[index];
+  }
+  let next = null;
+  for (let index = filled.length - 1; index >= 0; index--) {
+    if (filled[index] === null) filled[index] = next;
+    else next = filled[index];
+  }
+  return waypoints
+    .map((waypoint, index) => [waypoint, index, filled[index] === null ? 1e9 : filled[index]])
     .sort((a, b) => a[2] - b[2] || a[1] - b[1])
-    .map(([w]) => w);
+    .map(([waypoint]) => waypoint);
 }
 
-function parseYear(t) {
-  const m = String(t || "").match(/(1[89]\d\d|20\d\d)/);
-  return m ? parseInt(m[1], 10) : null;
+function parseYear(value) {
+  const match = String(value || "").match(/(1[89]\d\d|20\d\d)/);
+  return match ? parseInt(match[1], 10) : null;
 }
 
-function toFeature(rec) {
-  let wps = extract(rec.text);
+function toFeature(record) {
   const placed = [];
-  for (const wp of wps) {
-    const c = geocodeCache[wp.canonical];
-    if (c && typeof c.lat === "number") {
-      placed.push({ ...wp, lat: round(c.lat), lng: round(c.lng) });
+  for (const waypoint of extract(record.text)) {
+    const coordinates = geocodeCache[waypoint.canonical];
+    if (coordinates && typeof coordinates.lat === "number") {
+      placed.push({ ...waypoint, lat: round(coordinates.lat), lng: round(coordinates.lng) });
     }
   }
-  if (placed.length < 1) return null;
+  if (!placed.length) return null;
   const ordered = orderWaypoints(placed);
-  const home = ordered.find((w) => w.role === "birthplace") || ordered[0];
+  const home = ordered.find((waypoint) => waypoint.role === "birthplace") || ordered[0];
+  const birthMatch = record.text.match(/\bborn\b[^.]{0,100}\b(18\d\d|19\d\d|20\d\d)\b/i);
   return {
     type: "Feature",
     geometry: { type: "Point", coordinates: [home.lng, home.lat] },
     properties: {
-      survivor_id: rec.survivor_id,
-      name: rec.name,
+      survivor_id: record.survivor_id,
+      name: record.name,
       is_sample: false,
-      review_status: "pending", // auto-detected; pending human verification
-      bio_excerpt: rec.text.slice(0, 320),
-      archive_url: rec.archive_url,
+      group: record.group,
+      conflicts: record.conflicts,
+      birth_year: birthMatch ? parseInt(birthMatch[1], 10) : null,
+      review_status: "pending",
+      bio_excerpt: record.text.slice(0, 320),
+      archive_url: record.archive_url,
       theme_tags: [],
       waypoints: ordered,
     },
   };
 }
 
-function round(n) {
-  return Math.round(n * 1e6) / 1e6;
+function mergeFeature(existing, fresh) {
+  if (existing.properties.review_status === "reviewed") return existing;
+  const waypoints = mergeWaypoints(existing.properties.waypoints || [], fresh.properties.waypoints || []);
+  const home = waypoints.find((waypoint) => waypoint.role === "birthplace") || waypoints[0];
+  return {
+    type: "Feature",
+    geometry: home
+      ? { type: "Point", coordinates: [home.lng, home.lat] }
+      : existing.geometry,
+    properties: {
+      ...existing.properties,
+      ...fresh.properties,
+      featured: existing.properties.featured || false,
+      media_url: existing.properties.media_url || null,
+      portrait: existing.properties.portrait || null,
+      portrait_rights: existing.properties.portrait_rights || null,
+      review_status: existing.properties.review_status || "pending",
+      theme_tags: existing.properties.theme_tags?.length
+        ? existing.properties.theme_tags
+        : fresh.properties.theme_tags,
+      waypoints,
+    },
+  };
+}
+
+function mergeWaypoints(existing, fresh) {
+  const merged = [...existing];
+  const keys = new Set(existing.map((waypoint) => `${waypoint.canonical}|${waypoint.role}`));
+  for (const waypoint of fresh) {
+    const key = `${waypoint.canonical}|${waypoint.role}`;
+    if (!keys.has(key)) {
+      keys.add(key);
+      merged.push(waypoint);
+    }
+  }
+  return orderWaypoints(merged);
+}
+
+function countGroups(features) {
+  const counts = {};
+  for (const feature of features) {
+    const group = feature.properties.group || "Holocaust Survivors";
+    counts[group] = (counts[group] || 0) + 1;
+  }
+  return counts;
+}
+
+function round(value) {
+  return Math.round(value * 1e6) / 1e6;
 }

@@ -9,6 +9,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
   const browser = await puppeteer.launch({ executablePath: EDGE, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
   const page = await browser.newPage();
   await page.setViewport({ width: 1366, height: 850 });
+  await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
   page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text()); });
   page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
   page.on("requestfailed", (r) => { if (!/favicon/.test(r.url())) errors.push("requestfailed: " + r.url()); });
@@ -19,7 +20,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
     catch (e) { errors.push(label + ": " + e.message); console.log("FAIL " + label + " :: " + e.message); }
   }
 
-  await page.goto(BASE + "/", { waitUntil: "networkidle2", timeout: 40000 });
+  await page.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 40000 });
   await page.waitForSelector("#topbar:not([hidden])", { timeout: 15000 });
   await wait(900);
 
@@ -32,6 +33,14 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (!/\d+ people/.test(scale)) throw new Error("scale='" + scale + "'");
     const icon = await page.$(".landing-card [data-act='follow'] .icon");
     if (!icon) throw new Error("primary action is missing its SVG icon");
+    const motion = await page.evaluate(() => ({
+      mode: document.documentElement.dataset.motion,
+      version: window.gsap && window.gsap.version,
+      hasReviewBadge: Boolean(document.querySelector(".status-pill")),
+    }));
+    if (motion.mode !== "gsap") throw new Error("GSAP motion mode is not active");
+    if (motion.version !== "3.15.0") throw new Error("unexpected GSAP version " + motion.version);
+    if (motion.hasReviewBadge) throw new Error("header review badge should not render");
   });
   await check("follow -> guided narrative + flat map", async () => {
     await page.click(".landing-card [data-act='follow']");
@@ -84,7 +93,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
   });
 
   await page.setViewport({ width: 390, height: 844 });
-  await page.goto(BASE + "/", { waitUntil: "networkidle2", timeout: 40000 });
+  await page.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 40000 });
   await page.waitForSelector("#topbar:not([hidden])", { timeout: 15000 });
   await wait(300);
 
@@ -105,6 +114,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
   await check("mobile explore keeps the map visible", async () => {
     await page.click(".nav-tab[data-view='explore']");
     await page.waitForSelector(".rail .rail-card", { timeout: 5000 });
+    await wait(750);
     const box = await page.$eval(".rail", (el) => el.getBoundingClientRect().toJSON());
     if (box.top < 220) throw new Error("explore sheet obscures too much of the map");
     if (box.bottom > 845) throw new Error("explore sheet overflows the viewport");
@@ -112,6 +122,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
   await check("mobile person detail is a closable bottom sheet", async () => {
     await page.$eval(".rail-card", (el) => el.click());
     await page.waitForSelector(".panel .journey", { timeout: 5000 });
+    await wait(750);
     const detail = await page.$eval(".panel", (el) => {
       const box = el.getBoundingClientRect();
       return {
@@ -141,6 +152,27 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (layout.introBottom > layout.scrubberTop - 12) throw new Error("patterns panels overlap");
     if (layout.scrubberLeft < 11 || layout.scrubberRight > layout.viewport - 11) {
       throw new Error("timeline is not centered within the viewport");
+    }
+  });
+  await check("reduced motion keeps every surface immediately visible", async () => {
+    const reduced = await browser.newPage();
+    await reduced.setViewport({ width: 390, height: 844 });
+    await reduced.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+    await reduced.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await reduced.waitForSelector("#topbar:not([hidden])", { timeout: 15000 });
+    const result = await reduced.evaluate(() => {
+      const title = document.querySelector(".landing-card .display");
+      const style = getComputedStyle(title);
+      return {
+        mode: document.documentElement.dataset.motion,
+        opacity: Number(style.opacity),
+        visibility: style.visibility,
+      };
+    });
+    await reduced.close();
+    if (result.mode !== "reduced") throw new Error("reduced-motion mode was not detected");
+    if (result.opacity !== 1 || result.visibility !== "visible") {
+      throw new Error("reduced-motion content is not immediately visible");
     }
   });
 

@@ -55,7 +55,7 @@ export function guided(store, state) {
   const chapters = wp.map((w, i) => `
     <section class="chapter" data-chapter="${i}">
       <div class="ch-head"><span class="ch-num">${roman[i] || i + 1}</span>
-        <span class="ch-rule"></span><span class="ch-role">${esc(w.role)}</span></div>
+        <span class="ch-role">${esc(w.role)}</span></div>
       <h3 class="ch-title">${esc(w.canonical)}</h3>
       <div class="ch-sub">${esc(metaLine(w))}</div>
       ${w.quote ? `<blockquote>“${esc(trimQuote(w.quote))}”</blockquote>` : ""}
@@ -160,9 +160,7 @@ function panel(store, state) {
       <span class="step-text"><span class="step-place">${esc(w.canonical)}</span>
         <span class="step-meta">${esc(wpMeta(w))}</span></span></li>`).join("");
   const tags = (j.conflicts.concat(j.themes)).slice(0, 5).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
-  const ver = j.reviewStatus === "reviewed"
-    ? { c: C.verified, t: "Reviewed against the testimony" }
-    : { c: C.accentSoft, t: "Auto-extracted — pending verification" };
+  const reviewed = j.reviewStatus === "reviewed";
   return `
     <aside class="panel scroll">
       <button class="panel-close" data-act="clear" aria-label="Close">${icon("close")}</button>
@@ -177,7 +175,7 @@ function panel(store, state) {
       <div class="micro-label">The journey</div>
       <ol class="journey">${steps}</ol>
       <div class="tags">${tags}</div>
-      <div class="ver" style="color:${ver.c}"><span class="ver-dot" style="background:${ver.c}"></span>${ver.t}</div>
+      ${reviewed ? `<div class="ver" style="color:${C.verified}"><span class="ver-dot"></span>Reviewed against the testimony</div>` : ""}
       ${wp.length > 1 ? `<button class="guided-pill" data-guided="${esc(j.id)}">Follow this journey as a story ${icon("arrow-right")}</button>` : ""}
       <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Open full archive entry ${icon("external-link")}</a>
     </aside>`;

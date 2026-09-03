@@ -1,8 +1,8 @@
 # Cloudflare Worker config (doc 09 Part 2 — auto-update native to Cloudflare).
 #
 # Deploys with NO manual setup: a [build] step assembles a clean ./public site
-# (the committed 221-survivor dataset included) and the Worker serves it. The
-# KV-backed auto-update is an opt-in enhancement — see "Enabling auto-update".
+# (the committed archive dataset included) and the Worker serves it. Workers KV
+# keeps the live archive current between deployments.
 #
 # Cloudflare Workers Builds runs `npx wrangler deploy` on push to main; wrangler runs
 # the [build] command first. The Worker name must match the Cloudflare project.
@@ -22,18 +22,14 @@ command = "node tools/assemble_site.cjs"
 [assets]
 directory = "public"
 binding = "ASSETS"
-run_worker_first = ["/data/survivors.geojson", "/__sync"]
+run_worker_first = ["/data/survivors.geojson", "/__sync", "/__sync/status"]
 
-# Daily rebuild at 06:00 UTC (Cron on Workers is always UTC). The scheduled handler
-# no-ops unless a KV namespace is bound, so this is safe with no setup.
+# Every hour, discover additions across all OHP categories and refresh a rotating
+# batch of existing profiles. This keeps source load bounded while covering the
+# full archive roughly every two days.
 [triggers]
-crons = ["0 6 * * *"]
+crons = ["7 * * * *"]
 
-# ── Enabling auto-update (optional) ──────────────────────────────────────────
-# 1. Create a namespace:   npx wrangler kv namespace create OHP_DATA
-# 2. Uncomment the binding below and paste the printed id.
-# 3. Redeploy. The cron then refreshes the dataset into KV and the Worker serves it.
-#
-# [[kv_namespaces]]
-# binding = "OHP_DATA"
-# id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+[[kv_namespaces]]
+binding = "OHP_DATA"
+id = "071340c283684dcd9d7dd97bc1e05248"
