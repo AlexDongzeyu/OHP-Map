@@ -290,12 +290,13 @@ function migrateCachedData(cached, seed) {
 function sanitizeCachedFeature(feature) {
   const seen = new Set();
   const waypoints = [];
-  for (const waypoint of feature.properties.waypoints || []) {
-    const key = String(waypoint.as_written || "")
-      .trim().toLowerCase().replace(/\s+/g, " ").replace(/^[\s.,;:]+|[\s.,;:]+$/g, "");
+  const cachedWaypoints = feature.properties.waypoints || [];
+  for (const waypoint of cachedWaypoints) {
+    const key = aliasKey(waypoint.as_written);
     const canonical = gazetteer.aliases[key];
     const coordinates = geocodeCache[canonical];
     if (!canonical || !coordinates || seen.has(canonical)) continue;
+    if (isQualifiedCountryWaypoint(waypoint, canonical, cachedWaypoints)) continue;
     seen.add(canonical);
     waypoints.push({
       ...waypoint,
@@ -306,13 +307,60 @@ function sanitizeCachedFeature(feature) {
     });
   }
   if (!waypoints.length) return null;
-  const ordered = orderWaypoints(waypoints);
+  const explicitBirthplace = waypoints.find((waypoint) => (
+    !gazetteer.known_sites[waypoint.canonical] && hasBirthplaceContext(waypoint)
+  ));
+  const retainedBirthplace = waypoints.find((waypoint) => (
+    !gazetteer.known_sites[waypoint.canonical] && waypoint.role === "birthplace"
+  ));
+  const inferredBirthplace = waypoints.find((waypoint) => (
+    !gazetteer.known_sites[waypoint.canonical] && !RESETTLEMENT.has(waypoint.canonical)
+  ));
+  const birthplace = explicitBirthplace || retainedBirthplace || inferredBirthplace;
+  const rerolled = waypoints.map((waypoint) => {
+    const siteRole = gazetteer.known_sites[waypoint.canonical];
+    let role = waypoint.role;
+    if (siteRole) role = siteRole;
+    else if (waypoint === birthplace) role = "birthplace";
+    else if (RESETTLEMENT.has(waypoint.canonical)) role = "resettlement";
+    else if (role === "birthplace") role = "transit";
+    return { ...waypoint, role };
+  });
+  const ordered = orderWaypoints(rerolled);
   const home = ordered.find((waypoint) => waypoint.role === "birthplace") || ordered[0];
   return {
     ...feature,
     geometry: { type: "Point", coordinates: [home.lng, home.lat] },
     properties: { ...feature.properties, waypoints: ordered },
   };
+}
+
+function aliasKey(value) {
+  return String(value || "")
+    .trim().toLowerCase().replace(/\s+/g, " ").replace(/^[\s.,;:]+|[\s.,;:]+$/g, "");
+}
+
+function isQualifiedCountryWaypoint(waypoint, canonical, candidates) {
+  if (canonical.includes(",")) return false;
+  const quote = waypoint.source_quote || "";
+  const countryMatches = [
+    ...quote.matchAll(new RegExp(escapePattern(waypoint.as_written), "gi")),
+  ];
+  if (!countryMatches.length) return false;
+  const countryStart = countryMatches.reduce((closest, match) => (
+    Math.abs(match.index - 40) < Math.abs(closest - 40) ? match.index : closest
+  ), countryMatches[0].index);
+  const prefix = quote.slice(0, countryStart);
+  return candidates.some((candidate) => {
+    const cityCanonical = gazetteer.aliases[aliasKey(candidate.as_written)];
+    if (!cityCanonical?.includes(",")) return false;
+    const city = escapePattern(candidate.as_written);
+    return new RegExp(`\\b${city}\\s*,\\s*$`, "i").test(prefix);
+  });
+}
+
+function escapePattern(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function listArchiveEntries() {
@@ -474,12 +522,22 @@ function extract(text) {
   }
   hits.sort((a, b) => a[0] - b[0] || (b[1] - b[0]) - (a[1] - a[0]));
   const claimed = [];
+  const accepted = [];
   const seen = new Set();
   const output = [];
   for (const [start, end, alias] of hits) {
     if (claimed.some(([claimStart, claimEnd]) => start < claimEnd && end > claimStart)) continue;
-    claimed.push([start, end]);
     const canonical = aliases[alias];
+    const previous = accepted[accepted.length - 1];
+    if (
+      !canonical.includes(",") &&
+      previous?.canonical.includes(",") &&
+      /^\s*,\s*$/.test(text.slice(previous.end, start))
+    ) {
+      continue;
+    }
+    claimed.push([start, end]);
+    accepted.push({ end, canonical });
     if (seen.has(canonical)) continue;
     seen.add(canonical);
     const context = text.slice(Math.max(0, start - 40), end + 60);
@@ -502,12 +560,27 @@ function extract(text) {
     const canonical = waypoint._canonical;
     delete waypoint._canonical;
     const siteRole = gazetteer.known_sites[canonical];
-    const isFirst = !firstAssigned && !siteRole && !RESETTLEMENT.has(canonical);
-    waypoint.role = siteRole || (RESETTLEMENT.has(canonical) ? "resettlement" : (isFirst ? "birthplace" : "transit"));
+    const isFirst = (
+      !firstAssigned &&
+      !siteRole &&
+      (!RESETTLEMENT.has(canonical) || hasBirthplaceContext(waypoint))
+    );
+    waypoint.role = siteRole || (
+      isFirst ? "birthplace" : (RESETTLEMENT.has(canonical) ? "resettlement" : "transit")
+    );
     waypoint.canonical = canonical;
     if (isFirst) firstAssigned = true;
   }
   return output;
+}
+
+function hasBirthplaceContext(waypoint) {
+  const name = escapePattern(waypoint.as_written);
+  const pattern = new RegExp(
+    `(?:\\bborn\\b[^.!?]{0,100}\\b${name}\\b|\\b${name}\\b[^.!?]{0,100}\\bborn\\b)`,
+    "i",
+  );
+  return pattern.test(waypoint.source_quote || "");
 }
 
 function orderWaypoints(waypoints) {

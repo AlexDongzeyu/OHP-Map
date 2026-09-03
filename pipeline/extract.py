@@ -78,9 +78,21 @@ class OfflineExtractor(Extractor):
         site_role = gazetteer.known_site_role(canonical)
         if site_role:
             return site_role
+        if is_first:
+            return "birthplace"
         if canonical in self.RESETTLEMENT:
             return "resettlement"
-        return "birthplace" if is_first else "transit"
+        return "transit"
+
+    @staticmethod
+    def _has_birthplace_context(waypoint: dict) -> bool:
+        quote = waypoint.get("source_quote", "")
+        name = re.escape(waypoint.get("as_written", ""))
+        return bool(re.search(
+            rf"(?:\bborn\b[^.!?]{{0,100}}\b{name}\b|\b{name}\b[^.!?]{{0,100}}\bborn\b)",
+            quote,
+            re.IGNORECASE,
+        ))
 
     def extract(self, text: str) -> list[dict]:
         aliases = gazetteer._load()["aliases"]
@@ -90,12 +102,21 @@ class OfflineExtractor(Extractor):
                 hits.append((m.start(), m.end(), alias))
         # Longest-match-wins: prefer 'bergen-belsen' over the nested 'belsen'.
         hits.sort(key=lambda h: (h[0], -(h[1] - h[0])))
-        ordered, claimed, seen = [], [], set()
+        ordered, claimed, accepted, seen = [], [], [], set()
         for start, end, alias in hits:
             if any(start < c_end and end > c_start for c_start, c_end in claimed):
                 continue  # overlaps a span we already took
-            claimed.append((start, end))
             canonical = aliases[alias]
+            previous = accepted[-1] if accepted else None
+            if (
+                "," not in canonical
+                and previous
+                and "," in previous[2]
+                and re.fullmatch(r"\s*,\s*", text[previous[1]:start])
+            ):
+                continue  # "Glasgow, Scotland" is one place, not a route leg
+            claimed.append((start, end))
+            accepted.append((start, end, canonical))
             if canonical in seen:
                 continue  # first mention of each place only
             seen.add(canonical)
@@ -115,8 +136,14 @@ class OfflineExtractor(Extractor):
         first_assigned = False
         for wp in ordered:
             canonical = wp.pop("_canonical")
-            is_first = not first_assigned and gazetteer.known_site_role(canonical) is None \
-                and canonical not in self.RESETTLEMENT
+            is_first = (
+                not first_assigned
+                and gazetteer.known_site_role(canonical) is None
+                and (
+                    canonical not in self.RESETTLEMENT
+                    or self._has_birthplace_context(wp)
+                )
+            )
             wp["role"] = self._role_for(canonical, is_first)
             if is_first:
                 first_assigned = True

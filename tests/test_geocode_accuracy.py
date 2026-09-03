@@ -1,5 +1,6 @@
 """Geographic and semantic safeguards for the curated place system."""
 import json
+import re
 
 from pipeline import config, gazetteer, validate
 from pipeline.extract import OfflineExtractor
@@ -25,6 +26,30 @@ def test_nationality_descriptions_do_not_create_false_waypoints():
         "then met American troops, supported U.S. operations, and later taught English."
     )
     assert OfflineExtractor().extract(text) == []
+
+
+def test_qualified_city_and_country_create_one_waypoint():
+    waypoints = OfflineExtractor().extract(
+        "He trained in Glasgow, Scotland, then served in Dublin, Ireland.",
+    )
+    assert [waypoint["as_written"] for waypoint in waypoints] == ["Glasgow", "Dublin"]
+
+
+def test_separate_city_and_country_mentions_remain_distinct():
+    waypoints = OfflineExtractor().extract(
+        "He trained across Scotland before reporting to Glasgow.",
+    )
+    assert [waypoint["as_written"] for waypoint in waypoints] == ["Scotland", "Glasgow"]
+
+
+def test_qualified_resettlement_city_keeps_birthplace_context():
+    waypoints = OfflineExtractor().extract(
+        "Alex was born in Vienna, Austria. His family later fled to Hungary.",
+    )
+    assert [
+        (gazetteer.normalize(waypoint["as_written"]), waypoint["role"])
+        for waypoint in waypoints
+    ] == [("Vienna, Austria", "birthplace"), ("Hungary", "transit")]
 
 
 def test_ambiguous_city_names_resolve_to_cities_not_regions_or_camps():
@@ -77,3 +102,37 @@ def test_known_ambiguous_profiles_use_the_correct_places():
     }
     assert fraser_places == {"New Glasgow, Canada"}
     assert "United States" not in sever_places
+    for survivor_id in ("eisen-alex", "preger-george-2"):
+        roles = {
+            waypoint["canonical"]: waypoint["role"]
+            for waypoint in features[survivor_id]["waypoints"]
+        }
+        assert roles["Vienna, Austria"] == "birthplace"
+
+
+def test_published_data_has_no_qualified_country_route_legs():
+    document = json.loads(config.OUT_GEOJSON.read_text(encoding="utf-8"))
+    duplicates = []
+    for feature in document["features"]:
+        waypoints = feature["properties"]["waypoints"]
+        cities = [waypoint for waypoint in waypoints if "," in waypoint["canonical"]]
+        for country in (waypoint for waypoint in waypoints if "," not in waypoint["canonical"]):
+            for city in cities:
+                pattern = (
+                    rf"\b{re.escape(city['as_written'])}\s*,\s*$"
+                )
+                quote = country.get("source_quote", "")
+                country_matches = list(
+                    re.finditer(re.escape(country["as_written"]), quote, re.IGNORECASE),
+                )
+                if not country_matches:
+                    continue
+                country_match = min(
+                    country_matches,
+                    key=lambda match: abs(match.start() - 40),
+                )
+                if re.search(pattern, quote[:country_match.start()], re.IGNORECASE):
+                    duplicates.append(
+                        (feature["properties"]["survivor_id"], city["canonical"], country["canonical"]),
+                    )
+    assert duplicates == []
