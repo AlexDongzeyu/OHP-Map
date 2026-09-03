@@ -198,6 +198,7 @@ async function loadCurrentData(env) {
           ...feature.properties,
           portrait: seeded.portrait,
           portrait_rights: seeded.portrait_rights,
+          portrait_faces: seeded.portrait_faces || 0,
         },
       };
     }),
@@ -456,6 +457,7 @@ function toFeature(record) {
       archive_url: record.archive_url,
       portrait: record.portrait || null,
       portrait_rights: record.portrait ? RIGHTS : null,
+      portrait_faces: 0,
       theme_tags: [],
       waypoints: ordered,
     },

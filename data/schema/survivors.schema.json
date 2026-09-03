@@ -44,6 +44,7 @@
             "media_url": { "type": ["string", "null"] },
             "portrait": { "type": ["string", "null"] },
             "portrait_rights": { "type": ["string", "null"] },
+            "portrait_faces": { "type": "integer", "minimum": 0 },
             "theme_tags": { "type": "array", "items": { "type": "string" } },
             "waypoints": {
               "type": "array",

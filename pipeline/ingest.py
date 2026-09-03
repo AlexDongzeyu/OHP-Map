@@ -36,6 +36,7 @@ def _portrait_index(path=PORTRAIT_MANIFEST) -> dict[str, dict]:
         entry["survivor_id"]: {
             "portrait": entry["portrait"],
             "portrait_rights": entry["portrait_rights"],
+            "portrait_faces": entry.get("faces_detected", 0),
         }
         for entry in portraits
         if entry.get("survivor_id") and entry.get("portrait")

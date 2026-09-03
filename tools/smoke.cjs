@@ -42,6 +42,12 @@ const BASE = process.argv[2] || "http://localhost:8124";
       mosaicPeople: [...document.querySelectorAll(".mosaic-tile")].reduce((total, tile) => (
         total + JSON.parse(tile.dataset.people || "[]").length
       ), 0),
+      mosaicMissingPortraits: [...document.querySelectorAll(".mosaic-tile")].reduce((total, tile) => (
+        total + JSON.parse(tile.dataset.people || "[]").filter((person) => !person.p).length
+      ), 0),
+      mosaicUnvalidatedPortraits: [...document.querySelectorAll(".mosaic-tile")].reduce((total, tile) => (
+        total + JSON.parse(tile.dataset.people || "[]").filter((person) => !person.v).length
+      ), 0),
       journeyCount: Number(document.querySelector(".metric b")?.textContent),
       mosaicHidden: document.querySelector(".portrait-mosaic[data-mosaic]")?.getAttribute("aria-hidden"),
     }));
@@ -50,8 +56,20 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (motion.version !== "3.15.0") throw new Error("unexpected GSAP version " + motion.version);
     if (motion.hasReviewBadge) throw new Error("header review badge should not render");
     if (motion.mosaicTiles < 64) throw new Error("living mosaic has too few tiles");
-    if (motion.mosaicPeople !== motion.journeyCount) throw new Error("living mosaic does not cover the full archive");
+    if (!motion.mosaicPeople || motion.mosaicPeople > motion.journeyCount) throw new Error("living mosaic portrait count is invalid");
+    if (motion.mosaicMissingPortraits) throw new Error("initials-only records entered the landing mosaic");
+    if (motion.mosaicUnvalidatedPortraits) throw new Error("non-face gallery assets entered the landing mosaic");
     if (motion.mosaicHidden !== "true") throw new Error("decorative mosaic is exposed to assistive technology");
+    await wait(6200);
+    const cadence = await page.$$eval(".mosaic-tile", (tiles) => ({
+      changed: tiles.filter((tile) => Number(tile.dataset.swapCount) >= 1).length,
+      total: tiles.length,
+      intervals: tiles.map((tile) => Number(tile.dataset.cycleSeconds)),
+    }));
+    if (cadence.changed !== cadence.total) throw new Error(`${cadence.total - cadence.changed} mosaic tiles did not change`);
+    if (cadence.intervals.some((seconds) => seconds < 4.8 || seconds > 8.01)) {
+      throw new Error("mosaic repeat interval is outside the expected range");
+    }
   });
   await check("follow -> guided narrative + flat map", async () => {
     await page.click(".landing-card [data-act='follow']");

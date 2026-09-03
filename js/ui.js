@@ -46,12 +46,15 @@ export function landing(store) {
 }
 
 function livingMosaic(store) {
-  const tileCount = Math.min(72, store.journeys.length);
-  const people = store.journeys.map((journey) => ({
-    i: journey.initials,
-    n: shortName(journey),
-    p: clearedPortrait(journey),
-  }));
+  const people = store.journeys
+    .map((journey) => ({
+      i: journey.initials,
+      n: shortName(journey),
+      p: clearedPortrait(journey),
+      v: journey.portraitFaces > 0,
+    }))
+    .filter((person) => person.p && person.v);
+  const tileCount = Math.min(72, people.length);
   const tiles = Array.from({ length: tileCount }, (_, tileIndex) => {
     const sequence = [];
     for (let index = tileIndex; index < people.length; index += tileCount) {

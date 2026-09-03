@@ -166,11 +166,11 @@ keep geography visible behind Guided, Explore, and person details. Motion remain
 non-looping, `prefers-reduced-motion` is honoured, and all journeys converge visibly in
 Patterns — what no alphabetical list shows.
 
-The landing includes a low-opacity living identity mosaic behind the content. It cycles
-through the full archive without blocking interaction, pauses when hidden, and stays static
-for reduced-motion visitors. Rights-cleared OHP gallery portraits are center-cropped into
-small WebP assets for profile and mosaic tiles; pages without a usable gallery image keep
-the initials fallback.
+The landing includes a low-opacity living identity mosaic behind the content. Every tile
+independently changes every 4.8–8 seconds without blocking interaction, pauses when hidden,
+and stays static for reduced-motion visitors. The mosaic includes only rights-cleared OHP
+gallery portraits; pages without a usable gallery image remain available elsewhere with
+their initials fallback but never enter the landing wall.
 
 **Portrait provenance:** the project owner identified themselves as the photograph author
 and granted reuse permission on 2026-09-02. `data/portraits/manifest.json` records that

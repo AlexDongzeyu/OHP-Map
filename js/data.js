@@ -77,6 +77,7 @@ function toJourney(props) {
     archiveUrl: props.archive_url || "",
     portrait: props.portrait || null,
     portraitRights: props.portrait_rights || null,
+    portraitFaces: props.portrait_faces || 0,
     reviewStatus: props.review_status || "pending",
     waypoints: wps,
   };

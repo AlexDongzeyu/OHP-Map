@@ -47,6 +47,7 @@ def _record_to_survivor(rec: dict, extractor) -> dict:
         "media_url": rec.get("media_url"),
         "portrait": rec.get("portrait"),
         "portrait_rights": rec.get("portrait_rights"),
+        "portrait_faces": rec.get("portrait_faces", 0),
         "theme_tags": rec.get("theme_tags", []),
         "waypoints": waypoints,
     }

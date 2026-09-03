@@ -2,8 +2,7 @@ import { REDUCED_MOTION } from "./config.js";
 
 const gsap = window.gsap;
 let warned = false;
-let mosaicCall = null;
-let mosaicWave = 0;
+let mosaicTiles = [];
 const mosaicState = new WeakMap();
 
 function canAnimate() {
@@ -137,45 +136,53 @@ function startMosaic() {
   const tiles = gsap.utils.toArray(".mosaic-tile");
   if (!tiles.length) return;
   document.documentElement.dataset.mosaicMotion = "animated";
-  mosaicWave = 0;
-  for (const tile of tiles) {
+  mosaicTiles = tiles;
+  tiles.forEach((tile, index) => {
     let people = [];
     try {
       people = JSON.parse(tile.dataset.people || "[]");
     } catch (error) {
       console.error("Invalid mosaic data", error);
     }
-    mosaicState.set(tile, { people, index: 0, front: true });
-  }
-  mosaicCall = gsap.delayedCall(3.2, () => cycleMosaic(tiles));
+    mosaicState.set(tile, { people, index: 0, front: true, call: null });
+    scheduleTile(tile, index, true);
+  });
 }
 
 function stopMosaic() {
-  if (mosaicCall) {
-    mosaicCall.kill();
-    mosaicCall = null;
+  for (const tile of mosaicTiles) {
+    const state = mosaicState.get(tile);
+    if (state?.call) state.call.kill();
   }
+  mosaicTiles = [];
   if (gsap) gsap.killTweensOf(".mosaic-side");
   document.documentElement.dataset.mosaicMotion = document.querySelector(".portrait-mosaic[data-mosaic]")
     ? "static"
     : "inactive";
 }
 
-function cycleMosaic(tiles) {
+function scheduleTile(tile, tileIndex, initial = false) {
+  const state = mosaicState.get(tile);
+  if (!state || state.people.length < 2) return;
+  const seconds = initial
+    ? 2.6 + (tileIndex % 12) * .22
+    : 4.8 + ((tileIndex + state.index * 3) % 9) * .4;
+  tile.dataset.cycleSeconds = seconds.toFixed(2);
+  state.call = gsap.delayedCall(seconds, () => {
+    if (document.hidden || !document.querySelector(".portrait-mosaic[data-mosaic]")) {
+      stopMosaic();
+      return;
+    }
+    swapTile(tile);
+    scheduleTile(tile, tileIndex);
+  });
+}
+
+function swapTile(tile) {
   if (document.hidden || !document.querySelector(".portrait-mosaic[data-mosaic]")) {
     stopMosaic();
     return;
   }
-  const waveSize = Math.min(8, tiles.length);
-  const selected = Array.from({ length: waveSize }, (_, offset) => (
-    tiles[(mosaicWave * waveSize + offset * 7) % tiles.length]
-  ));
-  selected.forEach((tile, order) => swapTile(tile, order * .08));
-  mosaicWave++;
-  mosaicCall = gsap.delayedCall(2.6, () => cycleMosaic(tiles));
-}
-
-function swapTile(tile, delay) {
   const state = mosaicState.get(tile);
   if (!state || state.people.length < 2) return;
   state.index = (state.index + 1) % state.people.length;
@@ -186,7 +193,6 @@ function swapTile(tile, delay) {
     autoAlpha: 0,
     scale: .97,
     duration: .75,
-    delay,
     ease: "power2.inOut",
   });
   gsap.fromTo(incoming, {
@@ -196,10 +202,10 @@ function swapTile(tile, delay) {
     autoAlpha: 1,
     scale: 1,
     duration: .9,
-    delay,
     ease: "power2.inOut",
   });
   state.front = !state.front;
+  tile.dataset.swapCount = String((Number(tile.dataset.swapCount) || 0) + 1);
 }
 
 function setMosaicPerson(side, person) {
