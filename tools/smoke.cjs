@@ -60,6 +60,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
       graticule: document.querySelector(".globe-graticule")?.getAttribute("d"),
       viewportWidth: innerWidth,
       viewportHeight: innerHeight,
+      headerHeight: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--header-height")),
       motionControl: Boolean(document.querySelector("#motion-toggle")),
     }));
     if (motion.mode !== "gsap") throw new Error("GSAP motion mode is not active");
@@ -73,8 +74,10 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (motion.mosaicUnvalidatedPortraits) throw new Error("non-face gallery assets entered the landing mosaic");
     if (motion.mosaicHidden !== "true") throw new Error("decorative mosaic is exposed to assistive technology");
     if (motion.globeRoutes < 5 || motion.globeTravelers < 5) throw new Error("landing globe journeys are missing");
+    const expectedGlobeY = motion.headerHeight +
+      (motion.viewportHeight - motion.headerHeight) / 2;
     if (Math.abs(motion.globeCenterX - motion.viewportWidth * .58) > 2 ||
-        Math.abs(motion.globeCenterY - motion.viewportHeight * .51) > 2) {
+        Math.abs(motion.globeCenterY - expectedGlobeY) > 2) {
       throw new Error("landing globe is not positioned correctly");
     }
     if (motion.motionControl) throw new Error("motion control should not render");
