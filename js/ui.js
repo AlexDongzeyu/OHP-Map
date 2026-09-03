@@ -180,7 +180,7 @@ export function railInner(store, state) {
 function railCard(j, isSel) {
   const col = GROUP_COLOR[j.group] || C.accent;
   return `<button class="rail-card ${isSel ? "sel" : ""}" data-survivor="${esc(j.id)}">
-    <span class="medal" style="--gc:${col}">${esc(j.initials)}</span>
+    ${profileMedal(j, col)}
     <span class="rail-text">
       <span class="rail-name">${esc(j.name)}</span>
       <span class="rail-intro">${esc(j.intro || (j.born ? "Born " + j.born : j.group))}</span>
@@ -202,7 +202,7 @@ function panel(store, state) {
   return `
     <aside class="panel scroll">
       <button class="panel-close" data-act="clear" aria-label="Close">${icon("close")}</button>
-      <span class="medal medal-lg" style="--gc:${col}">${esc(j.initials)}</span>
+      ${profileMedal(j, col, true)}
       <div class="panel-group" style="--gc:${col}">${esc(j.group)}</div>
       <h2 class="serif-lg">${esc(j.name)}</h2>
       <div class="panel-meta">${j.born ? "Born " + j.born + " · " : ""}${esc(j.hometown)}</div>
@@ -217,6 +217,14 @@ function panel(store, state) {
       ${wp.length > 1 ? `<button class="guided-pill" data-guided="${esc(j.id)}">Follow this journey as a story ${icon("arrow-right")}</button>` : ""}
       <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Open full archive entry ${icon("external-link")}</a>
     </aside>`;
+}
+
+function profileMedal(journey, color, large = false) {
+  const portrait = clearedPortrait(journey);
+  return `<span class="medal ${large ? "medal-lg" : ""}" style="--gc:${color}">
+    <span class="avatar-initials">${esc(journey.initials)}</span>
+    ${portrait ? `<img src="${esc(portrait)}" alt="" loading="lazy" decoding="async">` : ""}
+  </span>`;
 }
 
 // ---- PATTERNS ---------------------------------------------------------------

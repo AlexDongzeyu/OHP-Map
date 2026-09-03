@@ -228,6 +228,9 @@ function wireGlobal() {
 function wireOverlay() {
   const host = document.getElementById("overlay");
   host.onclick = onActivate;
+  host.querySelectorAll(".medal img").forEach((image) => {
+    image.addEventListener("error", () => image.remove(), { once: true });
+  });
   const range = host.querySelector("[data-scrub]");
   if (range) range.addEventListener("input", () => setScrub(parseInt(range.value, 10)));
   const search = host.querySelector("#search");

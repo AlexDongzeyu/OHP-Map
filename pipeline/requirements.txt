@@ -5,6 +5,7 @@ jsonschema>=4.0
 requests>=2.28
 beautifulsoup4>=4.11
 lxml>=4.9
+Pillow>=10.0
 # LLM extraction (only needed when --extractor anthropic|openai). Uncomment as used:
 # anthropic>=0.39
 # openai>=1.0

@@ -24,6 +24,29 @@ from typing import Iterable
 from . import config
 
 
+PORTRAIT_MANIFEST = config.DATA / "portraits" / "manifest.json"
+
+
+def _portrait_index(path=PORTRAIT_MANIFEST) -> dict[str, dict]:
+    if not path.exists():
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        portraits = json.load(fh).get("portraits", [])
+    return {
+        entry["survivor_id"]: {
+            "portrait": entry["portrait"],
+            "portrait_rights": entry["portrait_rights"],
+        }
+        for entry in portraits
+        if entry.get("survivor_id") and entry.get("portrait")
+    }
+
+
+def _with_portrait(record: dict, portraits: dict[str, dict]) -> dict:
+    portrait = portraits.get(record.get("survivor_id"))
+    return {**record, **portrait} if portrait else record
+
+
 def slugify(value: str) -> str:
     value = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return value or "unknown"
@@ -171,16 +194,17 @@ class CombinedSource(Source):
 
     def fetch(self) -> Iterable[dict]:
         seen = set()
+        portraits = _portrait_index()
         if self.curated.exists():
             with open(self.curated, encoding="utf-8") as fh:
                 for rec in json.load(fh).get("survivors", []):
                     rec.setdefault("is_sample", False)
                     rec["featured"] = True
                     seen.add(rec["survivor_id"])
-                    yield rec
+                    yield _with_portrait(rec, portraits)
         for rec in ScrapedSource(self.scraped).fetch():
             if rec["survivor_id"] not in seen:
-                yield rec
+                yield _with_portrait(rec, portraits)
 
 
 class AllSource(Source):
@@ -198,6 +222,7 @@ class AllSource(Source):
 
     def fetch(self) -> Iterable[dict]:
         seen = set()
+        portraits = _portrait_index()
         if self.curated.exists():
             with open(self.curated, encoding="utf-8") as fh:
                 for rec in json.load(fh).get("survivors", []):
@@ -205,7 +230,7 @@ class AllSource(Source):
                     rec.setdefault("group", "Holocaust Survivors")
                     rec.setdefault("conflicts", ["The Holocaust"])
                     seen.add(rec["survivor_id"])
-                    yield rec
+                    yield _with_portrait(rec, portraits)
         if not self.all_path.exists():
             raise FileNotFoundError(
                 f"{self.all_path} not found — run `python -m pipeline.scrape_all` first.")
@@ -215,7 +240,7 @@ class AllSource(Source):
             if rec["survivor_id"] in seen:
                 continue
             rec.setdefault("is_sample", False)
-            yield rec
+            yield _with_portrait(rec, portraits)
 
 
 def get_source(name: str) -> Source:

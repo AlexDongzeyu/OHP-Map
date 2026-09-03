@@ -634,6 +634,7 @@ a { color:var(--accent-soft); }
 .rail-card:hover { background:var(--accent-wash); }
 .rail-card.sel { background:var(--accent-wash); }
 .medal {
+  position:relative;
   width:34px;
   height:34px;
   flex:none;
@@ -646,7 +647,18 @@ a { color:var(--accent-soft); }
   background:color-mix(in srgb, var(--gc, var(--accent)) 8%, var(--paper-soft));
   font-family:var(--serif);
   font-size:12px;
+  overflow:hidden;
 }
+.medal img {
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  border-radius:inherit;
+  object-fit:cover;
+  object-position:center;
+}
+.avatar-initials { position:relative; z-index:0; }
 .medal-lg {
   width:64px;
   height:64px;

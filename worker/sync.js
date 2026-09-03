@@ -12,6 +12,10 @@ const FAILURE_KEY = "ohp-fetch-failures.json";
 const CURSOR_KEY = "ohp-refresh-cursor";
 const DETAIL_BUDGET = 30;
 const RUN_LOCK_MINUTES = 15;
+const RIGHTS = (
+  "Reuse permission granted by the photograph author and project owner " +
+  "on 2026-09-02 for the OHP Map."
+);
 
 const CATEGORIES = [
   ["holocaust-survivors", "Holocaust Survivors"],
@@ -174,13 +178,30 @@ export async function syncSurvivors(env) {
 
 async function loadCurrentData(env) {
   const cached = await env.OHP_DATA.get(DATA_KEY, "json");
-  if (cached?.features) return cached;
-
   const response = await env.ASSETS.fetch(new Request("https://assets.local/data/survivors.geojson"));
   if (!response.ok) throw new Error(`Unable to load the committed dataset: ${response.status}`);
   const seed = await response.json();
   if (!seed?.features) throw new Error("Committed dataset is not a FeatureCollection");
-  return seed;
+  if (!cached?.features) return seed;
+
+  const seedById = new Map(
+    seed.features.map((feature) => [feature.properties.survivor_id, feature.properties]),
+  );
+  return {
+    ...cached,
+    features: cached.features.map((feature) => {
+      const seeded = seedById.get(feature.properties.survivor_id);
+      if (!seeded?.portrait || feature.properties.portrait) return feature;
+      return {
+        ...feature,
+        properties: {
+          ...feature.properties,
+          portrait: seeded.portrait,
+          portrait_rights: seeded.portrait_rights,
+        },
+      };
+    }),
+  };
 }
 
 async function listArchiveEntries() {
@@ -276,6 +297,7 @@ function parseEntry(slug, html, group) {
     group,
     conflicts: deriveConflicts(group, text),
     archive_url: `${BASE}/ohp/${slug}/`,
+    portrait: selectPortrait(body, name),
     text,
   };
 }
@@ -303,6 +325,31 @@ function deriveConflicts(group, text) {
   }
   if (group === "Military Veterans" && !found.length) found.push("Second World War");
   return found;
+}
+
+function selectPortrait(html, name) {
+  const nameTokens = new Set((name.toLowerCase().match(/[a-z]{3,}/g) || []));
+  const candidates = [];
+  const imageTags = html.match(/<img\b[^>]*>/gi) || [];
+  for (let order = 0; order < imageTags.length; order++) {
+    const tag = imageTags[order];
+    const sourceMatch = tag.match(/\b(?:src|data-src)=["']([^"']+)["']/i);
+    if (!sourceMatch) continue;
+    const url = decodeEntities(sourceMatch[1]);
+    if (!url.includes("/wp-content/uploads/")) continue;
+    let score = /attachment-thumbnail/i.test(tag) ? 2 : 0;
+    const haystack = tag.toLowerCase();
+    for (const token of nameTokens) if (haystack.includes(token)) score += 6;
+    for (const token of ["portrait", "headshot", "profile", "solo"]) {
+      if (haystack.includes(token)) score += 4;
+    }
+    for (const token of ["and", "with", "wife", "husband", "family", "students", "group", "team"]) {
+      if (new RegExp(`\\b${token}\\b`).test(haystack)) score -= 3;
+    }
+    candidates.push({ score, order, url });
+  }
+  candidates.sort((a, b) => b.score - a.score || a.order - b.order);
+  return candidates[0]?.url || null;
 }
 
 function extract(text) {
@@ -407,6 +454,8 @@ function toFeature(record) {
       review_status: "pending",
       bio_excerpt: record.text.slice(0, 320),
       archive_url: record.archive_url,
+      portrait: record.portrait || null,
+      portrait_rights: record.portrait ? RIGHTS : null,
       theme_tags: [],
       waypoints: ordered,
     },
@@ -427,8 +476,8 @@ function mergeFeature(existing, fresh) {
       ...fresh.properties,
       featured: existing.properties.featured || false,
       media_url: existing.properties.media_url || null,
-      portrait: existing.properties.portrait || null,
-      portrait_rights: existing.properties.portrait_rights || null,
+      portrait: existing.properties.portrait || fresh.properties.portrait || null,
+      portrait_rights: existing.properties.portrait_rights || fresh.properties.portrait_rights || null,
       review_status: existing.properties.review_status || "pending",
       theme_tags: existing.properties.theme_tags?.length
         ? existing.properties.theme_tags

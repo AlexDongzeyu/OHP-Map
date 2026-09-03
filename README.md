@@ -168,8 +168,15 @@ Patterns — what no alphabetical list shows.
 
 The landing includes a low-opacity living identity mosaic behind the content. It cycles
 through the full archive without blocking interaction, pauses when hidden, and stays static
-for reduced-motion visitors. Tiles use names and initials by default; a real portrait is
-rendered only when both `portrait` and explicitly cleared `portrait_rights` metadata exist.
+for reduced-motion visitors. Rights-cleared OHP gallery portraits are center-cropped into
+small WebP assets for profile and mosaic tiles; pages without a usable gallery image keep
+the initials fallback.
+
+**Portrait provenance:** the project owner identified themselves as the photograph author
+and granted reuse permission on 2026-09-02. `data/portraits/manifest.json` records that
+permission, the exact OHP source URL, selected profile, and generated asset path for every
+portrait. Rebuild with `pip install -r tools/portrait_requirements.txt`,
+`python tools/build_portraits.py`, then `python -m pipeline.build`.
 
 **Accessibility (doc 02 N1):** keyboard-navigable tabs, a focusable survivor list mirroring
 the map, ARIA labels, a skip link, AA-contrast palette, and a fully honoured
