@@ -1,4 +1,4 @@
-import { motionEnabled } from "./config.js";
+import { motionEnabled, SYSTEM_REDUCED_MOTION } from "./config.js";
 
 const gsap = window.gsap;
 let warned = false;
@@ -16,6 +16,7 @@ function canAnimate() {
 }
 
 function reveal(targets, from, options = {}) {
+  if (SYSTEM_REDUCED_MOTION) return null;
   const elements = gsap.utils.toArray(targets);
   if (!elements.length) return null;
   gsap.killTweensOf(elements);
@@ -30,14 +31,6 @@ function reveal(targets, from, options = {}) {
 export function init() {
   updateMotionMode();
   canAnimate();
-  window.addEventListener("ohp:motion-change", ({ detail }) => {
-    updateMotionMode();
-    if (!detail.enabled) {
-      stopMosaic();
-    } else if (document.body.dataset.view === "landing") {
-      startMosaic();
-    }
-  });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopMosaic();
     else if (document.body.dataset.view === "landing") startMosaic();
@@ -62,6 +55,7 @@ export function animateOverlay(view, changes) {
 
   if (view === "landing" && changes.viewChanged) {
     startMosaic();
+    if (SYSTEM_REDUCED_MOTION) return;
     const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
     timeline
       .fromTo(".landing-card > *", {
@@ -149,7 +143,8 @@ function startMosaic() {
   if (!tiles.length) return;
   document.documentElement.dataset.mosaicMotion = "animated";
   beltTweens = gsap.utils.toArray(".mosaic-track").map((track, index) => {
-    const duration = [76, 92, 82, 98, 86, 104][index] || 90;
+    const duration = ([76, 92, 82, 98, 86, 104][index] || 90) *
+      (SYSTEM_REDUCED_MOTION ? 1.15 : 1);
     return index % 2
       ? gsap.fromTo(track, { xPercent: -50 }, { xPercent: 0, duration, ease: "none", repeat: -1 })
       : gsap.to(track, { xPercent: -50, duration, ease: "none", repeat: -1 });
@@ -184,7 +179,8 @@ function scheduleTile(state, initial = false) {
   if (!state || state.people.length < 2) return;
   const seconds = initial
     ? 2.6 + (state.tileIndex % 12) * .22
-    : 4.8 + ((state.tileIndex + state.index * 3) % 9) * .4;
+    : (4.8 + ((state.tileIndex + state.index * 3) % 9) * .4) *
+      (SYSTEM_REDUCED_MOTION ? 1.08 : 1);
   for (const tile of state.elements) tile.dataset.cycleSeconds = seconds.toFixed(2);
   state.call = gsap.delayedCall(seconds, () => {
     if (document.hidden || document.body.dataset.view !== "landing") {

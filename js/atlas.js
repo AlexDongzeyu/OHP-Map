@@ -10,7 +10,7 @@
 // The 2D map is the canonical product; the globe is a calm overview with a graceful
 // reduced-motion fallback. People are coloured quietly by archive group — equal, never
 // a hierarchy (doc 13 §4.3).
-import { C, GROUP_COLOR, motionEnabled } from "./config.js";
+import { C, GROUP_COLOR, motionEnabled, SYSTEM_REDUCED_MOTION } from "./config.js";
 
 const d3 = window.d3;
 
@@ -49,11 +49,6 @@ export function createAtlas(container) {
     zoom = d3.zoom().scaleExtent([1, 14])
       .on("zoom", (ev) => { currentK = ev.transform.k; camera.attr("transform", ev.transform.toString()); rescale(); });
     svg.call(zoom).on("dblclick.zoom", null).on("wheel", (e) => e.preventDefault());
-    window.addEventListener("ohp:motion-change", ({ detail }) => {
-      if (view !== "landing") return;
-      if (detail.enabled) startRotate();
-      else { stopRotate(); redrawGlobe(); }
-    });
   }
 
   function rescale() {
@@ -334,7 +329,7 @@ export function createAtlas(container) {
     stopRotate();
     if (!motionEnabled()) { redrawGlobe(); return; }
     const step = (now) => {
-      rot[0] += 0.055;
+      rot[0] += SYSTEM_REDUCED_MOTION ? 0.045 : 0.055;
       globePhase = (globePhase + 0.0007) % 1;
       redrawGlobe(now);
       rotateRAF = requestAnimationFrame(step);

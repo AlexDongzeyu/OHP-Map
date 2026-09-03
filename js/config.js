@@ -51,30 +51,8 @@ export const TIME = { min: 1914, max: 1955 };
 export const SYSTEM_REDUCED_MOTION =
   window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-const MOTION_KEY = "ohp-motion";
-let sessionMotion = null;
-
-function savedMotion() {
-  if (sessionMotion) return sessionMotion;
-  try { return window.localStorage.getItem(MOTION_KEY); }
-  catch (error) {
-    console.warn("Motion preference storage is unavailable.", error);
-    return null;
-  }
-}
-
 export function motionEnabled() {
-  const saved = savedMotion();
-  if (saved === "play") return true;
-  if (saved === "pause") return false;
-  return !SYSTEM_REDUCED_MOTION;
-}
-
-export function setMotionEnabled(enabled) {
-  sessionMotion = enabled ? "play" : "pause";
-  try { window.localStorage.setItem(MOTION_KEY, enabled ? "play" : "pause"); }
-  catch (error) { console.warn("Motion preference could not be saved.", error); }
-  window.dispatchEvent(new CustomEvent("ohp:motion-change", { detail: { enabled } }));
+  return true;
 }
 
 export function slug(text) {
