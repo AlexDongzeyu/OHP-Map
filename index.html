@@ -42,10 +42,15 @@
     <div id="tip" class="tip" aria-hidden="true"></div>
 
     <!-- loading / error -->
-    <div id="loading" class="cover">
-      <div class="cover-inner">
-        <span class="spinner" aria-hidden="true"></span>
-        <p class="serif">Drawing the map…</p>
+    <div id="loading" class="cover atlas-cover" role="status" aria-live="polite">
+      <div class="loading-globe" aria-hidden="true">
+        <span class="loading-arc"><i></i></span>
+      </div>
+      <div class="cover-inner loading-identity">
+        <p class="loading-title">Journeys</p>
+        <p class="loading-kicker">Crestwood oral history project</p>
+        <span class="loading-rule" aria-hidden="true"><i></i></span>
+        <p class="loading-status">Opening the archive</p>
       </div>
     </div>
     <div id="error" class="cover" hidden>

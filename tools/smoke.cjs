@@ -10,6 +10,16 @@ const BASE = process.argv[2] || "http://localhost:8124";
   const page = await browser.newPage();
   await page.setViewport({ width: 1366, height: 850 });
   await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+  await page.setRequestInterception(true);
+  let delayInitialDataset = true;
+  page.on("request", (request) => {
+    if (delayInitialDataset && /\/data\/survivors\.geojson/.test(request.url())) {
+      delayInitialDataset = false;
+      setTimeout(() => request.continue(), 800);
+      return;
+    }
+    request.continue();
+  });
   page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text()); });
   page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
   page.on("requestfailed", (r) => { if (!/favicon/.test(r.url())) errors.push("requestfailed: " + r.url()); });
@@ -21,7 +31,26 @@ const BASE = process.argv[2] || "http://localhost:8124";
   }
 
   await page.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 40000 });
+  await check("loading veil matches the atlas", async () => {
+    await page.waitForSelector("#loading:not([hidden])", { timeout: 3000 });
+    const loading = await page.evaluate(() => {
+      const cover = document.querySelector("#loading");
+      return {
+        title: cover.querySelector(".loading-title")?.textContent.trim(),
+        status: cover.querySelector(".loading-status")?.textContent.trim(),
+        globe: Boolean(cover.querySelector(".loading-globe")),
+        spinner: Boolean(cover.querySelector(".spinner")),
+        background: getComputedStyle(cover).backgroundImage,
+      };
+    });
+    if (loading.title !== "Journeys" || loading.status !== "Opening the archive") {
+      throw new Error("loading identity is incomplete");
+    }
+    if (!loading.globe || loading.spinner) throw new Error("loading visual is not atlas-specific");
+    if (!/linear-gradient/.test(loading.background)) throw new Error("loading veil is missing its twilight surface");
+  });
   await page.waitForSelector("#topbar:not([hidden])", { timeout: 15000 });
+  await page.waitForSelector("#loading", { hidden: true, timeout: 3000 });
   await wait(900);
 
   await check("landing globe + clear copy", async () => {

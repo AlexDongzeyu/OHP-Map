@@ -52,7 +52,6 @@ async function main() {
 
   try { await atlas.ready; }
   catch (err) { loadingEl.hidden = true; errorEl.hidden = false; console.error(err); return; }
-  loadingEl.hidden = true;
   document.getElementById("topbar").hidden = false;
   motion.init();
 
@@ -66,6 +65,14 @@ async function main() {
   window.addEventListener("hashchange", route);
   route();
   motion.animateShell();
+  dismissLoading(loadingEl);
+}
+
+function dismissLoading(element) {
+  element.classList.add("is-leaving");
+  const finish = () => { element.hidden = true; };
+  element.addEventListener("transitionend", finish, { once: true });
+  window.setTimeout(finish, 700);
 }
 
 function matchPredicate() {
