@@ -61,6 +61,11 @@ const BASE = process.argv[2] || "http://localhost:8124";
       viewportWidth: innerWidth,
       viewportHeight: innerHeight,
       headerHeight: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--header-height")),
+      headerCenter: document.querySelector(".topbar").getBoundingClientRect().height / 2,
+      brandTitleCenter: (() => {
+        const rect = document.querySelector(".brand-title").getBoundingClientRect();
+        return rect.top + rect.height / 2;
+      })(),
       motionControl: Boolean(document.querySelector("#motion-toggle")),
     }));
     if (motion.mode !== "gsap") throw new Error("GSAP motion mode is not active");
@@ -79,6 +84,9 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (Math.abs(motion.globeCenterX - motion.viewportWidth * .58) > 2 ||
         Math.abs(motion.globeCenterY - expectedGlobeY) > 2) {
       throw new Error("landing globe is not positioned correctly");
+    }
+    if (Math.abs(motion.brandTitleCenter - motion.headerCenter) > 2) {
+      throw new Error("brand title is not vertically centered in the header");
     }
     if (motion.motionControl) throw new Error("motion control should not render");
     await wait(6200);

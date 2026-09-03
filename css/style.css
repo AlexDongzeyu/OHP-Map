@@ -167,7 +167,7 @@ body[data-view="landing"] #map .globe {
 .topbar > * { pointer-events:auto; }
 .brand {
   display:inline-flex;
-  align-items:baseline;
+  align-items:center;
   justify-self:start;
   gap:var(--space-3);
   min-height:44px;
