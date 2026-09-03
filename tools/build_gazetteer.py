@@ -6,6 +6,7 @@ for the historical Holocaust geography that appears in the Crestwood OHP bios. R
 
     python tools/build_gazetteer.py
 """
+import hashlib
 import json
 import os
 
@@ -174,6 +175,13 @@ def main():
         "aliases": dict(sorted(aliases.items())),
         "known_sites": dict(sorted(known_sites.items())),
     }
+    revision_payload = json.dumps(
+        {"gazetteer": gaz, "coordinates": cache},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    gaz["revision"] = hashlib.sha256(revision_payload).hexdigest()[:16]
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     with open(os.path.join(root, "data", "gazetteer.json"), "w", encoding="utf-8") as fh:

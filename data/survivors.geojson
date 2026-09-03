@@ -4,6 +4,7 @@
     "generator": "pipeline/build.py",
     "source": "all",
     "extractor": "offline",
+    "gazetteer_revision": "5692dd2ad1c20b4c",
     "count": 1048,
     "reviewed": 0,
     "pending": 1048,

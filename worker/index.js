@@ -8,7 +8,13 @@
 //
 // "Auto-updating" here means auto-detected and auto-staged, never auto-published as
 // fact: new entries arrive pending until a human verifies them (doc 09 Step 2.5).
-import { DATA_KEY, STATUS_KEY, syncSurvivors } from "./sync.js";
+import {
+  DATA_KEY,
+  GAZETTEER_REVISION,
+  STATUS_KEY,
+  ensureCurrentData,
+  syncSurvivors,
+} from "./sync.js";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -27,7 +33,11 @@ export default {
     if (url.pathname === "/data/survivors.geojson" && env.OHP_DATA) {
       const cached = await env.OHP_DATA.get(DATA_KEY);
       if (cached) {
-        return new Response(cached, {
+        const parsed = JSON.parse(cached);
+        const current = parsed.metadata?.gazetteer_revision === GAZETTEER_REVISION
+          ? cached
+          : JSON.stringify(await ensureCurrentData(env, parsed));
+        return new Response(current, {
           headers: {
             "content-type": "application/json; charset=utf-8",
             "cache-control": "public, max-age=300",

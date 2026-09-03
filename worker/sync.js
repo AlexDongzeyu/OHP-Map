@@ -7,6 +7,7 @@ const BASE = "https://ohp.crestwood.on.ca";
 const UA = "CrestwoodOHP-Map-Worker/2.0 (+https://github.com/AlexDongzeyu/OHP-Map)";
 export const DATA_KEY = "survivors.geojson";
 export const STATUS_KEY = "ohp-sync-status.json";
+export const GAZETTEER_REVISION = gazetteer.revision;
 const SEEN_KEY = "ohp-seen-slugs.json";
 const FAILURE_KEY = "ohp-fetch-failures.json";
 const CURSOR_KEY = "ohp-refresh-cursor";
@@ -125,6 +126,7 @@ export async function syncSurvivors(env) {
         ...(current.metadata || {}),
         generator: "worker/sync.js",
         source: "cloudflare-live-sync",
+        gazetteer_revision: GAZETTEER_REVISION,
         count: features.length,
         groups,
         group_order: GROUP_ORDER,
@@ -153,6 +155,7 @@ export async function syncSurvivors(env) {
       failed,
       total: features.length,
       groups,
+      gazetteer_revision: GAZETTEER_REVISION,
       next_cursor: nextCursor,
     };
 
@@ -178,12 +181,23 @@ export async function syncSurvivors(env) {
 
 async function loadCurrentData(env) {
   const cached = await env.OHP_DATA.get(DATA_KEY, "json");
+  const seed = await loadSeedData(env);
+  if (!cached?.features) return seed;
+  if (cached.metadata?.gazetteer_revision !== GAZETTEER_REVISION) {
+    return migrateCachedData(cached, seed);
+  }
+  return mergeSeedPortraits(cached, seed);
+}
+
+async function loadSeedData(env) {
   const response = await env.ASSETS.fetch(new Request("https://assets.local/data/survivors.geojson"));
   if (!response.ok) throw new Error(`Unable to load the committed dataset: ${response.status}`);
   const seed = await response.json();
   if (!seed?.features) throw new Error("Committed dataset is not a FeatureCollection");
-  if (!cached?.features) return seed;
+  return seed;
+}
 
+function mergeSeedPortraits(cached, seed) {
   const seedById = new Map(
     seed.features.map((feature) => [feature.properties.survivor_id, feature.properties]),
   );
@@ -202,6 +216,102 @@ async function loadCurrentData(env) {
         },
       };
     }),
+  };
+}
+
+export async function ensureCurrentData(env, cached) {
+  if (cached.metadata?.gazetteer_revision === GAZETTEER_REVISION) return cached;
+  const seed = await loadSeedData(env);
+  const migrated = migrateCachedData(cached, seed);
+  await env.OHP_DATA.put(DATA_KEY, JSON.stringify(migrated));
+  return migrated;
+}
+
+function migrateCachedData(cached, seed) {
+  const cachedById = new Map(
+    cached.features.map((feature) => [feature.properties.survivor_id, feature]),
+  );
+  const seedIds = new Set();
+  const features = seed.features.map((seedFeature) => {
+    const id = seedFeature.properties.survivor_id;
+    seedIds.add(id);
+    const existing = cachedById.get(id);
+    if (!existing) return seedFeature;
+    if (existing.properties.review_status === "reviewed") return existing;
+    return {
+      ...existing,
+      geometry: seedFeature.geometry,
+      properties: {
+        ...seedFeature.properties,
+        ...existing.properties,
+        featured: seedFeature.properties.featured || existing.properties.featured || false,
+        media_url: existing.properties.media_url || seedFeature.properties.media_url || null,
+        portrait: existing.properties.portrait || seedFeature.properties.portrait || null,
+        portrait_rights:
+          existing.properties.portrait_rights || seedFeature.properties.portrait_rights || null,
+        portrait_faces:
+          seedFeature.properties.portrait_faces || existing.properties.portrait_faces || 0,
+        theme_tags: seedFeature.properties.theme_tags?.length
+          ? seedFeature.properties.theme_tags
+          : (existing.properties.theme_tags || []),
+        waypoints: seedFeature.properties.waypoints,
+      },
+    };
+  });
+
+  for (const feature of cached.features) {
+    if (seedIds.has(feature.properties.survivor_id)) continue;
+    if (feature.properties.review_status === "reviewed") {
+      features.push(feature);
+      continue;
+    }
+    const sanitized = sanitizeCachedFeature(feature);
+    if (sanitized) features.push(sanitized);
+  }
+
+  const reviewed = features.filter(
+    (feature) => feature.properties.review_status === "reviewed",
+  ).length;
+  return {
+    ...cached,
+    metadata: {
+      ...(cached.metadata || {}),
+      count: features.length,
+      groups: countGroups(features),
+      reviewed,
+      pending: features.length - reviewed,
+      gazetteer_revision: GAZETTEER_REVISION,
+      migrated_at: new Date().toISOString(),
+    },
+    features,
+  };
+}
+
+function sanitizeCachedFeature(feature) {
+  const seen = new Set();
+  const waypoints = [];
+  for (const waypoint of feature.properties.waypoints || []) {
+    const key = String(waypoint.as_written || "")
+      .trim().toLowerCase().replace(/\s+/g, " ").replace(/^[\s.,;:]+|[\s.,;:]+$/g, "");
+    const canonical = gazetteer.aliases[key];
+    const coordinates = geocodeCache[canonical];
+    if (!canonical || !coordinates || seen.has(canonical)) continue;
+    seen.add(canonical);
+    waypoints.push({
+      ...waypoint,
+      canonical,
+      role: gazetteer.known_sites[canonical] || waypoint.role,
+      lat: round(coordinates.lat),
+      lng: round(coordinates.lng),
+    });
+  }
+  if (!waypoints.length) return null;
+  const ordered = orderWaypoints(waypoints);
+  const home = ordered.find((waypoint) => waypoint.role === "birthplace") || ordered[0];
+  return {
+    ...feature,
+    geometry: { type: "Point", coordinates: [home.lng, home.lat] },
+    properties: { ...feature.properties, waypoints: ordered },
   };
 }
 
@@ -466,7 +576,7 @@ function toFeature(record) {
 
 function mergeFeature(existing, fresh) {
   if (existing.properties.review_status === "reviewed") return existing;
-  const waypoints = mergeWaypoints(existing.properties.waypoints || [], fresh.properties.waypoints || []);
+  const waypoints = fresh.properties.waypoints || [];
   const home = waypoints.find((waypoint) => waypoint.role === "birthplace") || waypoints[0];
   return {
     type: "Feature",
@@ -487,19 +597,6 @@ function mergeFeature(existing, fresh) {
       waypoints,
     },
   };
-}
-
-function mergeWaypoints(existing, fresh) {
-  const merged = [...existing];
-  const keys = new Set(existing.map((waypoint) => `${waypoint.canonical}|${waypoint.role}`));
-  for (const waypoint of fresh) {
-    const key = `${waypoint.canonical}|${waypoint.role}`;
-    if (!keys.has(key)) {
-      keys.add(key);
-      merged.push(waypoint);
-    }
-  }
-  return orderWaypoints(merged);
 }
 
 function countGroups(features) {

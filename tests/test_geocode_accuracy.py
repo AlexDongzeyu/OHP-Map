@@ -13,8 +13,10 @@ UNSAFE_NATIONALITY_ALIASES = {
 
 
 def test_nationality_adjectives_are_not_treated_as_places():
-    aliases = json.loads(config.GAZETTEER.read_text(encoding="utf-8"))["aliases"]
+    document = json.loads(config.GAZETTEER.read_text(encoding="utf-8"))
+    aliases = document["aliases"]
     assert UNSAFE_NATIONALITY_ALIASES.isdisjoint(aliases)
+    assert len(document["revision"]) == 16
 
 
 def test_nationality_descriptions_do_not_create_false_waypoints():
@@ -59,6 +61,10 @@ def test_every_country_qualified_cache_entry_passes_geometry_guard():
 
 def test_known_ambiguous_profiles_use_the_correct_places():
     document = json.loads(config.OUT_GEOJSON.read_text(encoding="utf-8"))
+    gazetteer_revision = json.loads(
+        config.GAZETTEER.read_text(encoding="utf-8"),
+    )["revision"]
+    assert document["metadata"]["gazetteer_revision"] == gazetteer_revision
     features = {
         feature["properties"]["survivor_id"]: feature["properties"]
         for feature in document["features"]
