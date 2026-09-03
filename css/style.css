@@ -570,7 +570,7 @@ a { color:var(--accent-soft); }
   transition:background .18s ease;
 }
 .rail-card:hover { background:var(--accent-wash); }
-.rail-card.sel { background:var(--accent-wash); box-shadow:inset 2px 0 0 var(--accent); }
+.rail-card.sel { background:var(--accent-wash); }
 .medal {
   width:34px;
   height:34px;
