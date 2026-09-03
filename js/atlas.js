@@ -21,6 +21,8 @@ export function createAtlas(container) {
   let size = { w: 0, h: 0 }, currentK = 1;
   let store = null, tipEl = null, zoom = null;
   let view = null, rotateRAF = null, rot = [-40, -32, 0];
+  let globeRoutePool = [], globeRouteBatch = [], globeRouteCursor = 0;
+  let globeRouteChangedAt = 0, globePhase = 0;
   const api = {};
 
   api.ready = (async function init() {
@@ -30,14 +32,15 @@ export function createAtlas(container) {
     return api;
   })();
 
-  api.setStore = (s) => { store = s; };
+  api.setStore = (s) => { store = s; buildGlobeRoutePool(); };
   api.setTooltipEl = (el) => { tipEl = el; };
 
   function build() {
     container.innerHTML = "";
     svg = d3.select(container).append("svg")
       .attr("width", "100%").attr("height", "100%").style("display", "block");
-    svg.append("rect").attr("width", "100%").attr("height", "100%").attr("fill", C.ocean);
+    svg.append("rect").attr("class", "atlas-bg")
+      .attr("width", "100%").attr("height", "100%").attr("fill", C.ocean);
     globeG = svg.append("g").attr("class", "globe").style("display", "none");
     camera = svg.append("g").attr("class", "camera").style("transform-origin", "0 0");
     countriesG = camera.append("g");
@@ -180,6 +183,84 @@ export function createAtlas(container) {
     });
   }
 
+  function buildGlobeRoutePool() {
+    if (!store) { globeRoutePool = []; return; }
+    globeRoutePool = store.journeys.map((journey) => {
+      const coordinates = [];
+      for (const waypoint of journey.waypoints) {
+        if (!Number.isFinite(waypoint.lng) || !Number.isFinite(waypoint.lat)) continue;
+        const coordinate = [waypoint.lng, waypoint.lat];
+        const previous = coordinates[coordinates.length - 1];
+        if (!previous || previous[0] !== coordinate[0] || previous[1] !== coordinate[1]) {
+          coordinates.push(coordinate);
+        }
+      }
+      const distance = coordinates.slice(1).reduce(
+        (total, coordinate, index) => total + d3.geoDistance(coordinates[index], coordinate),
+        0,
+      );
+      return {
+        id: journey.id,
+        group: journey.group,
+        coordinates,
+        distance,
+      };
+    }).filter((journey) => journey.coordinates.length >= 2 && journey.distance > 0.14)
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  function rotateGlobeRoutes(force = false) {
+    if (!globeG?._routes || !globeRoutePool.length) return;
+    if (!force) globeRouteCursor = (globeRouteCursor + 29) % globeRoutePool.length;
+    const selected = [];
+    for (let offset = 0; offset < globeRoutePool.length && selected.length < 7; offset++) {
+      const candidate = globeRoutePool[(globeRouteCursor + offset * 17) % globeRoutePool.length];
+      const start = candidate.coordinates[0];
+      const end = candidate.coordinates[candidate.coordinates.length - 1];
+      const distinct = selected.every((other) => {
+        const otherStart = other.coordinates[0];
+        const otherEnd = other.coordinates[other.coordinates.length - 1];
+        return d3.geoDistance(start, otherStart) > 0.08 ||
+          d3.geoDistance(end, otherEnd) > 0.08;
+      });
+      if (distinct) selected.push(candidate);
+    }
+    globeRouteBatch = selected;
+    globeRouteChangedAt = performance.now();
+
+    const routeSelection = globeG._routes.selectAll("path")
+      .data(globeRouteBatch, (journey) => journey.id);
+    routeSelection.exit().remove();
+    routeSelection.enter().append("path")
+      .attr("class", "globe-route")
+      .attr("fill", "none")
+      .attr("stroke-width", 1.15)
+      .attr("stroke-linecap", "round")
+      .attr("stroke-dasharray", "2 4")
+      .attr("opacity", 0.34)
+      .merge(routeSelection)
+      .attr("stroke", (journey) => GROUP_COLOR[journey.group] || C.accent);
+
+    const travelerSelection = globeG._travelers.selectAll("circle")
+      .data(globeRouteBatch, (journey) => journey.id);
+    travelerSelection.exit().remove();
+    travelerSelection.enter().append("circle")
+      .attr("class", "globe-traveler")
+      .attr("r", 2.5)
+      .attr("fill", C.paperSoft)
+      .attr("stroke-width", 1.3)
+      .merge(travelerSelection)
+      .attr("stroke", (journey) => GROUP_COLOR[journey.group] || C.accent);
+  }
+
+  function pointAlongRoute(coordinates, progress) {
+    if (!coordinates.length) return null;
+    if (coordinates.length === 1) return coordinates[0];
+    const scaled = progress * (coordinates.length - 1);
+    const index = Math.min(coordinates.length - 2, Math.floor(scaled));
+    return d3.geoInterpolate(coordinates[index], coordinates[index + 1])(scaled - index);
+  }
+
   // ---- globe -----------------------------------------------------------------
   function showGlobe(on) {
     globeG.style("display", on ? null : "none");
@@ -190,20 +271,48 @@ export function createAtlas(container) {
     globeG.selectAll("*").remove();
     const c = gProjection.translate(), r = gProjection.scale();
     globeG.append("circle").attr("cx", c[0]).attr("cy", c[1]).attr("r", r)
-      .attr("fill", C.ocean).attr("stroke", C.landStroke).attr("stroke-width", 1);
+      .attr("fill", C.ocean).attr("fill-opacity", 0.58)
+      .attr("stroke", C.landStroke).attr("stroke-width", 1);
     const land = globeG.append("g");
     land.selectAll("path").data(world.features).enter().append("path")
-      .attr("fill", C.land).attr("stroke", C.landStroke).attr("stroke-width", 0.4);
+      .attr("fill", C.land).attr("fill-opacity", 0.82)
+      .attr("stroke", C.landStroke).attr("stroke-width", 0.4);
+    const routes = globeG.append("g").attr("class", "globe-routes");
+    const travelers = globeG.append("g").attr("class", "globe-travelers");
     const dots = globeG.append("g");
-    globeG._land = land; globeG._dots = dots;
+    globeG._land = land;
+    globeG._routes = routes;
+    globeG._travelers = travelers;
+    globeG._dots = dots;
+    rotateGlobeRoutes(true);
     redrawGlobe();
   }
-  function redrawGlobe() {
-    const land = globeG._land, dots = globeG._dots;
+  function redrawGlobe(now = performance.now()) {
+    const land = globeG._land, routes = globeG._routes;
+    const travelers = globeG._travelers, dots = globeG._dots;
     if (!land) return;
+    if (!REDUCED_MOTION && now - globeRouteChangedAt > 14000) rotateGlobeRoutes();
     gProjection.rotate(rot);
     land.selectAll("path").attr("d", gPath);
     const center = [-rot[0], -rot[1]];
+    routes.selectAll("path").attr("d", (journey) => gPath({
+      type: "LineString",
+      coordinates: journey.coordinates,
+    }));
+    travelers.selectAll("circle").each(function (journey, index) {
+      const point = pointAlongRoute(
+        journey.coordinates,
+        (globePhase + index / Math.max(1, globeRouteBatch.length)) % 1,
+      );
+      const visible = point && d3.geoDistance(point, center) < Math.PI / 2;
+      if (!visible) {
+        d3.select(this).attr("display", "none");
+        return;
+      }
+      const projected = gProjection(point);
+      d3.select(this).attr("display", null)
+        .attr("cx", projected[0]).attr("cy", projected[1]);
+    });
     const sel = dots.selectAll("circle").data(store ? store.journeys : [], (j) => j.id);
     sel.enter().append("circle").attr("r", 1.6).merge(sel).each(function (j) {
       const home = j.waypoints[0];
@@ -219,7 +328,12 @@ export function createAtlas(container) {
   function startRotate() {
     stopRotate();
     if (REDUCED_MOTION) { redrawGlobe(); return; }
-    const step = () => { rot[0] += 0.14; redrawGlobe(); rotateRAF = requestAnimationFrame(step); };
+    const step = (now) => {
+      rot[0] += 0.055;
+      globePhase = (globePhase + 0.0007) % 1;
+      redrawGlobe(now);
+      rotateRAF = requestAnimationFrame(step);
+    };
     rotateRAF = requestAnimationFrame(step);
   }
   function stopRotate() { if (rotateRAF) cancelAnimationFrame(rotateRAF); rotateRAF = null; }
@@ -229,6 +343,7 @@ export function createAtlas(container) {
     api._last = () => api.render(v, ctx);
     if (!overlayG) return;
     const changed = v !== view; view = v;
+    svg.select(".atlas-bg").attr("fill-opacity", v === "landing" ? 0.56 : 1);
     if (v === "landing") { svg.style("pointer-events", "none"); showGlobe(true); return; }
     showGlobe(false);
     const interactive = v === "explore" || v === "patterns";

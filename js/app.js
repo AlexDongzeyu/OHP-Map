@@ -42,6 +42,7 @@ async function main() {
   state.guidedId = store.defaultGuidedId;
   state.scrubYear = Math.round((store.time.min + store.time.max) / 2);
   store.groups.forEach((g) => state.groupFilter.add(g.name));
+  document.getElementById("portrait-field").innerHTML = ui.livingMosaic(store);
 
   atlas = createAtlas(document.getElementById("map"));
   atlas.setStore(store);

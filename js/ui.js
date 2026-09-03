@@ -16,7 +16,6 @@ export function landing(store) {
   const conflicts = store.conflicts.length;
   return `
   <div class="ov ov-landing">
-    ${livingMosaic(store)}
     <div class="landing-card">
       <h1 class="display">Journeys</h1>
       <p class="kicker">Crestwood Oral History Project</p>
@@ -45,7 +44,7 @@ export function landing(store) {
   </div>`;
 }
 
-function livingMosaic(store) {
+export function livingMosaic(store) {
   const people = store.journeys
     .map((journey) => ({
       i: journey.initials,
@@ -61,13 +60,31 @@ function livingMosaic(store) {
       sequence.push(people[index]);
     }
     const first = sequence[0];
-    return `<span class="mosaic-tile" data-people="${esc(JSON.stringify(sequence))}">
-      ${mosaicSide(first, "is-front")}
-      ${mosaicSide(sequence[1] || first, "is-back")}
-    </span>`;
+    return {
+      id: tileIndex,
+      people: esc(JSON.stringify(sequence)),
+      front: mosaicSide(first, "is-front"),
+      back: mosaicSide(sequence[1] || first, "is-back"),
+    };
+  });
+  const tileMarkup = (tile, clone = false) => (
+    `<span class="mosaic-tile" data-tile-id="${tile.id}"${clone ? ' data-clone="true"' : ""}
+      data-people="${tile.people}">
+      ${tile.front}
+      ${tile.back}
+    </span>`
+  );
+  const belts = Array.from({ length: 6 }, (_, beltIndex) => {
+    const row = tiles.slice(beltIndex * 12, beltIndex * 12 + 12);
+    return `<div class="mosaic-belt mosaic-belt-${beltIndex + 1}" data-belt="${beltIndex}">
+      <div class="mosaic-track">
+        <span class="mosaic-set">${row.map((tile) => tileMarkup(tile)).join("")}</span>
+        <span class="mosaic-set">${row.map((tile) => tileMarkup(tile, true)).join("")}</span>
+      </div>
+    </div>`;
   }).join("");
-  return `<div class="portrait-mosaic" data-mosaic aria-hidden="true">
-    <div class="mosaic-grid">${tiles}</div>
+  return `<div class="portrait-mosaic" data-mosaic>
+    ${belts}
   </div>`;
 }
 

@@ -1,38 +1,38 @@
-// Shared configuration: mineral neutrals, one deep-pine interface accent, and a quiet
-// alpine family for archive categories. Category color is data encoding, not hierarchy.
+// Shared configuration: alpine twilight neutrals, one horizon-blue interface accent,
+// and a quiet slate family for archive categories.
 
 export const C = {
-  paper: "#F4F6F3",
-  paperSoft: "#FCFCFA",
-  panel: "#FCFCFA",
-  ink: "#171A18",
-  inkSoft: "#303633",
-  muted: "#5F6863",
-  faint: "#7B847F",
-  line: "#DCE2DD",
-  lineSoft: "#E8ECE8",
-  rule: "#CDD5CF",
-  accent: "#315C4E",
-  accentDeep: "#214237",
-  accentSoft: "#43685C",
-  accentWash: "#E9F0EC",
-  land: "#DDE3DE",
-  landStroke: "#C8D0CA",
-  ocean: "#F1F3F0",
-  densityNone: "#EDF0ED",
-  densityLow: "#E8ECE8",
-  dotIdle: "#AAB4AE",
-  anchorInk: "#303633",
-  verified: "#315C4E",
+  paper: "#F1F3F5",
+  paperSoft: "#FAFBFC",
+  panel: "#FAFBFC",
+  ink: "#18212A",
+  inkSoft: "#34414C",
+  muted: "#68737D",
+  faint: "#87919A",
+  line: "#D8DEE3",
+  lineSoft: "#E6EAED",
+  rule: "#CAD2D8",
+  accent: "#3F6688",
+  accentDeep: "#294B69",
+  accentSoft: "#5A7893",
+  accentWash: "#E7EDF2",
+  land: "#D6DDE1",
+  landStroke: "#C4CDD3",
+  ocean: "#EDF0F2",
+  densityNone: "#E9EDF0",
+  densityLow: "#E1E7EB",
+  dotIdle: "#A8B3BC",
+  anchorInk: "#34414C",
+  verified: "#3F6688",
 };
 
 // Group order follows the OHP archive. Muted, similarly weighted hues preserve equality.
 export const GROUPS = [
-  { name: "Holocaust Survivors", color: "#315C4E" },
-  { name: "Military Veterans",   color: "#657C72" },
-  { name: "Community Members",   color: "#5F7580" },
-  { name: "First Nations",       color: "#7E806A" },
-  { name: "Crestwood Families",  color: "#756F7A" },
+  { name: "Holocaust Survivors", color: "#3F6688" },
+  { name: "Military Veterans",   color: "#687D91" },
+  { name: "Community Members",   color: "#6A7186" },
+  { name: "First Nations",       color: "#8A7662" },
+  { name: "Crestwood Families",  color: "#7C6E83" },
 ];
 export const GROUP_COLOR = Object.fromEntries(GROUPS.map((g) => [g.name, g.color]));
 

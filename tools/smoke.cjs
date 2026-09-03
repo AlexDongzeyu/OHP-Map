@@ -38,38 +38,47 @@ const BASE = process.argv[2] || "http://localhost:8124";
       mosaic: document.documentElement.dataset.mosaicMotion,
       version: window.gsap && window.gsap.version,
       hasReviewBadge: Boolean(document.querySelector(".status-pill")),
-      mosaicTiles: document.querySelectorAll(".mosaic-tile").length,
-      mosaicPeople: [...document.querySelectorAll(".mosaic-tile")].reduce((total, tile) => (
+      mosaicTiles: document.querySelectorAll(".mosaic-tile:not([data-clone])").length,
+      mosaicBelts: document.querySelectorAll(".mosaic-belt").length,
+      beltsMoving: document.documentElement.dataset.mosaicBelts,
+      mosaicPeople: [...document.querySelectorAll(".mosaic-tile:not([data-clone])")].reduce((total, tile) => (
         total + JSON.parse(tile.dataset.people || "[]").length
       ), 0),
-      mosaicMissingPortraits: [...document.querySelectorAll(".mosaic-tile")].reduce((total, tile) => (
+      mosaicMissingPortraits: [...document.querySelectorAll(".mosaic-tile:not([data-clone])")].reduce((total, tile) => (
         total + JSON.parse(tile.dataset.people || "[]").filter((person) => !person.p).length
       ), 0),
-      mosaicUnvalidatedPortraits: [...document.querySelectorAll(".mosaic-tile")].reduce((total, tile) => (
+      mosaicUnvalidatedPortraits: [...document.querySelectorAll(".mosaic-tile:not([data-clone])")].reduce((total, tile) => (
         total + JSON.parse(tile.dataset.people || "[]").filter((person) => !person.v).length
       ), 0),
       journeyCount: Number(document.querySelector(".metric b")?.textContent),
-      mosaicHidden: document.querySelector(".portrait-mosaic[data-mosaic]")?.getAttribute("aria-hidden"),
+      mosaicHidden: document.querySelector("#portrait-field")?.getAttribute("aria-hidden"),
+      globeRoutes: document.querySelectorAll(".globe-route").length,
+      globeTravelers: document.querySelectorAll(".globe-traveler").length,
+      firstTravelerX: Number(document.querySelector(".globe-traveler")?.getAttribute("cx")),
     }));
     if (motion.mode !== "gsap") throw new Error("GSAP motion mode is not active");
     if (motion.mosaic !== "animated") throw new Error("living mosaic is not animated");
     if (motion.version !== "3.15.0") throw new Error("unexpected GSAP version " + motion.version);
     if (motion.hasReviewBadge) throw new Error("header review badge should not render");
     if (motion.mosaicTiles < 64) throw new Error("living mosaic has too few tiles");
+    if (motion.mosaicBelts !== 6 || motion.beltsMoving !== "rolling") throw new Error("portrait belts are not rolling");
     if (!motion.mosaicPeople || motion.mosaicPeople > motion.journeyCount) throw new Error("living mosaic portrait count is invalid");
     if (motion.mosaicMissingPortraits) throw new Error("initials-only records entered the landing mosaic");
     if (motion.mosaicUnvalidatedPortraits) throw new Error("non-face gallery assets entered the landing mosaic");
     if (motion.mosaicHidden !== "true") throw new Error("decorative mosaic is exposed to assistive technology");
+    if (motion.globeRoutes < 5 || motion.globeTravelers < 5) throw new Error("landing globe journeys are missing");
     await wait(6200);
-    const cadence = await page.$$eval(".mosaic-tile", (tiles) => ({
+    const cadence = await page.$$eval(".mosaic-tile:not([data-clone])", (tiles) => ({
       changed: tiles.filter((tile) => Number(tile.dataset.swapCount) >= 1).length,
       total: tiles.length,
       intervals: tiles.map((tile) => Number(tile.dataset.cycleSeconds)),
     }));
+    const travelerX = await page.$eval(".globe-traveler", (traveler) => Number(traveler.getAttribute("cx")));
     if (cadence.changed !== cadence.total) throw new Error(`${cadence.total - cadence.changed} mosaic tiles did not change`);
     if (cadence.intervals.some((seconds) => seconds < 4.8 || seconds > 8.01)) {
       throw new Error("mosaic repeat interval is outside the expected range");
     }
+    if (travelerX === motion.firstTravelerX) throw new Error("globe traveler did not move");
   });
   await check("follow -> guided narrative + flat map", async () => {
     await page.click(".landing-card [data-act='follow']");

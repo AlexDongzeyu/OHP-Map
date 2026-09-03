@@ -158,19 +158,21 @@ map.
 **Deep links:** `#/guided`, `#/explore`, `#/patterns`, `#/about`, `#/survivor/<id>`,
 `#/place/<slug>`.
 
-**Visual craft (docs 10–12):** an "Alpine archive" direction pairs cool mineral neutrals,
-Public Sans interface typography, and restrained Spectral story moments with one deep-pine
+**Visual craft (docs 10–12):** an "Alpine archive" direction pairs cool twilight neutrals,
+Public Sans interface typography, and restrained Spectral story moments with one horizon-blue
 accent. The interface relies on spacing and type rather than decorative rules, and
 consistent inline SVG icons replace text glyphs. On small screens, map-aware bottom sheets
 keep geography visible behind Guided, Explore, and person details. Motion remains slow and
 non-looping, `prefers-reduced-motion` is honoured, and all journeys converge visibly in
 Patterns — what no alphabetical list shows.
 
-The landing includes a low-opacity living identity mosaic behind the content. Every tile
-independently changes every 4.8–8 seconds without blocking interaction, pauses when hidden,
-and stays static for reduced-motion visitors. The mosaic includes only rights-cleared OHP
-gallery portraits; pages without a usable gallery image remain available elsewhere with
-their initials fallback but never enter the landing wall.
+The landing includes six full-viewport portrait belts moving at distinct speeds behind the
+content and rotating globe. Every tile independently changes every 4.8–8 seconds without
+blocking interaction; the globe cycles through seven real journeys at a time with moving
+traveler marks, so routes remain legible. All ambient motion pauses when hidden and stays
+static for reduced-motion visitors. The mosaic includes only rights-cleared, face-validated
+OHP portraits; pages without a usable gallery image remain available elsewhere with their
+initials fallback but never enter the landing wall.
 
 **Portrait provenance:** the project owner identified themselves as the photograph author
 and granted reuse permission on 2026-09-02. `data/portraits/manifest.json` records that

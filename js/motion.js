@@ -2,8 +2,8 @@ import { REDUCED_MOTION } from "./config.js";
 
 const gsap = window.gsap;
 let warned = false;
-let mosaicTiles = [];
-const mosaicState = new WeakMap();
+let mosaicStates = [];
+let beltTweens = [];
 
 function canAnimate() {
   if (REDUCED_MOTION) return false;
@@ -32,7 +32,7 @@ export function init() {
   canAnimate();
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopMosaic();
-    else if (document.querySelector(".portrait-mosaic[data-mosaic]")) startMosaic();
+    else if (document.body.dataset.view === "landing") startMosaic();
   });
 }
 
@@ -133,10 +133,16 @@ function startMosaic() {
     document.documentElement.dataset.mosaicMotion = "static";
     return;
   }
-  const tiles = gsap.utils.toArray(".mosaic-tile");
+  const tiles = gsap.utils.toArray(".mosaic-tile:not([data-clone])");
   if (!tiles.length) return;
   document.documentElement.dataset.mosaicMotion = "animated";
-  mosaicTiles = tiles;
+  beltTweens = gsap.utils.toArray(".mosaic-track").map((track, index) => {
+    const duration = [76, 92, 82, 98, 86, 104][index] || 90;
+    return index % 2
+      ? gsap.fromTo(track, { xPercent: -50 }, { xPercent: 0, duration, ease: "none", repeat: -1 })
+      : gsap.to(track, { xPercent: -50, duration, ease: "none", repeat: -1 });
+  });
+  document.documentElement.dataset.mosaicBelts = "rolling";
   tiles.forEach((tile, index) => {
     let people = [];
     try {
@@ -144,68 +150,69 @@ function startMosaic() {
     } catch (error) {
       console.error("Invalid mosaic data", error);
     }
-    mosaicState.set(tile, { people, index: 0, front: true, call: null });
-    scheduleTile(tile, index, true);
+    const elements = gsap.utils.toArray(`.mosaic-tile[data-tile-id="${tile.dataset.tileId}"]`);
+    const state = { elements, people, index: 0, front: true, call: null, tileIndex: index };
+    mosaicStates.push(state);
+    scheduleTile(state, true);
   });
 }
 
 function stopMosaic() {
-  for (const tile of mosaicTiles) {
-    const state = mosaicState.get(tile);
-    if (state?.call) state.call.kill();
-  }
-  mosaicTiles = [];
+  for (const state of mosaicStates) if (state.call) state.call.kill();
+  for (const tween of beltTweens) tween.kill();
+  mosaicStates = [];
+  beltTweens = [];
   if (gsap) gsap.killTweensOf(".mosaic-side");
-  document.documentElement.dataset.mosaicMotion = document.querySelector(".portrait-mosaic[data-mosaic]")
+  document.documentElement.dataset.mosaicMotion = document.body.dataset.view === "landing"
     ? "static"
     : "inactive";
 }
 
-function scheduleTile(tile, tileIndex, initial = false) {
-  const state = mosaicState.get(tile);
+function scheduleTile(state, initial = false) {
   if (!state || state.people.length < 2) return;
   const seconds = initial
-    ? 2.6 + (tileIndex % 12) * .22
-    : 4.8 + ((tileIndex + state.index * 3) % 9) * .4;
-  tile.dataset.cycleSeconds = seconds.toFixed(2);
+    ? 2.6 + (state.tileIndex % 12) * .22
+    : 4.8 + ((state.tileIndex + state.index * 3) % 9) * .4;
+  for (const tile of state.elements) tile.dataset.cycleSeconds = seconds.toFixed(2);
   state.call = gsap.delayedCall(seconds, () => {
-    if (document.hidden || !document.querySelector(".portrait-mosaic[data-mosaic]")) {
+    if (document.hidden || document.body.dataset.view !== "landing") {
       stopMosaic();
       return;
     }
-    swapTile(tile);
-    scheduleTile(tile, tileIndex);
+    swapTile(state);
+    scheduleTile(state);
   });
 }
 
-function swapTile(tile) {
-  if (document.hidden || !document.querySelector(".portrait-mosaic[data-mosaic]")) {
+function swapTile(state) {
+  if (document.hidden || document.body.dataset.view !== "landing") {
     stopMosaic();
     return;
   }
-  const state = mosaicState.get(tile);
   if (!state || state.people.length < 2) return;
   state.index = (state.index + 1) % state.people.length;
-  const visible = tile.querySelector(state.front ? ".is-front" : ".is-back");
-  const incoming = tile.querySelector(state.front ? ".is-back" : ".is-front");
-  setMosaicPerson(incoming, state.people[state.index]);
-  gsap.to(visible, {
-    autoAlpha: 0,
-    scale: .97,
-    duration: .75,
-    ease: "power2.inOut",
-  });
-  gsap.fromTo(incoming, {
-    autoAlpha: 0,
-    scale: 1.025,
-  }, {
-    autoAlpha: 1,
-    scale: 1,
-    duration: .9,
-    ease: "power2.inOut",
-  });
+  for (const tile of state.elements) {
+    const visible = tile.querySelector(state.front ? ".is-front" : ".is-back");
+    const incoming = tile.querySelector(state.front ? ".is-back" : ".is-front");
+    setMosaicPerson(incoming, state.people[state.index]);
+    gsap.to(visible, {
+      autoAlpha: 0,
+      scale: .97,
+      duration: .75,
+      ease: "power2.inOut",
+    });
+    gsap.fromTo(incoming, {
+      autoAlpha: 0,
+      scale: 1.025,
+    }, {
+      autoAlpha: 1,
+      scale: 1,
+      duration: .9,
+      ease: "power2.inOut",
+    });
+    tile.dataset.swapCount = String((Number(tile.dataset.swapCount) || 0) + 1);
+  }
   state.front = !state.front;
-  tile.dataset.swapCount = String((Number(tile.dataset.swapCount) || 0) + 1);
 }
 
 function setMosaicPerson(side, person) {
