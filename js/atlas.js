@@ -405,6 +405,7 @@ export function createAtlas(container) {
         (feature.properties.end == null || feature.properties.end > instant)
       ))
       .sort((a, b) => Number(a.properties.kind === "occupation") - Number(b.properties.kind === "occupation"));
+    document.documentElement.dataset.historicalBoundaries = "ready";
     countriesG.style("display", "none");
     historicalG.style("display", null);
     historicalLabelsG.style("display", null);

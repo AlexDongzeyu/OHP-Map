@@ -97,7 +97,7 @@ function mosaicSide(person, className) {
 }
 
 function clearedPortrait(journey) {
-  if (!journey.portrait) return null;
+  if (!journey.portrait || journey.portraitFaces <= 0) return null;
   const rights = String(journey.portraitRights || "").toLowerCase();
   return /\b(cleared|licensed|public domain|permission granted)\b/.test(rights)
     ? journey.portrait
@@ -109,11 +109,15 @@ export function guided(store, state) {
   const j = store.byId.get(state.guidedId) || store.journeys[0];
   const first = j.name.split(" ")[0];
   const wp = j.waypoints;
+  const portrait = clearedPortrait(j);
   const chapters = wp.map((w, i) => {
     const context = store.warForJourney(j, w.year);
     const showContext = context && !["birthplace", "resettlement"].includes(w.roleKey);
     return `
-    <section class="chapter" data-chapter="${i}">
+    <section class="chapter ${i === 0 ? "chapter-first" : ""}" data-chapter="${i}">
+      ${i === 0 && portrait ? `<figure class="guided-portrait">
+        <img src="${esc(portrait)}" alt="${esc(j.name)}" loading="eager" decoding="async">
+      </figure>` : ""}
       <div class="ch-head"><span class="ch-num">${roman[i] || i + 1}</span>
         <span class="ch-role">${esc(w.role)}</span></div>
       <h3 class="ch-title">${esc(w.canonical)}</h3>

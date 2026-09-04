@@ -207,11 +207,13 @@ const BASE = process.argv[2] || "http://localhost:8124";
       opposition: document.querySelectorAll("#map [data-war-side='opposition']").length,
       bio: document.querySelector(".panel .bio")?.textContent.trim(),
       recording: document.querySelector(".panel .recording-meta")?.textContent.replace(/\s+/g, " ").trim(),
+      invalidPortrait: Boolean(document.querySelector(".panel .medal img")),
     }));
     if (serviceMap.context !== "Second World War" || !serviceMap.coalition || !serviceMap.opposition ||
         serviceMap.bio.length < 200 || /…$/.test(serviceMap.bio) ||
         !/[.!?][”"')\]]?$/.test(serviceMap.bio) ||
-        !/interview chapters?/.test(serviceMap.recording || "")) {
+        !/interview chapters?/.test(serviceMap.recording || "") ||
+        serviceMap.invalidPortrait) {
       throw new Error(`veteran service context is incomplete ${JSON.stringify(serviceMap)}`);
     }
   });
@@ -221,8 +223,11 @@ const BASE = process.argv[2] || "http://localhost:8124";
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await wait(250);
-    await page.click(".rail .rail-card");
+    await page.waitForSelector("[data-survivor='adam-wally']", { timeout: 3000 });
+    await page.click("[data-survivor='adam-wally']");
     await page.waitForSelector(".panel .recording-meta", { timeout: 3000 });
+    const selectedName = await page.$eval(".panel .serif-lg", (element) => element.textContent.trim());
+    if (selectedName !== "Wally Adam") throw new Error(`selected ${selectedName} instead of Wally Adam`);
     const coverage = await page.$eval(
       ".panel .recording-meta",
       (element) => element.textContent.replace(/\s+/g, " ").trim(),
@@ -230,6 +235,22 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (!/6 interview chapters/.test(coverage) || !/6 with public captions/.test(coverage)) {
       throw new Error(`caption coverage is incorrect: ${coverage}`);
     }
+    await page.$eval(".guided-pill", (button) => button.click());
+    await page.waitForSelector(".chapter-first .guided-portrait img", { timeout: 5000 });
+    const guidedPortrait = await page.evaluate(() => {
+      const head = document.querySelector(".narr-head").getBoundingClientRect();
+      const portrait = document.querySelector(".guided-portrait");
+      const box = portrait.getBoundingClientRect();
+      return {
+        alt: portrait.querySelector("img")?.alt,
+        gap: box.top - head.bottom,
+      };
+    });
+    if (guidedPortrait.alt !== "Wally Adam" || guidedPortrait.gap > 80) {
+      throw new Error(`guided portrait bridge is incorrect ${JSON.stringify(guidedPortrait)}`);
+    }
+    await page.click(".nav-tab[data-view='explore']");
+    await page.waitForSelector(".rail .rail-card", { timeout: 5000 });
   });
   await check("free zoom changes camera transform", async () => {
     await page.click(".panel-close").catch(() => {});
