@@ -235,13 +235,23 @@ const BASE = process.argv[2] || "http://localhost:8124";
     const eventState = await page.evaluate(() => ({
       markers: document.querySelectorAll(".pattern-event-marker").length,
       activeMarkers: document.querySelectorAll(".pattern-event-marker[fill='#294B69']").length,
-      phase: document.querySelector(".war-brief > strong")?.textContent,
+      phase: document.querySelector(".war-brief-content > strong")?.textContent,
       territories: document.querySelectorAll(".historical-territory").length,
       canada: document.querySelector("[data-controller='Canada']")?.getAttribute("data-war-side"),
       germany: document.querySelector("[data-controller='Germany']")?.getAttribute("data-war-side"),
       occupied: document.querySelectorAll(".historical-territory[data-war-side='occupied']").length,
       corridors: document.querySelectorAll(".service-corridor").length,
       selectedRoutes: document.querySelectorAll(".selected-testimony-route").length,
+      errorMessage: (() => {
+        const root = document.documentElement;
+        root.dataset.historicalBoundaries = "error";
+        const content = getComputedStyle(
+          document.querySelector(".war-brief-content > small"),
+          "::after",
+        ).content;
+        root.dataset.historicalBoundaries = "ready";
+        return content;
+      })(),
     }));
     if (!eventState.markers || eventState.activeMarkers || eventState.selectedRoutes) {
       throw new Error("historical event layer should open without a forced selection");
@@ -252,7 +262,8 @@ const BASE = process.argv[2] || "http://localhost:8124";
         eventState.territories < 140 ||
         !eventState.occupied ||
         !eventState.corridors ||
-        eventState.corridors > 8) {
+        eventState.corridors > 8 ||
+        !/historical geometry unavailable/.test(eventState.errorMessage || "")) {
       throw new Error(`historical war layer is incomplete ${JSON.stringify(eventState)}`);
     }
     await page.$eval(".pattern-event-marker", (marker) => {
@@ -270,7 +281,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
     }
     await page.$eval(".scrubber .range", (el) => { el.value = "1914"; el.dispatchEvent(new Event("input", { bubbles: true })); });
     const firstWorld = await page.evaluate(() => ({
-      phase: document.querySelector(".war-brief > strong")?.textContent,
+      phase: document.querySelector(".war-brief-content > strong")?.textContent,
       austriaHungary: Boolean(document.querySelector("[data-territory='Austria-Hungary']")),
       hash: location.hash,
     }));
@@ -301,7 +312,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
     });
     await page.$eval(".scrubber .range", (el) => { el.value = "2026"; el.dispatchEvent(new Event("input", { bubbles: true })); });
     const present = await page.evaluate(() => ({
-      phase: document.querySelector(".war-brief > strong")?.textContent,
+      phase: document.querySelector(".war-brief-content > strong")?.textContent,
       russia: Boolean(document.querySelector("[data-territory='Russia']")),
       ukraine: Boolean(document.querySelector("[data-territory='Ukraine']")),
       maximum: document.querySelector(".scrubber .range")?.max,
@@ -309,6 +320,19 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (present.phase !== "The map as it stands now" ||
         !present.russia || !present.ukraine || present.maximum !== "2026") {
       throw new Error(`current territory state is incorrect ${JSON.stringify(present)}`);
+    }
+    await page.$eval(".scrubber .range", (el) => { el.value = "1960"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+    const decolonization = await page.evaluate(() => ({
+      phase: document.querySelector(".war-brief-content > strong")?.textContent,
+      copy: document.querySelector(".war-brief-content > p")?.textContent,
+      map: document.querySelector(".war-brief-map")?.getAttribute("src"),
+      footer: document.querySelector(".war-brief-content > small")?.textContent.replace(/\s+/g, " ").trim(),
+    }));
+    if (decolonization.phase !== "Empires recede" ||
+        !/Africa and Asia/.test(decolonization.copy || "") ||
+        decolonization.map !== "assets/history/atlas-1960.svg" ||
+        !/territories · \d+ changes/.test(decolonization.footer || "")) {
+      throw new Error(`1960 dossier is incomplete ${JSON.stringify(decolonization)}`);
     }
     await page.$eval(".scrubber .range", (el) => { el.value = "1944"; el.dispatchEvent(new Event("input", { bubbles: true })); });
     const beforeYear = Number(yr);
@@ -329,7 +353,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
     await page.waitForSelector("[data-war-context]", { timeout: 15000 });
     const state = await page.evaluate(() => ({
       year: document.querySelector(".scrub-year")?.textContent,
-      phase: document.querySelector(".war-brief > strong")?.textContent,
+      phase: document.querySelector(".war-brief-content > strong")?.textContent,
       coalition: document.querySelectorAll("[data-war-side='coalition']").length,
     }));
     if (state.year !== "1944" || state.phase !== "Liberation from west and east" || !state.coalition) {
@@ -404,6 +428,25 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (layout.scrubberLeft < 11 || layout.scrubberRight > layout.viewport - 11) {
       throw new Error("timeline is not centered within the viewport");
     }
+  });
+  await check("compact mobile keeps the dossier above the timeline", async () => {
+    await page.setViewport({ width: 390, height: 620 });
+    await wait(150);
+    const layout = await page.evaluate(() => {
+      const dossier = document.querySelector(".history-dossier").getBoundingClientRect();
+      const scrubber = document.querySelector(".scrubber").getBoundingClientRect();
+      return {
+        dossierBottom: dossier.bottom,
+        scrubberTop: scrubber.top,
+        viewportHeight: innerHeight,
+        scrollHeight: document.documentElement.scrollHeight,
+      };
+    });
+    if (layout.dossierBottom > layout.scrubberTop - 8 ||
+        layout.scrollHeight > layout.viewportHeight + 1) {
+      throw new Error(`compact patterns overlap ${JSON.stringify(layout)}`);
+    }
+    await page.setViewport({ width: 390, height: 844 });
   });
   await check("landing motion always starts without a control", async () => {
     const reduced = await browser.newPage();

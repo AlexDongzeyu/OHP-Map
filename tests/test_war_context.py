@@ -129,3 +129,12 @@ def test_historical_index_covers_every_year_and_marks_changes():
     assert [entry["year"] for entry in index["years"]] == list(range(1914, 2027))
     assert all(entry["active"] >= 140 for entry in index["years"])
     assert any(entry["changes"] >= 30 for entry in index["years"])
+
+
+def test_representative_era_maps_are_lightweight_svg_assets():
+    for year in (1914, 1944, 1960, 1991, 2026):
+        path = config.ROOT / "assets" / "history" / f"atlas-{year}.svg"
+        content = path.read_text(encoding="utf-8")
+        assert content.startswith("<svg ")
+        assert "Historical territory map" in content
+        assert path.stat().st_size < 300_000

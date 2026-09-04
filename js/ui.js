@@ -390,6 +390,9 @@ function warBrief(store, year, previousDisabled, nextDisabled) {
   const context = store.warAt(year);
   if (!context) return "";
   const boundary = store.historicalIndex.years.find((entry) => entry.year === year);
+  const eraMap = year <= 1918 ? 1914 : (
+    year <= 1945 ? 1944 : (year <= 1988 ? 1960 : (year <= 2000 ? 1991 : 2026))
+  );
   const corridors = context.archive_conflict
     ? (store.veteranCorridors.get(context.archive_conflict) || [])
       .filter((corridor) => corridor.count > 1)
@@ -407,22 +410,28 @@ function warBrief(store, year, previousDisabled, nextDisabled) {
       <span><i class="route"></i>Testimony journey</span>
     </div>`;
   return `<section class="war-brief" data-war-context>
-    <div class="war-brief-top">
-      <span class="micro-label">${esc(context.conflict)}</span>
-      <span class="war-stepper">
-        <button class="event-step prev" data-act="prev-year" aria-label="Previous year"${previousDisabled}>
-          ${icon("arrow-right")}
-        </button>
-        <b data-year>${year}</b>
-        <button class="event-step" data-act="next-year" aria-label="Next year"${nextDisabled}>
-          ${icon("arrow-right")}
-        </button>
-      </span>
+    <img class="war-brief-map" src="assets/history/atlas-${eraMap}.svg" alt="" aria-hidden="true">
+    <div class="war-brief-content">
+      <div class="war-brief-top">
+        <span class="micro-label">${esc(context.conflict)}</span>
+        <span class="war-stepper">
+          <button class="event-step prev" data-act="prev-year" aria-label="Previous year"${previousDisabled}>
+            ${icon("arrow-right")}
+          </button>
+          <b data-year>${year}</b>
+          <button class="event-step" data-act="next-year" aria-label="Next year"${nextDisabled}>
+            ${icon("arrow-right")}
+          </button>
+        </span>
+      </div>
+      <strong>${esc(context.phase)}</strong>
+      <p>${esc(context.summary)}</p>
+      ${legend}
+      <small>
+        <span>${boundary ? `${boundary.active} territories · ${boundary.changes} changes` : ""}</span>
+        <span>OHM · CC0</span>
+      </small>
     </div>
-    <strong>${esc(context.phase)}</strong>
-    <p>${esc(context.summary)}</p>
-    ${legend}
-    <small>${boundary ? `${boundary.active} territories · ${boundary.changes} mapped changes · ` : ""}OpenHistoricalMap CC0</small>
   </section>`;
 }
 function testimonyMoment(activeEvent, events) {

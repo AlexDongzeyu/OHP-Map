@@ -1094,15 +1094,43 @@ body[data-view="landing"] #map .globe {
 .cross-sub { margin-top:var(--space-2) !important; color:var(--faint) !important; font-size:10.5px !important; }
 .pattern-events { min-height:0; margin-top:var(--space-5); }
 .war-brief {
-  display:grid;
-  gap:var(--space-2);
+  position:relative;
+  min-height:230px;
   margin:0;
-  padding:var(--space-4);
+  overflow:hidden;
   border:1px solid rgba(199,216,227,.16);
-  border-radius:12px;
+  border-radius:14px;
   color:#F8FAFC;
-  background:linear-gradient(145deg, rgba(20,31,43,.97), rgba(35,55,70,.95));
-  box-shadow:0 12px 28px rgba(24,33,42,.13);
+  background:#1C2D3C;
+  box-shadow:0 16px 34px rgba(24,33,42,.16);
+}
+.war-brief::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(100deg, rgba(18,31,42,.99) 0%, rgba(20,35,47,.94) 52%, rgba(24,43,57,.72) 100%);
+  pointer-events:none;
+}
+.war-brief-map {
+  position:absolute;
+  top:50%;
+  right:-12%;
+  width:92%;
+  height:115%;
+  object-fit:cover;
+  object-position:center;
+  opacity:.28;
+  filter:saturate(.72) contrast(1.08);
+  transform:translateY(-50%);
+}
+.war-brief-content {
+  position:relative;
+  z-index:1;
+  min-height:230px;
+  display:grid;
+  align-content:start;
+  gap:var(--space-2);
+  padding:var(--space-5);
 }
 .war-brief-top {
   display:flex;
@@ -1134,20 +1162,28 @@ body[data-view="landing"] #map .globe {
 .war-stepper .event-step:hover { background:rgba(248,250,252,.22); }
 .war-stepper .event-step:disabled { color:rgba(248,250,252,.3); background:rgba(248,250,252,.06); }
 .war-brief .micro-label { color:rgba(199,216,227,.72); }
-.war-brief > strong {
+.war-brief-content > strong {
+  max-width:15em;
   font-family:var(--serif);
-  font-size:18px;
+  font-size:20px;
   font-weight:500;
-  line-height:1.2;
+  line-height:1.15;
 }
-.war-brief > p {
+.war-brief-content > p {
+  max-width:25em;
   margin:0;
-  color:rgba(231,237,242,.76);
+  color:rgba(241,246,249,.82);
   font-size:11.5px;
-  line-height:1.5;
+  line-height:1.48;
 }
-.war-brief > small {
-  color:rgba(199,216,227,.48);
+.war-brief-content > small {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--space-3);
+  margin-top:auto;
+  padding-top:2px;
+  color:rgba(225,235,241,.72);
   font-size:9px;
   line-height:1.4;
 }
@@ -1383,8 +1419,8 @@ body[data-view="landing"] #map .globe {
 }
 .scrub-ticks { display:flex; justify-content:space-between; margin-top:var(--space-2); color:var(--faint); font-size:10px; font-variant-numeric:tabular-nums; }
 
-html[data-historical-boundaries="loading"] .war-brief > small::after { content:" Â· loading territory geometry"; }
-html[data-historical-boundaries="error"] .war-brief > small::after { content:" Â· historical geometry unavailable"; color:#E0B6B4; }
+html[data-historical-boundaries="loading"] .war-brief-content > small::after { content:" Â· loading territory geometry"; }
+html[data-historical-boundaries="error"] .war-brief-content > small::after { content:" Â· historical geometry unavailable"; color:#EFCBC9; }
 
 /* About */
 .ov-about {
@@ -1562,14 +1598,22 @@ html[data-historical-boundaries="error"] .war-brief > small::after { content:" Â
     width:auto;
     max-height:300px;
   }
-  .history-dossier .war-brief { padding:var(--space-3) var(--space-4); }
-  .history-dossier .war-brief > p {
+  .history-dossier .war-brief { min-height:0; }
+  .history-dossier .war-brief-content {
+    min-height:0;
+    padding:var(--space-4);
+  }
+  .history-dossier .war-brief-content > p {
     display:-webkit-box;
     overflow:hidden;
     -webkit-box-orient:vertical;
     -webkit-line-clamp:2;
   }
-  .history-dossier .war-brief > small { display:none; }
+  .history-dossier .war-brief-content > small { display:none; }
+  html[data-historical-boundaries="loading"] .history-dossier .war-brief-content > small,
+  html[data-historical-boundaries="error"] .history-dossier .war-brief-content > small {
+    display:flex;
+  }
   .history-dossier .war-legend {
     display:flex;
     gap:var(--space-4);
@@ -1601,7 +1645,6 @@ html[data-historical-boundaries="error"] .war-brief > small::after { content:" Â
   .historical-patterns .layer-toggle { margin-top:var(--space-3); }
   .pattern-events { margin-top:var(--space-3); }
   .event-list { max-height:155px; }
-  .war-brief { padding:var(--space-3) var(--space-4); }
   .scrubber {
     bottom:calc(var(--space-3) + env(safe-area-inset-bottom));
     width:calc(100vw - 24px);
@@ -1655,6 +1698,8 @@ html[data-historical-boundaries="error"] .war-brief > small::after { content:" Â
   .rail { height:64vh; min-height:350px; }
   .panel-host { height:78vh; }
   .patterns-intro { max-height:35vh; }
+  .history-dossier { max-height:230px; }
+  .testimony-moment:not(.is-selected) { display:none; }
 }
 
 @media (prefers-reduced-motion:reduce) {
