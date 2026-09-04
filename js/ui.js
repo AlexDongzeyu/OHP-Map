@@ -26,18 +26,26 @@ export function landing(store) {
         <button class="btn btn-primary" data-act="follow">Begin with one story ${icon("arrow-right")}</button>
         <button class="btn btn-ghost" data-act="explore">Explore the map</button>
       </div>
-      <p class="scale">
-        <span class="metric"><b>${store.journeys.length}</b> <span>people</span></span>
-        <span class="metric"><b>${store.placeCount}</b> <span>places</span></span>
-        <span class="metric"><b>${groups}</b> <span>communities</span></span>
-        <span class="metric"><b>${conflicts}</b> <span>periods</span></span>
-      </p>
+      <section class="archive-register" aria-label="Archive totals">
+        <div class="register-head">
+          <span>Archive register</span>
+          <span>Current collection</span>
+        </div>
+        <div class="register-grid">
+          ${counter(store.journeys.length, "people")}
+          ${counter(store.placeCount, "places")}
+          ${counter(groups, "communities")}
+          ${counter(conflicts, "periods")}
+        </div>
+      </section>
     </div>
-    <div class="legend-mini">
-      <span><span class="lm-dot"></span> a person</span>
-      <span><span class="lm-line"></span> a journey</span>
-      <span><span class="lm-shade"></span> more birthplaces</span>
-    </div>
+  </div>`;
+}
+
+function counter(value, label) {
+  return `<div class="register-item" aria-label="${value} ${label}">
+    <b class="register-number" data-counter="${value}" aria-hidden="true">${value.toLocaleString("en-CA")}</b>
+    <span aria-hidden="true">${label}</span>
   </div>`;
 }
 

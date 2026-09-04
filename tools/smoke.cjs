@@ -58,8 +58,26 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (globePaths < 50) throw new Error("only " + globePaths + " globe paths");
     const lede = await page.$eval(".landing-card .lede", (el) => el.textContent.toLowerCase());
     if (!/survivor/.test(lede) || !/veteran/.test(lede)) throw new Error("lede missing survivors/veterans");
-    const scale = await page.$eval(".scale", (el) => el.textContent.replace(/\s+/g, " ").trim());
-    if (!/\d+ people/.test(scale)) throw new Error("scale='" + scale + "'");
+    const register = await page.evaluate(() => ({
+      items: document.querySelectorAll(".archive-register .register-item").length,
+      values: [...document.querySelectorAll(".archive-register [data-counter]")]
+        .map((element) => Number(element.dataset.counter)),
+      legend: Boolean(document.querySelector(".legend-mini")),
+    }));
+    if (register.items !== 4 || register.values.some((value) => !Number.isFinite(value))) {
+      throw new Error(`archive register is incomplete ${JSON.stringify(register)}`);
+    }
+    if (register.legend) throw new Error("bottom-right landing legend should not render");
+    await wait(1400);
+    const settledCounters = await page.$$eval("[data-counter]", (elements) => (
+      elements.map((element) => ({
+        text: Number(element.textContent.replace(/,/g, "")),
+        target: Number(element.dataset.counter),
+      }))
+    ));
+    if (settledCounters.some((counter) => counter.text !== counter.target)) {
+      throw new Error(`archive counters did not settle ${JSON.stringify(settledCounters)}`);
+    }
     const icon = await page.$(".landing-card [data-act='follow'] .icon");
     if (!icon) throw new Error("primary action is missing its SVG icon");
     const motion = await page.evaluate(() => ({
@@ -79,7 +97,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
       mosaicUnvalidatedPortraits: [...document.querySelectorAll(".mosaic-tile:not([data-clone])")].reduce((total, tile) => (
         total + JSON.parse(tile.dataset.people || "[]").filter((person) => !person.v).length
       ), 0),
-      journeyCount: Number(document.querySelector(".metric b")?.textContent),
+      journeyCount: Number(document.querySelector("[data-counter]")?.dataset.counter),
       mosaicHidden: document.querySelector("#portrait-field")?.getAttribute("aria-hidden"),
       globeRoutes: document.querySelectorAll(".globe-route").length,
       globeTravelers: document.querySelectorAll(".globe-traveler").length,
@@ -132,6 +150,28 @@ const BASE = process.argv[2] || "http://localhost:8124";
     }
     if (travelerX === motion.firstTravelerX) throw new Error("globe traveler did not move");
     if (graticule === motion.graticule) throw new Error("Earth graticule did not rotate");
+    await page.click(".nav-tab[data-view='explore']");
+    await wait(100);
+    const counterMotion = await page.evaluate(async () => {
+      document.querySelector("[data-act='home']").click();
+      const targets = [];
+      const samples = [];
+      for (let frame = 0; frame < 115; frame++) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const counters = [...document.querySelectorAll("[data-counter]")];
+        if (!targets.length) targets.push(...counters.map((counter) => Number(counter.dataset.counter)));
+        samples.push(counters.map((counter) => Number(counter.textContent.replace(/,/g, ""))));
+      }
+      return { targets, samples };
+    });
+    for (let index = 0; index < counterMotion.targets.length; index++) {
+      const values = counterMotion.samples.map((sample) => sample[index]);
+      if (values[0] >= counterMotion.targets[index] ||
+          values[values.length - 1] !== counterMotion.targets[index] ||
+          values.some((value, sampleIndex) => sampleIndex && value < values[sampleIndex - 1])) {
+        throw new Error(`counter ${index} is not monotonic ${JSON.stringify(values)}`);
+      }
+    }
   });
   await check("follow -> guided narrative + flat map", async () => {
     await page.click(".landing-card [data-act='follow']");
@@ -476,15 +516,18 @@ const BASE = process.argv[2] || "http://localhost:8124";
     const layout = await page.evaluate(() => {
       const nav = document.querySelector(".nav").getBoundingClientRect();
       const brand = document.querySelector(".brand").getBoundingClientRect();
+      const register = document.querySelector(".register-grid");
       return {
         navTop: nav.top,
         brandBottom: brand.bottom,
         viewport: innerWidth,
         scrollWidth: document.documentElement.scrollWidth,
+        registerColumns: getComputedStyle(register).gridTemplateColumns.split(" ").length,
       };
     });
     if (layout.navTop < layout.brandBottom - 2) throw new Error("navigation overlaps the brand row");
     if (layout.scrollWidth > layout.viewport + 1) throw new Error(`horizontal overflow ${layout.scrollWidth}/${layout.viewport}`);
+    if (layout.registerColumns !== 2) throw new Error(`archive register has ${layout.registerColumns} mobile columns`);
   });
   await check("mobile explore keeps the map visible", async () => {
     await page.click(".nav-tab[data-view='explore']");

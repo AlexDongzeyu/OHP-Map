@@ -56,6 +56,7 @@ export function animateOverlay(view, changes) {
   if (view === "landing" && changes.viewChanged) {
     startMosaic();
     if (SYSTEM_REDUCED_MOTION) return;
+    prepareCounters();
     const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
     timeline
       .fromTo(".landing-card > *", {
@@ -68,17 +69,35 @@ export function animateOverlay(view, changes) {
         stagger: .055,
         clearProps: "opacity,visibility,transform",
       })
-      .fromTo(".legend-mini > span", {
-        autoAlpha: 0,
-        x: 8,
-      }, {
-        autoAlpha: 1,
-        x: 0,
-        duration: .45,
-        stagger: .06,
-        clearProps: "opacity,visibility,transform",
-      }, "-=.3");
+      .add(() => animateCounters(), "-=.3");
     return;
+  }
+
+  function prepareCounters() {
+    for (const element of document.querySelectorAll("[data-counter]")) {
+      gsap.killTweensOf(element);
+      element.textContent = "0";
+    }
+  }
+
+  function animateCounters() {
+    if (SYSTEM_REDUCED_MOTION) return;
+    for (const element of document.querySelectorAll("[data-counter]")) {
+      const target = Number(element.dataset.counter);
+      const state = { value: 0 };
+      gsap.to(state, {
+        value: target,
+        duration: 1.25,
+        ease: "power3.out",
+        snap: { value: 1 },
+        onUpdate: () => {
+          element.textContent = Math.round(state.value).toLocaleString("en-CA");
+        },
+        onComplete: () => {
+          element.textContent = target.toLocaleString("en-CA");
+        },
+      });
+    }
   }
 
   stopMosaic();
