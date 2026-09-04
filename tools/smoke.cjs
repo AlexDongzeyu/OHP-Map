@@ -420,7 +420,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (decolonization.phase !== "Empires recede" ||
         !/Africa and Asia/.test(decolonization.copy || "") ||
         decolonization.map !== "assets/history/atlas-1960.svg" ||
-        !/territories · \d+ changes/.test(decolonization.footer || "")) {
+        !/territories, \d+ changes/.test(decolonization.footer || "")) {
       throw new Error(`1960 dossier is incomplete ${JSON.stringify(decolonization)}`);
     }
     await page.$eval(".scrubber .range", (el) => { el.value = "1944"; el.dispatchEvent(new Event("input", { bubbles: true })); });

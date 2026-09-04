@@ -131,8 +131,8 @@ export function guided(store, state) {
     <div class="narr scroll" data-narr>
       <div class="narr-head">
         <h2 class="serif-xl">${esc(j.name)}</h2>
-        <p class="kicker">${esc(j.group)} · a guided journey</p>
-        <p class="narr-meta">${j.born ? "Born " + j.born + " · " : ""}${esc(j.hometown)}</p>
+        <p class="kicker">${esc(j.group)} / Guided route</p>
+        <p class="narr-meta">${profileMeta(j)}</p>
         ${recordingMeta(j)}
         ${serviceContext(store, j)}
         <p class="bio">${esc(j.bio)}</p>
@@ -173,7 +173,7 @@ export function explore(store, state) {
       <div class="rail-list" data-rail-list>${html}</div>
     </aside>
     <div class="panel-host" data-panel>${state.selectedId ? panel(store, state) : ""}</div>
-    ${!state.selectedId ? `<p class="explore-hint">Open a name or map point to see its recorded route.<br>Drag to pan · scroll to zoom.</p>` : ""}
+    ${!state.selectedId ? `<p class="explore-hint">Open a name or map point to see its recorded route.<br>Drag to pan. Scroll to zoom.</p>` : ""}
   </div>`;
 }
 
@@ -234,7 +234,7 @@ function panel(store, state) {
       ${profileMedal(j, col, true)}
       <div class="panel-group" style="--gc:${col}">${esc(j.group)}</div>
       <h2 class="serif-lg">${esc(j.name)}</h2>
-      <div class="panel-meta">${j.born ? "Born " + j.born + " · " : ""}${esc(j.hometown)}</div>
+      <div class="panel-meta">${profileMeta(j)}</div>
       <p class="panel-intro">${esc(j.intro)}</p>
       ${recordingMeta(j)}
       ${serviceContext(store, j)}
@@ -290,7 +290,7 @@ export function patterns(store, state) {
   <div class="ov ov-patterns">
     <div class="patterns-map-head">
       <div>
-        <p class="micro-label">Historical atlas · 1914 to 2026</p>
+        <p class="micro-label">Historical atlas, 1914 to 2026</p>
         <h2>Territory and testimony</h2>
       </div>
       ${toggle}
@@ -364,14 +364,19 @@ function haystack(j) {
 function wpMeta(w) {
   const yr = w.year ? (w.approx ? `c. ${w.year}` : `${w.year}`) : "date uncertain";
   const written = w.asWritten && w.asWritten.toLowerCase() !== (w.canonical || "").toLowerCase()
-    ? ` · “${esc(w.asWritten)}”` : "";
-  return `${w.role} · ${yr}${written}`;
+    ? `. Listed as “${esc(w.asWritten)}”` : "";
+  return `${w.role}, ${yr}${written}`;
 }
 function metaLine(w) {
   const yr = w.year ? (w.approx ? `around ${w.year}` : `${w.year}`) : "date uncertain";
   const written = w.asWritten && w.asWritten.toLowerCase() !== (w.canonical || "").toLowerCase()
-    ? `  ·  remembered as “${esc(w.asWritten)}”` : "";
+    ? `. Listed as “${esc(w.asWritten)}”` : "";
   return `${yr}${written}`;
+}
+function profileMeta(journey) {
+  if (journey.born && journey.hometown) return `Born ${journey.born} in ${esc(journey.hometown)}`;
+  if (journey.born) return `Born ${journey.born}`;
+  return esc(journey.hometown);
 }
 function serviceContext(store, journey) {
   const context = store.warForJourney(journey);
@@ -436,8 +441,8 @@ function warBrief(store, year, previousDisabled, nextDisabled) {
       <p>${esc(context.summary)}</p>
       ${legend}
       <small>
-        <span>${boundary ? `${boundary.active} territories · ${boundary.changes} changes` : ""}</span>
-        <span>OpenHistoricalMap · CC0</span>
+        <span>${boundary ? `${boundary.active} territories, ${boundary.changes} changes` : ""}</span>
+        <span>OpenHistoricalMap (CC0)</span>
       </small>
     </div>
   </section>`;
@@ -473,7 +478,7 @@ function testimonyMoment(activeEvent, events) {
       <span class="event-portraits">${portraits}</span>
       <span class="event-names">${esc(names)}${more}</span>
     </span>
-    <small>${activeEvent.count} ${activeEvent.count === 1 ? "interview" : "interviews"}${activeEvent.approximate ? " · some dates are approximate" : ""}</small>
+    <small>${activeEvent.count} ${activeEvent.count === 1 ? "interview" : "interviews"}${activeEvent.approximate ? ", some dates are approximate" : ""}</small>
   </div>`;
 }
 function boundaryDensity(store, selectedYear) {
@@ -488,6 +493,5 @@ function boundaryDensity(store, selectedYear) {
   </div>`;
 }
 function trimQuote(q) {
-  const s = String(q).trim().replace(/\s+/g, " ");
-  return s.length > 160 ? s.slice(0, 157).trim() + "…" : s;
+  return String(q).trim().replace(/\s+/g, " ");
 }

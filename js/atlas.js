@@ -298,9 +298,9 @@ export function createAtlas(container) {
           ? period.coalition_label
           : (opposition.has(name) ? period.opposition_label : null);
         const detail = status === "occupied"
-          ? [aligned, "occupied / contested"].filter(Boolean).join(" · ")
+          ? [aligned, "occupied or contested"].filter(Boolean).join(", ")
           : aligned;
-        showTip(event, `${name} · ${detail || period.conflict}`);
+        showTip(event, `${name}. ${detail || period.conflict}`);
       })
       .on("mousemove.war", (event) => moveTip(event))
       .on("mouseleave.war", hideTip);
@@ -362,15 +362,15 @@ export function createAtlas(container) {
 
   function territoryDescription(feature) {
     const { name, controller, kind } = feature.properties;
-    const control = controller && controller !== name ? ` · administered by ${controller}` : "";
-    const type = kind ? ` · ${String(kind).replaceAll("_", " ")}` : "";
+    const control = controller && controller !== name ? `, administered by ${controller}` : "";
+    const type = kind ? `, ${String(kind).replaceAll("_", " ")}` : "";
     const status = territoryStatus(feature, currentTerritoryPeriod);
     const alignment = status === "coalition"
       ? currentTerritoryPeriod?.coalition_label
       : (status === "opposition"
         ? currentTerritoryPeriod?.opposition_label
         : (status === "occupied" ? "occupied / contested" : null));
-    return `${name}${control}${type} · ${territoryYears(feature)}${alignment ? ` · ${alignment}` : ""}`;
+    return `${name}${control}${type}. Active ${territoryYears(feature)}${alignment ? `. ${alignment}` : ""}`;
   }
 
   function emphasizeTerritories() {
@@ -434,7 +434,7 @@ export function createAtlas(container) {
         const name = entry.feature.properties.name
           .replace(/^Dominion of /i, "")
           .replace(/^United Kingdom of Great Britain and Ireland$/i, "United Kingdom");
-        return (name.length > 26 ? `${name.slice(0, 24)}…` : name).toUpperCase();
+        return (name.length > 26 ? name.slice(0, 24) : name).toUpperCase();
       });
   }
 
@@ -836,7 +836,7 @@ export function createAtlas(container) {
       });
       c.style("cursor", "pointer").attr("pointer-events", "all")
         .on("click", () => ctx.onSelect && ctx.onSelect(j.id))
-        .on("mouseenter", (e) => showTip(e, `${j.name} · ${j.hometown || j.group}`))
+        .on("mouseenter", (e) => showTip(e, `${j.name}, ${j.hometown || j.group}`))
         .on("mousemove", (e) => moveTip(e)).on("mouseleave", hideTip);
     }
   }
@@ -871,7 +871,7 @@ export function createAtlas(container) {
         .style("cursor", "pointer")
         .on("mouseenter", (event) => showTip(
           event,
-          `${corridor.a.canonical} ↔ ${corridor.b.canonical} · ${corridor.count} veterans`,
+          `${corridor.a.canonical} to ${corridor.b.canonical}. ${corridor.count} veterans`,
         ))
         .on("mousemove", (event) => moveTip(event))
         .on("mouseleave", hideTip);
@@ -931,7 +931,7 @@ export function createAtlas(container) {
         })
         .on("mouseenter", (pointerEvent) => showTip(
           pointerEvent,
-          `${event.year} · ${event.place} · ${event.count} ${event.count === 1 ? "testimony" : "testimonies"}`,
+          `${event.year}, ${event.place}. ${event.count} ${event.count === 1 ? "interview" : "interviews"}`,
         ))
         .on("mousemove", (pointerEvent) => moveTip(pointerEvent))
         .on("mouseleave", hideTip);
