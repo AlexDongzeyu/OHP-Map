@@ -523,7 +523,6 @@ body[data-view="landing"] #map .globe {
 .ov-landing .lede { color:#E1E8EE; }
 .ov-landing .metric { color:#B8C3CC; }
 .ov-landing .metric b { color:#F8FAFC; }
-.ov-landing .care { color:#C2CBD2; }
 .ov-landing .link { color:#D7E6F2; }
 .ov-landing .btn-ghost {
   color:#F8FAFC;
@@ -580,13 +579,6 @@ body[data-view="landing"] #map .globe {
   font-variant-numeric:tabular-nums;
   font-weight:500;
   letter-spacing:-.03em;
-}
-.care {
-  max-width:42em;
-  margin:var(--space-4) 0 0;
-  color:var(--faint);
-  font-size:12.5px;
-  line-height:1.55;
 }
 .legend-mini {
   position:absolute;

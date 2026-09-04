@@ -32,9 +32,6 @@ export function landing(store) {
         <span class="metric"><b>${groups}</b> <span>communities</span></span>
         <span class="metric"><b>${conflicts}</b> <span>eras</span></span>
       </p>
-      <p class="care">A school project, collected by students. Each path is drawn from a
-        recorded testimony; where memory is uncertain, we leave it uncertain.
-        <button class="link" data-act="about">About this project.</button></p>
     </div>
     <div class="legend-mini">
       <span><span class="lm-dot"></span> a person</span>
