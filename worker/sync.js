@@ -141,8 +141,8 @@ export async function syncSurvivors(env) {
         sample_data: false,
         refreshed_at: completedAt,
         notice:
-          "Auto-extracted records require human verification and permission; " +
-          "the source archive remains authoritative.",
+          "Place names and dates were matched automatically from public OHP pages " +
+          "and may need correction. The OHP page remains the source.",
       },
       features,
     };

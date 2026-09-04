@@ -357,7 +357,7 @@ export function createAtlas(container) {
   function territoryYears(feature) {
     const start = Math.max(1, Math.floor(feature.properties.start));
     const end = feature.properties.end == null ? "present" : Math.max(start, Math.ceil(feature.properties.end) - 1);
-    return `${start}–${end}`;
+    return `${start} to ${end}`;
   }
 
   function territoryDescription(feature) {

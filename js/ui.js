@@ -19,9 +19,9 @@ export function landing(store) {
     <div class="landing-card">
       <h1 class="display">Journeys</h1>
       <p class="kicker">Crestwood Oral History Project</p>
-      <p class="lede">For years, Crestwood students have interviewed Holocaust survivors
-        and war veterans. This map follows their journeys — from where their lives began,
-        through the places history carried them, to the homes they built afterward.</p>
+      <p class="lede">Crestwood students have recorded interviews with Holocaust survivors,
+        veterans, and community members. This map brings together the places they named:
+        hometowns, camps, battlefields, and the places where they later lived.</p>
       <div class="cta-row">
         <button class="btn btn-primary" data-act="follow">Begin with one story ${icon("arrow-right")}</button>
         <button class="btn btn-ghost" data-act="explore">Explore the map</button>
@@ -30,13 +30,13 @@ export function landing(store) {
         <span class="metric"><b>${store.journeys.length}</b> <span>people</span></span>
         <span class="metric"><b>${store.placeCount}</b> <span>places</span></span>
         <span class="metric"><b>${groups}</b> <span>communities</span></span>
-        <span class="metric"><b>${conflicts}</b> <span>eras</span></span>
+        <span class="metric"><b>${conflicts}</b> <span>periods</span></span>
       </p>
     </div>
     <div class="legend-mini">
       <span><span class="lm-dot"></span> a person</span>
       <span><span class="lm-line"></span> a journey</span>
-      <span><span class="lm-shade"></span> where more came from</span>
+      <span><span class="lm-shade"></span> more birthplaces</span>
     </div>
   </div>`;
 }
@@ -139,10 +139,11 @@ export function guided(store, state) {
       </div>
       ${chapters}
       <section class="chapter closing">
-        <h3 class="serif-lg">A life, continued.</h3>
-        <p class="bio">This route is only the shape of a life, not the whole of it.</p>
+        <h3 class="serif-lg">Continue in the archive</h3>
+        <p class="bio">The map includes the places named in this profile. The OHP page has
+          the full interview and supporting material.</p>
         <a class="archive-link" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">
-          Read ${esc(first)}’s full archive entry ${icon("external-link")}</a>
+          Open ${esc(first)}'s OHP page ${icon("external-link")}</a>
       </section>
     </div>
   </div>`;
@@ -163,16 +164,16 @@ export function explore(store, state) {
     <aside class="rail scroll">
       <div class="rail-search">
         ${icon("search")}
-        <input id="search" class="search-input" type="search" placeholder="Search a name, place, or keyword…"
+        <input id="search" class="search-input" type="search" placeholder="Search names, places, or keywords"
           value="${esc(state.query || "")}" autocomplete="off" aria-label="Search people">
       </div>
-      <p class="rail-lead micro-label">Browse by community — everyone is here, grouped as the archive groups them.</p>
+      <p class="rail-lead micro-label">Browse the communities used in the OHP archive.</p>
       <div class="gchips">${groupChips}</div>
       <div class="rail-count micro-label" data-rail-count>${shown} of ${total} shown</div>
       <div class="rail-list" data-rail-list>${html}</div>
     </aside>
     <div class="panel-host" data-panel>${state.selectedId ? panel(store, state) : ""}</div>
-    ${!state.selectedId ? `<p class="explore-hint">Click any point on the map, or a name, to follow that life.<br>Drag to pan · scroll to zoom.</p>` : ""}
+    ${!state.selectedId ? `<p class="explore-hint">Open a name or map point to see its recorded route.<br>Drag to pan · scroll to zoom.</p>` : ""}
   </div>`;
 }
 
@@ -239,13 +240,13 @@ function panel(store, state) {
       ${serviceContext(store, j)}
       <p class="bio">${esc(j.bio)}</p>
       ${wp.length > 1 ? `<svg class="mini" viewBox="0 0 340 150" data-mini></svg>
-      <div class="mini-cap">Their route, as named in the archive.</div>` : ""}
+      <div class="mini-cap">Places named in the OHP profile.</div>` : ""}
       <div class="micro-label">The journey</div>
       <ol class="journey">${steps}</ol>
       <div class="tags">${tags}</div>
-      ${reviewed ? `<div class="ver" style="color:${C.verified}"><span class="ver-dot"></span>Reviewed against the testimony</div>` : ""}
-      ${wp.length > 1 ? `<button class="guided-pill" data-guided="${esc(j.id)}">Follow this journey as a story ${icon("arrow-right")}</button>` : ""}
-      <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Open full archive entry ${icon("external-link")}</a>
+      ${reviewed ? `<div class="ver" style="color:${C.verified}"><span class="ver-dot"></span>Checked against the interview</div>` : ""}
+      ${wp.length > 1 ? `<button class="guided-pill" data-guided="${esc(j.id)}">Follow this route in Guided ${icon("arrow-right")}</button>` : ""}
+      <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Open the OHP page ${icon("external-link")}</a>
     </aside>`;
 }
 
@@ -263,8 +264,8 @@ export function patterns(store, state) {
   const topOrigin = [...store.originCounts.entries()].sort((a, b) => b[1] - a[1])[0];
   const toggle = `
     <div class="layer-toggle" role="tablist" aria-label="Pattern layer">
-      <button class="seg ${layer === "journeys" ? "on" : ""}" data-layer="journeys">History &amp; journeys</button>
-      <button class="seg ${layer === "origins" ? "on" : ""}" data-layer="origins">Where people came from</button>
+      <button class="seg ${layer === "journeys" ? "on" : ""}" data-layer="journeys">History and routes</button>
+      <button class="seg ${layer === "origins" ? "on" : ""}" data-layer="origins">Birthplaces</button>
     </div>`;
 
   if (layer === "origins") {
@@ -273,13 +274,14 @@ export function patterns(store, state) {
     return `
     <div class="ov ov-patterns">
       <div class="patterns-intro">
-        <h2 class="serif-xl">The darker the country, the more lives began there</h2>
-        <p class="kicker">Density · where people came from</p>
-        <p class="lede sm">A count of birthplaces across the whole archive.
-          ${topOrigin ? `Most — <b>${topOrigin[1]}</b> — began in <span class="accent">${esc(topOrigin[0])}</span>.` : ""}</p>
+        <h2 class="serif-xl">Birthplaces by present-day country</h2>
+        <p class="kicker">Archive birthplaces</p>
+        <p class="lede sm">${topOrigin
+          ? `<span class="accent">${esc(topOrigin[0])}</span> has the largest count, with <b>${topOrigin[1]}</b> recorded birthplaces.`
+          : "No birthplace data is available."}</p>
         ${toggle}
         <ul class="origin-list">${list}</ul>
-        <p class="cross-sub">Counts are by birthplace, mapped to present-day countries.</p>
+        <p class="cross-sub">Historical place names are grouped under present-day countries.</p>
       </div>
     </div>`;
   }
@@ -288,8 +290,8 @@ export function patterns(store, state) {
   <div class="ov ov-patterns">
     <div class="patterns-map-head">
       <div>
-        <p class="micro-label">Historical atlas · 1914–2026</p>
-        <h2>Territory &amp; testimony</h2>
+        <p class="micro-label">Historical atlas · 1914 to 2026</p>
+        <h2>Territory and testimony</h2>
       </div>
       ${toggle}
     </div>
@@ -320,35 +322,26 @@ export function about(store) {
   return `
   <div class="ov ov-about scroll">
     <div class="about-wrap">
-      <h1 class="display sm">A map made of remembering.</h1>
-      <p class="kicker">About this project</p>
-      <p class="lede">For years, students at Crestwood Preparatory College have sat with
-        Holocaust survivors, war veterans, and community members and recorded their
-        testimonies. This map traces those lives across geography — so a stranger can follow
-        one person from a childhood street to the places history carried them, and home again.</p>
+      <h1 class="display sm">About the map</h1>
+      <p class="kicker">Crestwood Oral History Project</p>
+      <p class="lede">Crestwood students have recorded interviews with Holocaust survivors,
+        veterans, and community members for years. This map organizes the places named in
+        those interviews so visitors can follow one route or compare many accounts.</p>
       <div class="about-grid">
-        <div><h2>Who is here</h2><p>Everyone the archive holds, grouped as the archive groups
-          them: ${esc(groupLines)}. Every person is shown the same way — no one is featured
-          above anyone else.</p></div>
-        <div><h2>How the journeys were drawn</h2><p>Each path is built from places named in a
-          person's public archive entry — matched to a gazetteer of historical names (so
-          “Lemberg” resolves to today's Lviv), located once at build time, and ordered in time.
-          The map is never the whole of a life; it is the route a life took.</p></div>
-        <div><h2>How we handle uncertainty</h2><p>Memory does not keep exact dates, and we do
-          not pretend otherwise. Approximate moments soften to a glow over a range of years.
-          Nothing is presented as fact until a person confirms it — a confidently-wrong pin is
-          worse than a missing one.</p></div>
-        <div><h2>On the data shown here</h2><p>These ${store.journeys.length} journeys are
-          <strong>auto-extracted from public summaries</strong> and are <strong>pending human
-          verification and permission</strong>. Every person links back to their full archive
-          entry; “same place, same time” links are shown only as candidates.</p></div>
-        <div><h2>Credits</h2><p>Testimonies: the Crestwood Oral History Project
+        <div><h2>People in the map</h2><p>The map uses the OHP archive's own groups:
+          ${esc(groupLines)}. Each profile follows the same layout.</p></div>
+        <div><h2>How routes are built</h2><p>Each route uses places named on a public OHP
+          page. Historical names are matched to current locations, so &quot;Lemberg&quot;
+          resolves to Lviv. Dates determine the order when the source provides them.</p></div>
+        <div><h2>Approximate dates</h2><p>Many interviews give approximate dates. The map
+          labels them as approximate rather than assigning a precise day or month.</p></div>
+        <div><h2>Current review status</h2><p>The map has ${store.journeys.length} profiles
+          built from public OHP summaries. Automated place matching has not been checked for
+          every profile, so each card links back to its OHP page.</p></div>
+        <div><h2>Sources</h2><p>Interviews and profile text: Crestwood Oral History Project
           (<a href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">ohp.crestwood.on.ca</a>).
-          Historical belligerents: Correlates of War Project, Inter-State War Data v4.0.
-          Dated territory polygons: OpenHistoricalMap (CC0). Fallback basemap geometry:
-          Natural Earth via world-atlas. Historical relations are community-mapped and retain
-          their source dates and names. Built in memory of
-          those who told their stories so that others would know. Source:
+          War participants: Correlates of War Project, Inter-State War Data v4.0. Historical
+          borders: OpenHistoricalMap (CC0). Basemap: Natural Earth via world-atlas. Code:
           <a href="https://github.com/AlexDongzeyu/OHP-Map" target="_blank" rel="noopener">AlexDongzeyu/OHP-Map</a>.</p></div>
       </div>
       <div class="cta-row">
@@ -384,7 +377,7 @@ function serviceContext(store, journey) {
   const context = store.warForJourney(journey);
   if (!context) return "";
   return `<div class="service-context">
-    <span class="micro-label">Conflict shown behind this route</span>
+    <span class="micro-label">War context</span>
     <strong>${esc(journey.serviceConflict)}</strong>
     <span>${esc(context.coalition_label)} <b>against</b> ${esc(context.opposition_label)}</span>
   </div>`;
@@ -418,11 +411,11 @@ function warBrief(store, year, previousDisabled, nextDisabled) {
       <span><i class="coalition"></i>${esc(context.coalition_label)}</span>
       <span><i class="opposition"></i>${esc(context.opposition_label)}</span>
       ${context.occupied.length ? '<span><i class="occupied"></i>Occupied / contested</span>' : ""}
-      ${corridors.length ? `<span><i class="route"></i>${corridors.length} common service corridors</span>` : ""}
+      ${corridors.length ? `<span><i class="route"></i>${corridors.length} routes shared by veterans</span>` : ""}
     </div>` : `
     <div class="war-legend" aria-label="Territorial map legend">
       <span><i class="territory"></i>Dated territory</span>
-      <span><i class="route"></i>Testimony journey</span>
+      <span><i class="route"></i>Recorded route</span>
     </div>`;
   return `<section class="war-brief" data-war-context>
     <img class="war-brief-map" src="assets/history/atlas-${eraMap}.svg" alt="" aria-hidden="true">
@@ -444,7 +437,7 @@ function warBrief(store, year, previousDisabled, nextDisabled) {
       ${legend}
       <small>
         <span>${boundary ? `${boundary.active} territories · ${boundary.changes} changes` : ""}</span>
-        <span>OHM · CC0</span>
+        <span>OpenHistoricalMap · CC0</span>
       </small>
     </div>
   </section>`;
@@ -453,13 +446,13 @@ function testimonyMoment(activeEvent, events) {
   if (!events.length) {
     return `<div class="testimony-moment is-empty">
       <span class="micro-label">Testimony layer</span>
-      <p>No dated testimony moment is recorded for this year.</p>
+      <p>No testimony place has a date in this year.</p>
     </div>`;
   }
   if (!activeEvent) {
     return `<div class="testimony-moment">
       <span class="micro-label">${events.length} recorded ${events.length === 1 ? "place" : "places"}</span>
-      <p>Select a ring on the map to inspect one testimony moment.</p>
+      <p>Select a ring on the map to see the people recorded at that place.</p>
     </div>`;
   }
   const portraits = activeEvent.people.filter((person) => person.portrait).slice(0, 5)
@@ -480,7 +473,7 @@ function testimonyMoment(activeEvent, events) {
       <span class="event-portraits">${portraits}</span>
       <span class="event-names">${esc(names)}${more}</span>
     </span>
-    <small>${activeEvent.count} ${activeEvent.count === 1 ? "testimony" : "testimonies"}${activeEvent.approximate ? " · includes approximate dates" : ""}</small>
+    <small>${activeEvent.count} ${activeEvent.count === 1 ? "interview" : "interviews"}${activeEvent.approximate ? " · some dates are approximate" : ""}</small>
   </div>`;
 }
 function boundaryDensity(store, selectedYear) {

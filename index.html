@@ -3,14 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Survivor Journeys — Crestwood Oral History Project</title>
+  <title>Journeys | Crestwood Oral History Project</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <meta name="description" content="An interactive memorial map following the journeys of
-    Holocaust survivors who shared their stories with Crestwood students — from their
-    hometowns, through the ghettos and camps, to new lives in Toronto." />
-  <meta property="og:title" content="Survivor Journeys — Crestwood Oral History Project" />
-  <meta property="og:description" content="Follow the journeys of Holocaust survivors
-    across Europe — one life at a time, then all of them at once." />
+  <meta name="description" content="Explore places named in Crestwood interviews with
+    Holocaust survivors, veterans, and community members." />
+  <meta property="og:title" content="Journeys | Crestwood Oral History Project" />
+  <meta property="og:description" content="Follow one recorded route or compare places
+    across the Crestwood Oral History Project." />
 
   <link rel="preload" href="vendor/fonts/spectral-500.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="vendor/fonts/public-sans-400.woff2" as="font" type="font/woff2" crossorigin />
@@ -38,7 +37,7 @@
   <div id="stage">
     <div id="portrait-field" aria-hidden="true"></div>
     <!-- persistent vector map -->
-    <main id="map" tabindex="-1" role="application" aria-label="Map of survivor journeys"></main>
+    <main id="map" tabindex="-1" role="application" aria-label="Map of oral history journeys"></main>
     <div id="tip" class="tip" aria-hidden="true"></div>
 
     <!-- loading / error -->
@@ -56,8 +55,7 @@
     <div id="error" class="cover" hidden>
       <div class="cover-inner">
         <p class="serif lg">The map could not load.</p>
-        <p class="muted">A connection is needed to draw the basemap the first time. Please
-          reload when you are back online.</p>
+        <p class="muted">Reload the page when you have an internet connection.</p>
       </div>
     </div>
 
@@ -68,9 +66,9 @@
         <span class="brand-kicker">Crestwood OHP</span>
       </button>
       <nav class="nav" role="tablist" aria-label="View modes">
-        <button class="nav-tab" role="tab" data-view="guided" title="Follow one person's journey as a scrolling story">Guided</button>
-        <button class="nav-tab" role="tab" data-view="explore" title="Everyone as points — search and filter by community, click anyone">Explore</button>
-        <button class="nav-tab" role="tab" data-view="patterns" title="Every journey at once, plus where people came from">Patterns</button>
+        <button class="nav-tab" role="tab" data-view="guided" title="Follow one recorded route">Guided</button>
+        <button class="nav-tab" role="tab" data-view="explore" title="Search people and places, or filter by community">Explore</button>
+        <button class="nav-tab" role="tab" data-view="patterns" title="Compare routes, birthplaces, and historical borders">Patterns</button>
       </nav>
       <div class="topbar-right">
         <button class="nav-plain" data-view="about">About</button>

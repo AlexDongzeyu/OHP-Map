@@ -19,7 +19,7 @@
     "time_min": 1914,
     "time_max": 2026,
     "sample_data": false,
-    "notice": "Pending records are auto-extracted from public archive summaries and await human verification and permission; they are not authoritative. Records flagged is_sample are fictional illustrative data."
+    "notice": "Place names and dates were matched automatically from public OHP summaries. They may be incomplete or incorrect until checked against the full interview. Sample records are fictional and used only for demonstration."
   },
   "features": [
     {

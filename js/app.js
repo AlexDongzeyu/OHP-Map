@@ -36,7 +36,7 @@ async function main() {
   try { store = await loadData(); }
   catch (err) {
     loadingEl.hidden = true; fatalEl.hidden = false;
-    fatalEl.textContent = "We couldn't load the journeys right now. Please refresh in a moment.";
+    fatalEl.textContent = "The journeys did not load. Refresh the page and try again.";
     console.error(err); return;
   }
 

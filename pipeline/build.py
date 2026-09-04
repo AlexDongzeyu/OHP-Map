@@ -135,9 +135,9 @@ def build(source_name="local", extractor_name="offline", allow_network=False,
             "time_max": config.TIME_MAX,
             "sample_data": any(f["properties"].get("is_sample") for f in features),
             "notice": (
-                "Pending records are auto-extracted from public archive summaries and "
-                "await human verification and permission; they are not authoritative. "
-                "Records flagged is_sample are fictional illustrative data."
+                "Place names and dates were matched automatically from public OHP summaries. "
+                "They may be incomplete or incorrect until checked against the full interview. "
+                "Sample records are fictional and used only for demonstration."
             ),
         },
         "features": features,

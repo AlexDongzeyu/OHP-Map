@@ -343,7 +343,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (!eventState.markers || eventState.activeMarkers || eventState.selectedRoutes) {
       throw new Error("historical event layer should open without a forced selection");
     }
-    if (eventState.phase !== "Liberation from west and east" ||
+    if (eventState.phase !== "Allied armies advance from west and east" ||
         eventState.canada !== "coalition" ||
         eventState.germany !== "opposition" ||
         eventState.territories < 140 ||
@@ -406,7 +406,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
       ukraine: Boolean(document.querySelector("[data-territory='Ukraine']")),
       maximum: document.querySelector(".scrubber .range")?.max,
     }));
-    if (present.phase !== "The map as it stands now" ||
+    if (present.phase !== "Current boundaries" ||
         !present.russia || !present.ukraine || present.maximum !== "2026") {
       throw new Error(`current territory state is incorrect ${JSON.stringify(present)}`);
     }
@@ -445,7 +445,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
       phase: document.querySelector(".war-brief-content > strong")?.textContent,
       coalition: document.querySelectorAll("[data-war-side='coalition']").length,
     }));
-    if (state.year !== "1944" || state.phase !== "Liberation from west and east" || !state.coalition) {
+    if (state.year !== "1944" || state.phase !== "Allied armies advance from west and east" || !state.coalition) {
       throw new Error(`direct war map did not initialize ${JSON.stringify(state)}`);
     }
   });
