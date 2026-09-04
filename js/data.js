@@ -38,6 +38,40 @@ function surnameOf(name) {
   return parts.length ? parts[parts.length - 1] : clean;
 }
 
+const SENTENCE_ABBREVIATIONS = new Set([
+  "adm", "apr", "assoc", "aug", "ave", "blvd", "brig", "ca", "capt",
+  "cmdr", "co", "col", "corp", "cpl", "dec", "dept", "dr", "ed", "est",
+  "etc", "feb", "fig", "ft", "gen", "hon", "inc", "jan", "jr", "jul",
+  "jun", "lt", "ltd", "maj", "mar", "mr", "mrs", "ms", "mt", "no",
+  "nov", "oct", "pm", "prof", "pvt", "rd", "rev", "sep", "sept", "sgt",
+  "sqn", "sr", "st", "vol", "vs",
+]);
+
+function sentenceEndings(text) {
+  const endings = [];
+  for (const match of text.matchAll(/[.!?](?:["”’')\]]+)?(?=\s|$)/g)) {
+    const end = match.index + match[0].length;
+    if (match[0].startsWith(".") && end < text.length) {
+      const tokenMatch = text.slice(0, end).match(/([A-Za-z][A-Za-z.]*)\.$/);
+      const token = tokenMatch?.[1].toLowerCase().replaceAll(".", "") || "";
+      if (SENTENCE_ABBREVIATIONS.has(token) || /^(?:[A-Za-z]\.){1,5}$/.test(tokenMatch?.[0] || "")) {
+        continue;
+      }
+    }
+    endings.push(end);
+  }
+  return endings;
+}
+
+function completeExcerpt(text) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim().replace(/\s*…\s*$/, "");
+  if (!clean || /[.!?](?:["”’')\]]+)?$/.test(clean)) return clean;
+  const endings = sentenceEndings(clean);
+  return endings.length
+    ? clean.slice(0, endings[endings.length - 1])
+    : `${clean.replace(/[ ,;:-]+$/, "")}.`;
+}
+
 function shortIntro(j) {
   const bits = [];
   if (j.hometown) bits.push(`From ${j.hometown.split(",")[0]}`);
@@ -133,11 +167,14 @@ function toJourney(props) {
     originCountry: home ? countryOf(home.canonical) : null,
     initials: initials(props.name),
     themes: props.theme_tags || [],
-    bio: props.bio_excerpt || "",
+    bio: completeExcerpt(props.bio_excerpt),
     archiveUrl: props.archive_url || "",
     portrait: props.portrait || null,
     portraitRights: props.portrait_rights || null,
     portraitFaces: props.portrait_faces ?? (props.portrait ? 1 : 0),
+    videoCount: props.video_count || 0,
+    captionedVideoCount: props.captioned_video_count || 0,
+    transcriptStatus: props.transcript_status || "none",
     reviewStatus: props.review_status || "pending",
     waypoints: wps,
   };

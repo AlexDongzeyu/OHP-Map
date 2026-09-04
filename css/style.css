@@ -610,6 +610,23 @@ body[data-view="landing"] #map .globe {
 }
 .narr-head { margin-bottom:var(--space-12); }
 .narr-meta { margin:var(--space-2) 0 0; color:var(--muted); font-size:13px; }
+.recording-meta {
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px var(--space-3);
+  margin:var(--space-3) 0;
+  color:var(--faint);
+  font-size:10.5px;
+}
+.recording-meta span + span::before {
+  content:"";
+  width:3px;
+  height:3px;
+  display:inline-block;
+  margin:0 var(--space-3) 2px 0;
+  border-radius:50%;
+  background:var(--rule);
+}
 .service-context {
   display:grid;
   gap:3px;

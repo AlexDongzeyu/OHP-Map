@@ -199,14 +199,36 @@ const BASE = process.argv[2] || "http://localhost:8124";
     await page.click(".rail .rail-card");
     await page.waitForSelector(".panel .journey", { timeout: 5000 });
     await page.waitForSelector(".panel .panel-group", { timeout: 3000 });
+    await page.waitForSelector(".panel .recording-meta", { timeout: 3000 });
     await page.waitForSelector(".panel .service-context", { timeout: 3000 });
     const serviceMap = await page.evaluate(() => ({
       context: document.querySelector(".service-context strong")?.textContent,
       coalition: document.querySelectorAll("#map [data-war-side='coalition']").length,
       opposition: document.querySelectorAll("#map [data-war-side='opposition']").length,
+      bio: document.querySelector(".panel .bio")?.textContent.trim(),
+      recording: document.querySelector(".panel .recording-meta")?.textContent.replace(/\s+/g, " ").trim(),
     }));
-    if (serviceMap.context !== "Second World War" || !serviceMap.coalition || !serviceMap.opposition) {
+    if (serviceMap.context !== "Second World War" || !serviceMap.coalition || !serviceMap.opposition ||
+        serviceMap.bio.length < 200 || /…$/.test(serviceMap.bio) ||
+        !/[.!?][”"')\]]?$/.test(serviceMap.bio) ||
+        !/interview chapters?/.test(serviceMap.recording || "")) {
       throw new Error(`veteran service context is incomplete ${JSON.stringify(serviceMap)}`);
+    }
+  });
+  await check("captioned veteran shows audited chapter coverage", async () => {
+    await page.$eval("#search", (input) => {
+      input.value = "Wally Adam";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await wait(250);
+    await page.click(".rail .rail-card");
+    await page.waitForSelector(".panel .recording-meta", { timeout: 3000 });
+    const coverage = await page.$eval(
+      ".panel .recording-meta",
+      (element) => element.textContent.replace(/\s+/g, " ").trim(),
+    );
+    if (!/6 interview chapters/.test(coverage) || !/6 with public captions/.test(coverage)) {
+      throw new Error(`caption coverage is incorrect: ${coverage}`);
     }
   });
   await check("free zoom changes camera transform", async () => {

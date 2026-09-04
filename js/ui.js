@@ -129,6 +129,7 @@ export function guided(store, state) {
         <h2 class="serif-xl">${esc(j.name)}</h2>
         <p class="kicker">${esc(j.group)} · a guided journey</p>
         <p class="narr-meta">${j.born ? "Born " + j.born + " · " : ""}${esc(j.hometown)}</p>
+        ${recordingMeta(j)}
         ${serviceContext(store, j)}
         <p class="bio">${esc(j.bio)}</p>
       </div>
@@ -230,6 +231,7 @@ function panel(store, state) {
       <h2 class="serif-lg">${esc(j.name)}</h2>
       <div class="panel-meta">${j.born ? "Born " + j.born + " · " : ""}${esc(j.hometown)}</div>
       <p class="panel-intro">${esc(j.intro)}</p>
+      ${recordingMeta(j)}
       ${serviceContext(store, j)}
       <p class="bio">${esc(j.bio)}</p>
       ${wp.length > 1 ? `<svg class="mini" viewBox="0 0 340 150" data-mini></svg>
@@ -382,6 +384,18 @@ function serviceContext(store, journey) {
     <strong>${esc(journey.serviceConflict)}</strong>
     <span>${esc(context.coalition_label)} <b>against</b> ${esc(context.opposition_label)}</span>
   </div>`;
+}
+function recordingMeta(journey) {
+  if (!journey.videoCount) return "";
+  const captionText = journey.transcriptStatus === "pending"
+    ? "caption audit pending"
+    : (journey.captionedVideoCount
+    ? `${journey.captionedVideoCount} with public captions`
+    : "no public caption track");
+  return `<p class="recording-meta">
+    <span>${journey.videoCount} interview ${journey.videoCount === 1 ? "chapter" : "chapters"}</span>
+    <span>${captionText}</span>
+  </p>`;
 }
 function warBrief(store, year, previousDisabled, nextDisabled) {
   const context = store.warAt(year);

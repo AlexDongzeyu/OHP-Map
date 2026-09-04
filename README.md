@@ -200,6 +200,10 @@ geometry at the hometown (coordinate order **`[lng, lat]`**). Each waypoint keep
 `historical_boundaries.json` contains compact, dated OpenHistoricalMap territory polygons;
 `historical_boundary_index.json` drives the change-density strip beneath the timeline.
 The reproducible builder lives in `tools/historical-boundaries/`.
+`data/source/vimeo_caption_index.json` records public caption availability for every Vimeo
+clip linked from a military-veteran page. Full VTT tracks stay in the ignored
+`data/source/transcript_cache/`; the published dataset contains only chapter counts and
+caption coverage, never full transcripts.
 `geocode_cache.json` + `data/source/ohp_scraped.json` are committed so rebuilds are
 reproducible and offline. Validated against `data/schema/survivors.schema.json`.
 
@@ -215,6 +219,16 @@ schedule, `workflow_dispatch` (manual), and `repository_dispatch` (a WordPress p
 webhook, type `ohp-publish`). Each run: `pytest` → `pipeline.build` → assemble-site
 smoke check → (on scheduled/dispatch) commit changed JSON. The build *fails on invalid
 data*. Deployment is handled by Cloudflare (below), not by this workflow.
+
+To resume the veteran-video caption audit without rechecking completed clips:
+
+```powershell
+python -m pipeline.vimeo_transcripts --workers 3 --delay 0.3
+```
+
+Vimeo clips without a public caption track are recorded honestly as unavailable or
+uncaptioned. Auto-generated caption text is cached for source review but is not published
+as a quotation because recognition errors can change a veteran's words.
 
 **B. Cloudflare Worker** (`wrangler.toml`, `worker/`) — **the live deployment**. On push,
 Cloudflare Workers Builds runs `wrangler deploy`; a `[build]` step assembles a clean

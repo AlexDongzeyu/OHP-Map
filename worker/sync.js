@@ -8,6 +8,7 @@ const UA = "CrestwoodOHP-Map-Worker/2.0 (+https://github.com/AlexDongzeyu/OHP-Ma
 export const DATA_KEY = "survivors.geojson";
 export const STATUS_KEY = "ohp-sync-status.json";
 export const GAZETTEER_REVISION = gazetteer.revision;
+export const CONTENT_REVISION = "complete-excerpts-v2";
 export const HISTORY_MIN_YEAR = 1914;
 export const HISTORY_MAX_YEAR = 2026;
 const SEEN_KEY = "ohp-seen-slugs.json";
@@ -129,6 +130,7 @@ export async function syncSurvivors(env) {
         generator: "worker/sync.js",
         source: "cloudflare-live-sync",
         gazetteer_revision: GAZETTEER_REVISION,
+        content_revision: CONTENT_REVISION,
         time_min: HISTORY_MIN_YEAR,
         time_max: HISTORY_MAX_YEAR,
         count: features.length,
@@ -160,6 +162,7 @@ export async function syncSurvivors(env) {
       total: features.length,
       groups,
       gazetteer_revision: GAZETTEER_REVISION,
+      content_revision: CONTENT_REVISION,
       next_cursor: nextCursor,
     };
 
@@ -187,7 +190,10 @@ async function loadCurrentData(env) {
   const cached = await env.OHP_DATA.get(DATA_KEY, "json");
   const seed = await loadSeedData(env);
   if (!cached?.features) return seed;
-  if (cached.metadata?.gazetteer_revision !== GAZETTEER_REVISION) {
+  if (
+    cached.metadata?.gazetteer_revision !== GAZETTEER_REVISION ||
+    cached.metadata?.content_revision !== CONTENT_REVISION
+  ) {
     return migrateCachedData(cached, seed);
   }
   return mergeSeedPortraits(cached, seed);
@@ -225,7 +231,10 @@ function mergeSeedPortraits(cached, seed) {
 
 export async function ensureCurrentData(env, cached) {
   let current = cached;
-  if (cached.metadata?.gazetteer_revision !== GAZETTEER_REVISION) {
+  if (
+    cached.metadata?.gazetteer_revision !== GAZETTEER_REVISION ||
+    cached.metadata?.content_revision !== CONTENT_REVISION
+  ) {
     const seed = await loadSeedData(env);
     current = migrateCachedData(cached, seed);
   }
@@ -237,6 +246,7 @@ export async function ensureCurrentData(env, cached) {
       ...current,
       metadata: {
         ...(current.metadata || {}),
+        content_revision: CONTENT_REVISION,
         time_min: HISTORY_MIN_YEAR,
         time_max: HISTORY_MAX_YEAR,
       },
@@ -263,6 +273,23 @@ function migrateCachedData(cached, seed) {
       properties: {
         ...seedFeature.properties,
         ...existing.properties,
+        bio_excerpt: sentenceExcerpt(
+          seedFeature.properties.bio_excerpt || existing.properties.bio_excerpt || "",
+        ),
+        video_count:
+          seedFeature.properties.video_count ?? existing.properties.video_count ?? 0,
+        video_inventory:
+          seedFeature.properties.video_inventory ||
+          existing.properties.video_inventory ||
+          videoInventory([]),
+        captioned_video_count:
+          seedFeature.properties.captioned_video_count ??
+          existing.properties.captioned_video_count ??
+          0,
+        transcript_status:
+          seedFeature.properties.transcript_status ||
+          existing.properties.transcript_status ||
+          "none",
         featured: seedFeature.properties.featured || existing.properties.featured || false,
         media_url: existing.properties.media_url || seedFeature.properties.media_url || null,
         portrait: existing.properties.portrait || seedFeature.properties.portrait || null,
@@ -300,6 +327,7 @@ function migrateCachedData(cached, seed) {
       reviewed,
       pending: features.length - reviewed,
       gazetteer_revision: GAZETTEER_REVISION,
+      content_revision: CONTENT_REVISION,
       time_min: HISTORY_MIN_YEAR,
       time_max: HISTORY_MAX_YEAR,
       migrated_at: new Date().toISOString(),
@@ -352,7 +380,11 @@ function sanitizeCachedFeature(feature) {
   return {
     ...feature,
     geometry: { type: "Point", coordinates: [home.lng, home.lat] },
-    properties: { ...feature.properties, waypoints: ordered },
+    properties: {
+      ...feature.properties,
+      bio_excerpt: sentenceExcerpt(feature.properties.bio_excerpt || ""),
+      waypoints: ordered,
+    },
   };
 }
 
@@ -459,6 +491,10 @@ function decodeEntities(value) {
 }
 
 function parseEntry(slug, html, group) {
+  const videoIds = new Set(
+    [...html.matchAll(/player\.vimeo\.com\/video\/(\d+)/gi)]
+      .map((match) => match[1]),
+  );
   const body = html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ");
@@ -478,6 +514,8 @@ function parseEntry(slug, html, group) {
     conflicts: deriveConflicts(group, text),
     archive_url: `${BASE}/ohp/${slug}/`,
     portrait: selectPortrait(body, name),
+    video_count: videoIds.size,
+    video_inventory: videoInventory([...videoIds]),
     text,
   };
 }
@@ -657,11 +695,15 @@ function toFeature(record) {
       conflicts: record.conflicts,
       birth_year: birthMatch ? parseInt(birthMatch[1], 10) : null,
       review_status: "pending",
-      bio_excerpt: record.text.slice(0, 320),
+      bio_excerpt: sentenceExcerpt(record.text),
       archive_url: record.archive_url,
       portrait: record.portrait || null,
       portrait_rights: record.portrait ? RIGHTS : null,
       portrait_faces: 0,
+      video_count: record.video_count || 0,
+      video_inventory: record.video_inventory || videoInventory([]),
+      captioned_video_count: 0,
+      transcript_status: record.video_count ? "pending" : "none",
       theme_tags: [],
       waypoints: ordered,
     },
@@ -669,8 +711,30 @@ function toFeature(record) {
 }
 
 function mergeFeature(existing, fresh) {
-  if (existing.properties.review_status === "reviewed") return existing;
+  if (existing.properties.review_status === "reviewed") {
+    const currentVideoCount = fresh.properties.video_count || 0;
+    const inventoryChanged =
+      existing.properties.video_inventory !== fresh.properties.video_inventory;
+    return {
+      ...existing,
+      properties: {
+        ...existing.properties,
+        video_count: currentVideoCount,
+        video_inventory: fresh.properties.video_inventory,
+        captioned_video_count: Math.min(
+          existing.properties.captioned_video_count || 0,
+          currentVideoCount,
+        ),
+        transcript_status: inventoryChanged
+          ? (currentVideoCount ? "pending" : "none")
+          : (existing.properties.transcript_status || fresh.properties.transcript_status || "none"),
+      },
+    };
+  }
   const waypoints = fresh.properties.waypoints || [];
+  const currentVideoCount = fresh.properties.video_count || 0;
+  const inventoryChanged =
+    existing.properties.video_inventory !== fresh.properties.video_inventory;
   const home = waypoints.find((waypoint) => waypoint.role === "birthplace") || waypoints[0];
   return {
     type: "Feature",
@@ -684,6 +748,15 @@ function mergeFeature(existing, fresh) {
       media_url: existing.properties.media_url || null,
       portrait: existing.properties.portrait || fresh.properties.portrait || null,
       portrait_rights: existing.properties.portrait_rights || fresh.properties.portrait_rights || null,
+      video_count: currentVideoCount,
+      video_inventory: fresh.properties.video_inventory,
+      captioned_video_count: Math.min(
+        existing.properties.captioned_video_count || 0,
+        currentVideoCount,
+      ),
+      transcript_status: inventoryChanged
+        ? (currentVideoCount ? "pending" : "none")
+        : (existing.properties.transcript_status || fresh.properties.transcript_status || "none"),
       review_status: existing.properties.review_status || "pending",
       theme_tags: existing.properties.theme_tags?.length
         ? existing.properties.theme_tags
@@ -700,6 +773,58 @@ function countGroups(features) {
     counts[group] = (counts[group] || 0) + 1;
   }
   return counts;
+}
+
+function sentenceExcerpt(text, limit = 520) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim().replace(/\s*…\s*$/, "");
+  if (!clean) return clean;
+  const endings = sentenceEndings(clean);
+  if (clean.length <= limit) {
+    if (/[.!?](?:["”’')\]]+)?$/.test(clean)) return clean;
+    if (endings.length) return clean.slice(0, endings[endings.length - 1]).trim();
+    return `${clean.replace(/[ ,;:-]+$/, "")}.`;
+  }
+  const before = endings.filter((end) => end <= limit);
+  if (before.length) return clean.slice(0, before[before.length - 1]).trim();
+  const after = endings.find((end) => end <= limit + 240);
+  if (after) return clean.slice(0, after).trim();
+  const cut = clean.slice(0, limit).replace(/\s+\S*$/, "").replace(/[ ,;:-]+$/, "");
+  return `${cut}.`;
+}
+
+const SENTENCE_ABBREVIATIONS = new Set([
+  "adm", "apr", "assoc", "aug", "ave", "blvd", "brig", "ca", "capt",
+  "cmdr", "co", "col", "corp", "cpl", "dec", "dept", "dr", "ed", "est",
+  "etc", "feb", "fig", "ft", "gen", "hon", "inc", "jan", "jr", "jul",
+  "jun", "lt", "ltd", "maj", "mar", "mr", "mrs", "ms", "mt", "no",
+  "nov", "oct", "pm", "prof", "pvt", "rd", "rev", "sep", "sept", "sgt",
+  "sqn", "sr", "st", "vol", "vs",
+]);
+
+function sentenceEndings(text) {
+  const endings = [];
+  for (const match of text.matchAll(/[.!?](?:["”’')\]]+)?(?=\s|$)/g)) {
+    const end = match.index + match[0].length;
+    if (match[0].startsWith(".") && end < text.length) {
+      const tokenMatch = text.slice(0, end).match(/([A-Za-z][A-Za-z.]*)\.$/);
+      const token = tokenMatch?.[1].toLowerCase().replaceAll(".", "") || "";
+      if (SENTENCE_ABBREVIATIONS.has(token) || /^(?:[A-Za-z]\.){1,5}$/.test(tokenMatch?.[0] || "")) {
+        continue;
+      }
+    }
+    endings.push(end);
+  }
+  return endings;
+}
+
+function videoInventory(videoIds) {
+  const joined = [...videoIds].sort().join(",");
+  let hash = 2166136261;
+  for (const character of joined) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${videoIds.length}:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 function round(value) {

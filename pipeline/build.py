@@ -15,7 +15,8 @@ import argparse
 import json
 import sys
 
-from . import config, derive, extract, gazetteer, geocode, ingest, review, validate
+from . import config, derive, extract, gazetteer, geocode, ingest, review, transcript_index, validate
+from .text import sentence_excerpt
 
 
 def _normalize_waypoint(wp: dict) -> dict:
@@ -34,6 +35,7 @@ def _record_to_survivor(rec: dict, extractor) -> dict:
     else:  # raw testimony text -> run the extractor
         waypoints = [_normalize_waypoint(wp) for wp in extractor.extract(rec.get("text", ""))]
     waypoints = derive.order_waypoints(waypoints)
+    media_coverage = transcript_index.coverage(rec["survivor_id"])
     return {
         "survivor_id": rec["survivor_id"],
         "name": rec.get("name", ""),
@@ -42,27 +44,18 @@ def _record_to_survivor(rec: dict, extractor) -> dict:
         "group": rec.get("group", "Holocaust Survivors"),
         "conflicts": rec.get("conflicts", []),
         "birth_year": rec.get("birth_year"),
-        "bio_excerpt": rec.get("bio_excerpt", "") or _auto_excerpt(rec),
+        "bio_excerpt": sentence_excerpt(
+            rec.get("bio_excerpt", "") or rec.get("text", ""),
+        ),
         "archive_url": rec.get("archive_url", ""),
         "media_url": rec.get("media_url"),
         "portrait": rec.get("portrait"),
         "portrait_rights": rec.get("portrait_rights"),
         "portrait_faces": rec.get("portrait_faces", 0),
         "theme_tags": rec.get("theme_tags", []),
+        **media_coverage,
         "waypoints": waypoints,
     }
-
-
-def _auto_excerpt(rec: dict, limit: int = 320) -> str:
-    """First sentence(s) of the scraped bio, for records without a curated excerpt."""
-    text = (rec.get("text") or "").strip()
-    if not text:
-        return ""
-    if len(text) <= limit:
-        return text
-    cut = text[:limit]
-    dot = cut.rfind(". ")
-    return (cut[: dot + 1] if dot > 80 else cut).strip() + " …"
 
 
 def _geocode_survivor(s: dict, cache: dict, allow_network: bool, warnings: list) -> dict:
@@ -133,6 +126,7 @@ def build(source_name="local", extractor_name="offline", allow_network=False,
             "source": source_name,
             "extractor": extractor_name,
             "gazetteer_revision": gazetteer._load().get("revision"),
+            "content_revision": config.CONTENT_REVISION,
             "count": len(features),
             "reviewed": reviewed,
             "pending": pending,

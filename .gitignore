@@ -17,6 +17,7 @@ tools/*.png
 # Dev probes + scrape HTML cache (the distilled data/source/ohp_scraped.json is committed)
 tools/probe/
 data/source/pages_cache/
+data/source/transcript_cache/
 
 # Cloudflare / wrangler local state
 .wrangler/

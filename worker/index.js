@@ -9,6 +9,7 @@
 // "Auto-updating" here means auto-detected and auto-staged, never auto-published as
 // fact: new entries arrive pending until a human verifies them (doc 09 Step 2.5).
 import {
+  CONTENT_REVISION,
   DATA_KEY,
   GAZETTEER_REVISION,
   HISTORY_MAX_YEAR,
@@ -38,6 +39,7 @@ export default {
         const parsed = JSON.parse(cached);
         const current = (
           parsed.metadata?.gazetteer_revision === GAZETTEER_REVISION &&
+          parsed.metadata?.content_revision === CONTENT_REVISION &&
           parsed.metadata?.time_min === HISTORY_MIN_YEAR &&
           parsed.metadata?.time_max === HISTORY_MAX_YEAR
         )

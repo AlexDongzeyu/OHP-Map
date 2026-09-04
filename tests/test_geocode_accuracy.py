@@ -90,6 +90,7 @@ def test_known_ambiguous_profiles_use_the_correct_places():
         config.GAZETTEER.read_text(encoding="utf-8"),
     )["revision"]
     assert document["metadata"]["gazetteer_revision"] == gazetteer_revision
+    assert document["metadata"]["content_revision"] == config.CONTENT_REVISION
     features = {
         feature["properties"]["survivor_id"]: feature["properties"]
         for feature in document["features"]
