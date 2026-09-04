@@ -139,11 +139,35 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (await page.$(".follow-another")) throw new Error("Guided chooser should not render");
     const flatPaths = await page.$$eval("#map .camera path", (e) => e.length);
     if (flatPaths < 20) throw new Error("flat map not drawn (" + flatPaths + ")");
+    const chapterCount = await page.$$eval("[data-chapter]", (chapters) => chapters.length);
+    if (chapterCount < 3) throw new Error("guided journey has too few chapters to test");
+    const activateChapter = (index) => page.$eval("[data-narr]", (narrative, chapterIndex) => {
+      const chapter = narrative.querySelectorAll("[data-chapter]")[chapterIndex];
+      narrative.scrollTop = chapter.offsetTop -
+        narrative.clientHeight / 2 + chapter.offsetHeight / 2;
+      narrative.dispatchEvent(new Event("scroll"));
+    }, index);
+    const revealedLength = () => page.$eval(".guided-route", (path) => {
+      const total = path.getTotalLength();
+      return total - (Number(path.getAttribute("stroke-dashoffset")) || 0);
+    });
+
+    await activateChapter(1);
+    await wait(150);
+    const beforeRapidAdvance = await revealedLength();
+    await activateChapter(2);
+    await wait(30);
+    const afterRapidAdvance = await revealedLength();
+    if (afterRapidAdvance > beforeRapidAdvance + 4) {
+      throw new Error(
+        `rapid scroll jumped from ${beforeRapidAdvance.toFixed(2)} to ${afterRapidAdvance.toFixed(2)}`,
+      );
+    }
+
     const target = await page.evaluate(() => {
       const narrative = document.querySelector("[data-narr]");
       const chapters = [...narrative.querySelectorAll("[data-chapter]")];
       const last = Math.min(3, chapters.length - 1);
-      if (last < 1) return -1;
       const activate = (index) => {
         const chapter = chapters[index];
         narrative.scrollTop = chapter.offsetTop -
@@ -155,18 +179,23 @@ const BASE = process.argv[2] || "http://localhost:8124";
       activate(last);
       return last;
     });
-    if (target < 1) throw new Error("guided journey has no route to test");
     await wait(1000);
     const guidedRoute = await page.evaluate(() => {
       const active = Number(document.querySelector("[data-chapter].is-active")?.dataset.chapter);
-      const paths = [...document.querySelectorAll("#map .guided-leg")];
+      const paths = [...document.querySelectorAll("#map .guided-route")];
       return {
         active,
         count: paths.length,
         unfinished: paths.filter((path) => Number(path.getAttribute("stroke-dashoffset")) > 0.1).length,
+        moveCommands: paths.map((path) => (path.getAttribute("d").match(/M/g) || []).length),
+        joins: paths.map((path) => path.getAttribute("stroke-linejoin")),
       };
     });
-    if (guidedRoute.active !== target || guidedRoute.count !== target || guidedRoute.unfinished) {
+    if (guidedRoute.active !== target ||
+        guidedRoute.count !== 1 ||
+        guidedRoute.unfinished ||
+        guidedRoute.moveCommands.some((count) => count !== 1) ||
+        guidedRoute.joins.some((join) => join !== "round")) {
       throw new Error(`unstable route state ${JSON.stringify(guidedRoute)}`);
     }
   });
@@ -235,6 +264,15 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (!/6 interview chapters/.test(coverage) || !/6 with public captions/.test(coverage)) {
       throw new Error(`caption coverage is incorrect: ${coverage}`);
     }
+    const miniRoutes = await page.$$eval(".panel .mini path", (paths) => (
+      paths.map((path) => ({
+        moves: (path.getAttribute("d").match(/M/g) || []).length,
+        join: path.getAttribute("stroke-linejoin"),
+      }))
+    ));
+    if (miniRoutes.length !== 1 || miniRoutes[0].moves !== 1 || miniRoutes[0].join !== "round") {
+      throw new Error(`mini route is segmented ${JSON.stringify(miniRoutes)}`);
+    }
     await page.$eval(".guided-pill", (button) => button.click());
     await page.waitForSelector(".chapter-first .guided-portrait img", { timeout: 5000 });
     const guidedPortrait = await page.evaluate(() => {
@@ -251,6 +289,12 @@ const BASE = process.argv[2] || "http://localhost:8124";
     }
     await page.click(".nav-tab[data-view='explore']");
     await page.waitForSelector(".rail .rail-card", { timeout: 5000 });
+    const exploreRoutes = await page.$$eval("#map .explore-route", (paths) => (
+      paths.map((path) => (path.getAttribute("d").match(/M/g) || []).length)
+    ));
+    if (exploreRoutes.length !== 1 || exploreRoutes[0] !== 1) {
+      throw new Error(`explore route is segmented ${JSON.stringify(exploreRoutes)}`);
+    }
   });
   await check("free zoom changes camera transform", async () => {
     await page.click(".panel-close").catch(() => {});
@@ -315,10 +359,12 @@ const BASE = process.argv[2] || "http://localhost:8124";
     await page.waitForSelector(".testimony-moment.is-selected", { timeout: 3000 });
     const selection = await page.evaluate(() => ({
       selectedRoutes: document.querySelectorAll(".selected-testimony-route").length,
+      segmentedRoutes: [...document.querySelectorAll(".selected-testimony-route")]
+        .filter((path) => (path.getAttribute("d").match(/M/g) || []).length !== 1).length,
       place: document.querySelector(".testimony-moment.is-selected > strong")?.textContent,
       eventPosition: document.querySelector(".moment-nav b")?.textContent,
     }));
-    if (!selection.selectedRoutes || selection.selectedRoutes > 4 ||
+    if (!selection.selectedRoutes || selection.selectedRoutes > 4 || selection.segmentedRoutes ||
         !selection.place || !/\d+ \/ \d+/.test(selection.eventPosition || "")) {
       throw new Error(`testimony selection did not reveal focused detail ${JSON.stringify(selection)}`);
     }

@@ -133,6 +133,53 @@ export function createAtlas(container) {
     return `M${a.px},${a.py} Q${cx},${cy} ${b.px},${b.py}`;
   }
 
+  const journeyLine = d3.line()
+    .x((point) => point.px ?? point.x)
+    .y((point) => point.py ?? point.y)
+    .curve(d3.curveCatmullRom.alpha(0.5));
+
+  function journeyPath(points) {
+    const distinct = points.filter((point, index) => {
+      if (!index) return true;
+      const previous = points[index - 1];
+      return (point.px ?? point.x) !== (previous.px ?? previous.x) ||
+        (point.py ?? point.y) !== (previous.py ?? previous.y);
+    });
+    return distinct.length > 1 ? journeyLine(distinct) : null;
+  }
+
+  function closestPathLength(pathNode, target) {
+    const total = pathNode.getTotalLength();
+    const samples = 120;
+    let bestLength = 0;
+    let bestDistance = Infinity;
+    for (let index = 0; index <= samples; index++) {
+      const length = total * index / samples;
+      const point = pathNode.getPointAtLength(length);
+      const distance = Math.hypot(point.x - target.x, point.y - target.y);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestLength = length;
+      }
+    }
+    let radius = total / samples;
+    for (let iteration = 0; iteration < 5; iteration++) {
+      const start = Math.max(0, bestLength - radius);
+      const end = Math.min(total, bestLength + radius);
+      for (let index = 0; index <= 12; index++) {
+        const length = start + (end - start) * index / 12;
+        const point = pathNode.getPointAtLength(length);
+        const distance = Math.hypot(point.x - target.x, point.y - target.y);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestLength = length;
+        }
+      }
+      radius /= 4;
+    }
+    return bestLength;
+  }
+
   api.pointAtYear = function (j, year) {
     const wps = j.waypoints.filter((w) => w.year != null && w.px != null);
     if (!wps.length) return null;
@@ -160,11 +207,14 @@ export function createAtlas(container) {
       .attr("stroke-width", o.sw || 0).attr("vector-effect", "non-scaling-stroke")
       .attr("opacity", o.op == null ? 1 : o.op);
   }
-  function leg(g, a, b, o = {}) {
-    if (a.px == null || b.px == null) return null;
-    const p = g.append("path").attr("d", legPath(a, b)).attr("fill", "none")
+  function route(g, points, o = {}) {
+    const d = journeyPath(points);
+    if (!d) return null;
+    const p = g.append("path").attr("d", d).attr("fill", "none")
+      .attr("class", o.className || null)
       .attr("stroke", o.color || C.accent).attr("stroke-width", o.width || 2)
-      .attr("vector-effect", "non-scaling-stroke").attr("stroke-linecap", "round")
+      .attr("vector-effect", "non-scaling-stroke")
+      .attr("stroke-linecap", "round").attr("stroke-linejoin", "round")
       .attr("opacity", o.op == null ? 1 : o.op);
     if (o.animate && motionEnabled()) {
       const len = p.node().getTotalLength();
@@ -680,35 +730,48 @@ export function createAtlas(container) {
     const g = overlayG;
     const col = GROUP_COLOR[j.group] || C.accent;
 
-    const segments = wp.slice(0, idx).map((a, i) => ({
-      a,
-      b: wp[i + 1],
-      key: `${j.id}-${i}`,
-      animate: i === idx - 1 && ctx.prevIndex != null && ctx.prevIndex < idx,
-    }));
-    const routes = g.selectAll(".guided-leg").data(segments, (d) => d.key);
+    const visible = wp.slice(0, idx + 1);
+    const routes = g.selectAll(".guided-route").data(
+      visible.length > 1 ? [{ key: j.id, points: visible }] : [],
+      (datum) => datum.key,
+    );
+    const previousNode = routes.empty() ? null : routes.node();
+    const previousLength = previousNode ? previousNode.getTotalLength() : 0;
+    const previousOffset = previousNode
+      ? Number(d3.select(previousNode).attr("stroke-dashoffset")) || 0
+      : 0;
+    const previousVisibleLength = Math.max(0, Math.min(
+      previousLength,
+      previousLength - previousOffset,
+    ));
+    const previousVisiblePoint = previousNode
+      ? previousNode.getPointAtLength(previousVisibleLength)
+      : null;
     routes.exit().interrupt("guided-reveal").remove();
-    routes.interrupt("guided-reveal")
-      .attr("stroke-dasharray", null)
-      .attr("stroke-dashoffset", null);
     const enteredRoutes = routes.enter().append("path")
-      .attr("class", "guided-leg")
+      .attr("class", "guided-route")
       .attr("fill", "none")
       .attr("vector-effect", "non-scaling-stroke")
-      .attr("stroke-linecap", "round");
-    enteredRoutes.merge(routes)
-      .attr("d", (d) => legPath(d.a, d.b))
+      .attr("stroke-linecap", "round")
+      .attr("stroke-linejoin", "round");
+    enteredRoutes.merge(routes).each(function (datum) {
+      const selection = d3.select(this).interrupt("guided-reveal")
+        .attr("stroke-dasharray", null)
+        .attr("stroke-dashoffset", null)
+        .attr("d", journeyPath(datum.points))
       .attr("stroke", col)
       .attr("stroke-width", 2.4)
       .attr("opacity", 0.92);
-    enteredRoutes.each(function (d) {
-      if (!d.animate || !motionEnabled()) return;
-      const route = d3.select(this);
+      const animate = ctx.prevIndex != null && ctx.prevIndex < idx && motionEnabled();
+      if (!animate) return;
       const length = this.getTotalLength();
-      route.attr("stroke-dasharray", length).attr("stroke-dashoffset", length)
+      const revealed = previousVisiblePoint
+        ? closestPathLength(this, previousVisiblePoint)
+        : 0;
+      selection.attr("stroke-dasharray", length).attr("stroke-dashoffset", length - revealed)
         .transition("guided-reveal").duration(900).ease(d3.easeCubicInOut)
         .attr("stroke-dashoffset", 0)
-        .on("end", () => route.attr("stroke-dasharray", null).attr("stroke-dashoffset", null));
+        .on("end", () => selection.attr("stroke-dasharray", null).attr("stroke-dashoffset", null));
     });
 
     const ring = wp[idx] ? [{ ...wp[idx], key: `${j.id}-${idx}` }] : [];
@@ -749,7 +812,13 @@ export function createAtlas(container) {
     if (sel) {
       const wp = sel.waypoints.filter((w) => w.px != null);
       const col = GROUP_COLOR[sel.group] || C.accent;
-      for (let i = 0; i < wp.length - 1; i++) leg(g, wp[i], wp[i + 1], { color: col, width: 2.2, op: 0.9, animate: true });
+      route(g, wp, {
+        className: "explore-route",
+        color: col,
+        width: 2.2,
+        op: 0.9,
+        animate: true,
+      });
       wp.forEach((w) => {
         dot(g, w.px, w.py, { r: 3.6, fill: col });
         if (w.liberation || w.newLife) dot(g, w.px, w.py, { r: 8, fill: "none", stroke: col, sw: 1.2, op: 0.35 });
@@ -812,17 +881,14 @@ export function createAtlas(container) {
       if (!activeIds.has(journey.id)) continue;
       const waypoints = journey.waypoints.filter((waypoint) => waypoint.px != null);
       if (waypoints.length < 2) continue;
-      let route = `M${waypoints[0].px},${waypoints[0].py}`;
-      for (let index = 1; index < waypoints.length; index++) {
-        route += `L${waypoints[index].px},${waypoints[index].py}`;
-      }
       g.append("path")
         .attr("class", "selected-testimony-route")
-        .attr("d", route)
+        .attr("d", journeyPath(waypoints))
         .attr("fill", "none")
         .attr("stroke", GROUP_COLOR[journey.group] || C.accent)
         .attr("stroke-width", 1.6)
         .attr("stroke-linecap", "round")
+        .attr("stroke-linejoin", "round")
         .attr("vector-effect", "non-scaling-stroke")
         .attr("opacity", 0.64);
     }
@@ -911,14 +977,9 @@ export function createAtlas(container) {
     const ox = (W - sx * k) / 2 - minx * k, oy = (H - sy * k) / 2 - miny * k;
     const P = pts.map((p) => ({ x: p.px * k + ox, y: p.py * k + oy, newLife: p.newLife }));
     const col = GROUP_COLOR[j.group] || C.accent;
-    for (let i = 0; i < P.length - 1; i++) {
-      const a = P[i], b = P[i + 1];
-      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
-      const nx = -dy / len, ny = dx / len, off = Math.min(len * 0.16, 18);
-      const cx = (a.x + b.x) / 2 + nx * off, cy = (a.y + b.y) / 2 + ny * off;
-      sel.append("path").attr("d", `M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}`)
-        .attr("fill", "none").attr("stroke", col).attr("stroke-width", 1.6).attr("stroke-linecap", "round");
-    }
+    sel.append("path").attr("d", journeyPath(P))
+      .attr("fill", "none").attr("stroke", col).attr("stroke-width", 1.6)
+      .attr("stroke-linecap", "round").attr("stroke-linejoin", "round");
     P.forEach((p, i) => sel.append("circle").attr("cx", p.x).attr("cy", p.y)
       .attr("r", i === 0 || i === P.length - 1 ? 4 : 2.8).attr("fill", p.newLife ? C.anchorInk : col));
   };
