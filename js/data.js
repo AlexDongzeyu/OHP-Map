@@ -54,6 +54,53 @@ function shortIntro(j) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) + "." : "";
 }
 
+function buildVeteranCorridors(journeys) {
+  const byConflict = new Map();
+  for (const journey of journeys) {
+    if (journey.group !== "Military Veterans") continue;
+    if (!journey.serviceConflict) continue;
+    const waypoints = journey.waypoints.filter((waypoint) => (
+      Number.isFinite(waypoint.lat) && Number.isFinite(waypoint.lng)
+    ));
+    for (let index = 0; index < waypoints.length - 1; index++) {
+      const first = waypoints[index];
+      const second = waypoints[index + 1];
+      if (first.canonical === second.canonical) continue;
+      const [a, b] = first.canonical.localeCompare(second.canonical) <= 0
+        ? [first, second]
+        : [second, first];
+      const datedConflicts = journey.serviceConflicts.filter((conflict) => {
+        const window = SERVICE_WINDOWS[conflict];
+        return [first.year, second.year].some((year) => (
+          year >= window.start && year <= window.end
+        ));
+      });
+      const corridorConflicts = datedConflicts.length ? datedConflicts : [journey.serviceConflict];
+      for (const conflict of corridorConflicts) {
+        if (!byConflict.has(conflict)) byConflict.set(conflict, new Map());
+        const corridors = byConflict.get(conflict);
+        const key = `${a.canonical}|${b.canonical}`;
+        if (!corridors.has(key)) {
+          corridors.set(key, {
+            key,
+            a: { canonical: a.canonical, lat: a.lat, lng: a.lng },
+            b: { canonical: b.canonical, lat: b.lat, lng: b.lng },
+            people: [],
+          });
+        }
+        const corridor = corridors.get(key);
+        if (!corridor.people.includes(journey.id)) corridor.people.push(journey.id);
+      }
+    }
+  }
+  return new Map([...byConflict].map(([conflict, corridors]) => [
+    conflict,
+    [...corridors.values()]
+      .map((corridor) => ({ ...corridor, count: corridor.people.length }))
+      .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)),
+  ]));
+}
+
 function toJourney(props) {
   const group = props.group || "Holocaust Survivors";
   const wps = (props.waypoints || []).map((w) => {
@@ -122,6 +169,7 @@ export async function loadData() {
   journeys.sort((a, b) => a.surname.localeCompare(b.surname) || a.name.localeCompare(b.name));
   const byId = new Map(journeys.map((j) => [j.id, j]));
   const events = buildEvents(journeys);
+  const veteranCorridors = buildVeteranCorridors(journeys);
   const eventsByYear = new Map();
   for (const event of events) {
     if (!eventsByYear.has(event.year)) eventsByYear.set(event.year, []);
@@ -174,6 +222,7 @@ export async function loadData() {
     events,
     eventsByYear,
     eventYears: [...eventsByYear.keys()].sort((a, b) => a - b),
+    veteranCorridors,
     groups,
     conflicts: [...conflicts.entries()].sort((a, b) => b[1] - a[1]),
     placeIndex,

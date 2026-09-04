@@ -222,7 +222,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
   await check("patterns: historical events + timeline + density", async () => {
     await page.click(".nav-tab[data-view='patterns']");
     await page.waitForSelector(".scrubber .range", { timeout: 5000 });
-    await page.waitForSelector(".event-card", { timeout: 5000 });
+    await page.waitForSelector(".testimony-moment", { timeout: 5000 });
     await page.waitForSelector(".pattern-event-marker", { timeout: 5000 });
     await page.waitForSelector("[data-war-context]", { timeout: 5000 });
     await page.$eval(".scrubber .range", (el) => { el.value = "1944"; el.dispatchEvent(new Event("input", { bubbles: true })); });
@@ -233,26 +233,40 @@ const BASE = process.argv[2] || "http://localhost:8124";
     const yr = await page.$eval(".scrub-year", (el) => el.textContent);
     if (yr !== "1944") throw new Error("year=" + yr);
     const eventState = await page.evaluate(() => ({
-      cards: document.querySelectorAll(".event-card").length,
-      active: document.querySelectorAll(".event-card.on").length,
       markers: document.querySelectorAll(".pattern-event-marker").length,
+      activeMarkers: document.querySelectorAll(".pattern-event-marker[fill='#294B69']").length,
       phase: document.querySelector(".war-brief > strong")?.textContent,
       territories: document.querySelectorAll(".historical-territory").length,
       canada: document.querySelector("[data-controller='Canada']")?.getAttribute("data-war-side"),
       germany: document.querySelector("[data-controller='Germany']")?.getAttribute("data-war-side"),
       occupied: document.querySelectorAll(".historical-territory[data-war-side='occupied']").length,
-      veteranRoutes: document.querySelectorAll(".war-veteran-route").length,
+      corridors: document.querySelectorAll(".service-corridor").length,
+      selectedRoutes: document.querySelectorAll(".selected-testimony-route").length,
     }));
-    if (!eventState.cards || eventState.active !== 1 || eventState.markers < eventState.cards) {
-      throw new Error("historical event browser is not synchronized");
+    if (!eventState.markers || eventState.activeMarkers || eventState.selectedRoutes) {
+      throw new Error("historical event layer should open without a forced selection");
     }
     if (eventState.phase !== "Liberation from west and east" ||
         eventState.canada !== "coalition" ||
         eventState.germany !== "opposition" ||
         eventState.territories < 140 ||
         !eventState.occupied ||
-        !eventState.veteranRoutes) {
+        !eventState.corridors ||
+        eventState.corridors > 8) {
       throw new Error(`historical war layer is incomplete ${JSON.stringify(eventState)}`);
+    }
+    await page.$eval(".pattern-event-marker", (marker) => {
+      marker.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForSelector(".testimony-moment.is-selected", { timeout: 3000 });
+    const selection = await page.evaluate(() => ({
+      selectedRoutes: document.querySelectorAll(".selected-testimony-route").length,
+      place: document.querySelector(".testimony-moment.is-selected > strong")?.textContent,
+      eventPosition: document.querySelector(".moment-nav b")?.textContent,
+    }));
+    if (!selection.selectedRoutes || selection.selectedRoutes > 4 ||
+        !selection.place || !/\d+ \/ \d+/.test(selection.eventPosition || "")) {
+      throw new Error(`testimony selection did not reveal focused detail ${JSON.stringify(selection)}`);
     }
     await page.$eval(".scrubber .range", (el) => { el.value = "1914"; el.dispatchEvent(new Event("input", { bubbles: true })); });
     const firstWorld = await page.evaluate(() => ({
@@ -298,10 +312,12 @@ const BASE = process.argv[2] || "http://localhost:8124";
     }
     await page.$eval(".scrubber .range", (el) => { el.value = "1944"; el.dispatchEvent(new Event("input", { bubbles: true })); });
     const beforeYear = Number(yr);
-    await page.click("[data-act='next-year']");
+    await page.$eval("[data-act='next-year']", (button) => button.click());
     const nextYear = await page.$eval(".scrub-year", (el) => Number(el.textContent));
-    if (nextYear !== beforeYear + 1) throw new Error("timeline did not advance exactly one year");
-    await page.click(".seg[data-layer='origins']");
+    if (nextYear !== beforeYear + 1) {
+      throw new Error(`timeline did not advance exactly one year (${beforeYear} -> ${nextYear})`);
+    }
+    await page.$eval(".seg[data-layer='origins']", (button) => button.click());
     await page.waitForSelector(".origin-list li", { timeout: 5000 });
   });
   await check("about renders", async () => {
@@ -368,17 +384,23 @@ const BASE = process.argv[2] || "http://localhost:8124";
     await page.click(".nav-tab[data-view='patterns']");
     await page.waitForSelector(".scrubber .range", { timeout: 5000 });
     const layout = await page.evaluate(() => {
-      const intro = document.querySelector(".patterns-intro").getBoundingClientRect();
+      const heading = document.querySelector(".patterns-map-head").getBoundingClientRect();
+      const dossier = document.querySelector(".history-dossier").getBoundingClientRect();
       const scrubber = document.querySelector(".scrubber").getBoundingClientRect();
       return {
-        introBottom: intro.bottom,
+        headingBottom: heading.bottom,
+        dossierTop: dossier.top,
+        dossierBottom: dossier.bottom,
         scrubberTop: scrubber.top,
         scrubberLeft: scrubber.left,
         scrubberRight: scrubber.right,
         viewport: innerWidth,
       };
     });
-    if (layout.introBottom > layout.scrubberTop - 12) throw new Error("patterns panels overlap");
+    if (layout.headingBottom > layout.dossierTop - 8 ||
+        layout.dossierBottom > layout.scrubberTop - 12) {
+      throw new Error(`patterns panels overlap ${JSON.stringify(layout)}`);
+    }
     if (layout.scrubberLeft < 11 || layout.scrubberRight > layout.viewport - 11) {
       throw new Error("timeline is not centered within the viewport");
     }

@@ -41,7 +41,7 @@ async function main() {
   }
 
   state.guidedId = store.defaultGuidedId;
-  state.patternEventKey = eventsForYear()[0]?.key || null;
+  state.patternEventKey = null;
   store.groups.forEach((g) => state.groupFilter.add(g.name));
   document.getElementById("portrait-field").innerHTML = ui.livingMosaic(store);
 
@@ -111,7 +111,7 @@ function atlasCtx() {
     scrubYear: state.scrubYear,
     patternsLayer: state.patternsLayer,
     patternEvents,
-    activePatternEvent: patternEvents.find((event) => event.key === state.patternEventKey) || patternEvents[0] || null,
+    activePatternEvent: patternEvents.find((event) => event.key === state.patternEventKey) || null,
     warPeriod,
     boundaryYear,
     matches: matchPredicate(),
@@ -214,14 +214,14 @@ function refreshRail() {
 function setLayer(layer) {
   if (state.patternsLayer !== layer) {
     state.patternsLayer = layer;
-    if (layer === "journeys") state.patternEventKey = eventsForYear()[0]?.key || null;
+    state.patternEventKey = null;
     render();
     if (layer === "origins") atlas.resetCamera();
   }
 }
 function setScrub(year) {
   state.scrubYear = Math.max(store.time.min, Math.min(store.time.max, year));
-  state.patternEventKey = eventsForYear()[0]?.key || null;
+  state.patternEventKey = null;
   if (state.view === "patterns") {
     history.replaceState(null, "", `#/patterns/${state.scrubYear}`);
   }
@@ -242,6 +242,15 @@ function setPatternEvent(key) {
 
 function stepEventYear(direction) {
   setScrub(state.scrubYear + direction);
+}
+
+function stepPatternEvent(direction) {
+  const events = eventsForYear();
+  if (!events.length) return;
+  let index = events.findIndex((event) => event.key === state.patternEventKey);
+  if (index < 0) index = direction > 0 ? -1 : 0;
+  index = (index + direction + events.length) % events.length;
+  setPatternEvent(events[index].key);
 }
 
 function eventsForYear() {
@@ -341,6 +350,8 @@ function onActivate(e) {
     case "more": return showMore();
     case "prev-year": return stepEventYear(-1);
     case "next-year": return stepEventYear(1);
+    case "prev-event": return stepPatternEvent(-1);
+    case "next-event": return stepPatternEvent(1);
   }
 }
 
@@ -360,7 +371,7 @@ function route() {
   }
   if (kind === "patterns" && value && /^\d{4}$/.test(value)) {
     state.scrubYear = Math.max(store.time.min, Math.min(store.time.max, Number(value)));
-    state.patternEventKey = eventsForYear()[0]?.key || null;
+    state.patternEventKey = null;
     state.view = "patterns";
     render();
     return;

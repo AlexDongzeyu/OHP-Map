@@ -104,7 +104,8 @@ export function animateOverlay(view, changes) {
     reveal(
       ".patterns-intro > h2, .patterns-intro > .kicker, .patterns-intro > .lede, " +
       ".patterns-intro > .legend, .patterns-intro > .cross-note, " +
-      ".patterns-intro > .origin-list, .patterns-intro > .cross-sub",
+      ".patterns-intro > .origin-list, .patterns-intro > .cross-sub, " +
+      ".patterns-map-head, .history-dossier",
       { autoAlpha: 0, y: 8 },
       { stagger: .035 },
     );
@@ -135,9 +136,8 @@ export function animateChapter(section) {
 
 export function animatePatternEvent() {
   if (!canAnimate()) return;
-  reveal(".event-card, .event-empty", { autoAlpha: 0, x: -8 }, {
+  reveal(".testimony-moment", { autoAlpha: 0, x: 8 }, {
     duration: .38,
-    stagger: .025,
   });
 }
 

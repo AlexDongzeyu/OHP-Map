@@ -283,14 +283,14 @@ export function patterns(store, state) {
 
   return `
   <div class="ov ov-patterns">
-    <div class="patterns-intro historical-patterns">
-      <h2 class="serif-xl">Territory &amp; testimony</h2>
-      <p class="kicker">Patterns · borders, conflict, and memory</p>
-      <p class="lede sm">Move from 1914 to today. Dated boundaries show who controlled each
-        territory while testimony routes remain visible above the historical map.</p>
+    <div class="patterns-map-head">
+      <div>
+        <p class="micro-label">Historical atlas · 1914–2026</p>
+        <h2>Territory &amp; testimony</h2>
+      </div>
       ${toggle}
-      <div class="pattern-events" data-pattern-events>${patternsEvents(store, state)}</div>
     </div>
+    <aside class="history-dossier" data-pattern-events>${patternsEvents(store, state)}</aside>
     <div class="scrubber">
       <div class="scrub-head"><span class="micro-label">Historical timeline</span>
         <span class="scrub-year" data-year>${state.scrubYear}</span></div>
@@ -303,30 +303,12 @@ export function patterns(store, state) {
 
 export function patternsEvents(store, state) {
   const events = store.eventsByYear.get(state.scrubYear) || [];
-  const activeKey = state.patternEventKey || events[0]?.key;
+  const activeEvent = events.find((event) => event.key === state.patternEventKey) || null;
   const previousDisabled = state.scrubYear <= store.time.min ? " disabled" : "";
   const nextDisabled = state.scrubYear >= store.time.max ? " disabled" : "";
-  const cards = events.slice(0, 6).map((event) => {
-    const portraits = event.people.filter((person) => person.portrait).slice(0, 4)
-      .map((person) => `<img src="${esc(person.portrait)}" alt="" loading="lazy" decoding="async">`).join("");
-    const names = event.people.slice(0, 3).map((person) => person.name).join(", ");
-    const more = event.people.length > 3 ? ` +${event.people.length - 3}` : "";
-    return `<button class="event-card ${event.key === activeKey ? "on" : ""}" data-event="${esc(event.key)}">
-      <span class="event-card-top"><span class="event-role">${esc(event.role)}</span>
-        <span class="event-count">${event.count} ${event.count === 1 ? "testimony" : "testimonies"}</span></span>
-      <span class="event-place">${esc(event.place)}</span>
-      <span class="event-people">
-        <span class="event-portraits">${portraits}</span>
-        <span class="event-names">${esc(names)}${more}</span>
-      </span>
-    </button>`;
-  }).join("");
-  const empty = `<p class="event-empty">No dated place is recorded for this year.</p>`;
   return `
     ${warBrief(store, state.scrubYear, previousDisabled, nextDisabled)}
-    <div class="event-list scroll">${cards || empty}</div>
-    <p class="event-footnote">${events.length} ${events.length === 1 ? "place event" : "place events"} in the archive
-      ${events.some((event) => event.approximate) ? " · includes approximate dates" : ""}</p>`;
+    ${testimonyMoment(activeEvent, events)}`;
 }
 
 // ---- ABOUT ------------------------------------------------------------------
@@ -408,18 +390,17 @@ function warBrief(store, year, previousDisabled, nextDisabled) {
   const context = store.warAt(year);
   if (!context) return "";
   const boundary = store.historicalIndex.years.find((entry) => entry.year === year);
-  const veterans = context.archive_conflict
-    ? store.journeys.filter((journey) => (
-      journey.group === "Military Veterans" &&
-      journey.conflicts.includes(context.archive_conflict)
-    )).length
-    : 0;
+  const corridors = context.archive_conflict
+    ? (store.veteranCorridors.get(context.archive_conflict) || [])
+      .filter((corridor) => corridor.count > 1)
+      .slice(0, 8)
+    : [];
   const legend = context.coalition_label ? `
     <div class="war-legend" aria-label="Historical alignment legend">
       <span><i class="coalition"></i>${esc(context.coalition_label)}</span>
       <span><i class="opposition"></i>${esc(context.opposition_label)}</span>
       ${context.occupied.length ? '<span><i class="occupied"></i>Occupied / contested</span>' : ""}
-      ${veterans ? `<span><i class="route"></i>${veterans} archive veterans</span>` : ""}
+      ${corridors.length ? `<span><i class="route"></i>${corridors.length} common service corridors</span>` : ""}
     </div>` : `
     <div class="war-legend" aria-label="Territorial map legend">
       <span><i class="territory"></i>Dated territory</span>
@@ -441,8 +422,42 @@ function warBrief(store, year, previousDisabled, nextDisabled) {
     <strong>${esc(context.phase)}</strong>
     <p>${esc(context.summary)}</p>
     ${legend}
-    <small>${boundary ? `${boundary.active} mapped territories · ` : ""}OpenHistoricalMap CC0 · boundaries at mid-year · war alignment spans the selected year · hover or tap to trace control</small>
+    <small>${boundary ? `${boundary.active} territories · ${boundary.changes} mapped changes · ` : ""}OpenHistoricalMap CC0</small>
   </section>`;
+}
+function testimonyMoment(activeEvent, events) {
+  if (!events.length) {
+    return `<div class="testimony-moment is-empty">
+      <span class="micro-label">Testimony layer</span>
+      <p>No dated testimony moment is recorded for this year.</p>
+    </div>`;
+  }
+  if (!activeEvent) {
+    return `<div class="testimony-moment">
+      <span class="micro-label">${events.length} recorded ${events.length === 1 ? "place" : "places"}</span>
+      <p>Select a ring on the map to inspect one testimony moment.</p>
+    </div>`;
+  }
+  const portraits = activeEvent.people.filter((person) => person.portrait).slice(0, 5)
+    .map((person) => `<img src="${esc(person.portrait)}" alt="" loading="lazy" decoding="async">`).join("");
+  const names = activeEvent.people.slice(0, 4).map((person) => person.name).join(", ");
+  const more = activeEvent.people.length > 4 ? ` +${activeEvent.people.length - 4}` : "";
+  return `<div class="testimony-moment is-selected">
+    <div class="moment-head">
+      <span class="event-role">${esc(activeEvent.role)}</span>
+      <span class="moment-nav">
+        <button data-act="prev-event" aria-label="Previous testimony place">${icon("arrow-right")}</button>
+        <b>${events.indexOf(activeEvent) + 1} / ${events.length}</b>
+        <button data-act="next-event" aria-label="Next testimony place">${icon("arrow-right")}</button>
+      </span>
+    </div>
+    <strong>${esc(activeEvent.place)}</strong>
+    <span class="event-people">
+      <span class="event-portraits">${portraits}</span>
+      <span class="event-names">${esc(names)}${more}</span>
+    </span>
+    <small>${activeEvent.count} ${activeEvent.count === 1 ? "testimony" : "testimonies"}${activeEvent.approximate ? " · includes approximate dates" : ""}</small>
+  </div>`;
 }
 function boundaryDensity(store, selectedYear) {
   const years = store.historicalIndex?.years || [];

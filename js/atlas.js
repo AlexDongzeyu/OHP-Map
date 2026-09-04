@@ -26,6 +26,7 @@ export function createAtlas(container) {
   let globeRouteChangedAt = 0, globePhase = 0;
   let historicalFeatures = null, historicalPromise = null;
   let currentTerritoryPeriod = null;
+  let currentBoundaryYear = null;
   let hoveredController = null, pinnedController = null;
   const api = {};
 
@@ -333,10 +334,14 @@ export function createAtlas(container) {
         controller && feature.properties.controller !== controller ? 0.38 : 0.96
       ))
       .attr("stroke", (feature) => (
-        controller && feature.properties.controller === controller ? C.accentDeep : C.warBorder
+        controller && feature.properties.controller === controller
+          ? C.accentDeep
+          : (Math.floor(feature.properties.start) === currentBoundaryYear ? C.accentSoft : C.warBorder)
       ))
       .attr("stroke-width", (feature) => (
-        controller && feature.properties.controller === controller ? 1.25 : 0.55
+        controller && feature.properties.controller === controller
+          ? 1.25
+          : (Math.floor(feature.properties.start) === currentBoundaryYear ? 0.95 : 0.45)
       ));
   }
 
@@ -347,7 +352,7 @@ export function createAtlas(container) {
       const area = Number(feature.properties.area_km2) || d3.geoArea(feature);
       if (!byName.has(name) || area > byName.get(name).area) byName.set(name, { feature, area });
     }
-    const limit = size.w <= 820 ? 0 : 15;
+    const limit = size.w <= 820 ? 0 : 11;
     const labels = [...byName.values()]
       .filter((entry) => entry.area > 120000)
       .sort((a, b) => b.area - a.area)
@@ -385,6 +390,7 @@ export function createAtlas(container) {
 
   function showHistoricalBoundaries(year, period) {
     currentTerritoryPeriod = period;
+    currentBoundaryYear = year;
     if (!historicalFeatures) {
       historicalG.style("display", "none");
       historicalLabelsG.style("display", "none");
@@ -433,6 +439,7 @@ export function createAtlas(container) {
       .attr("fill", (feature) => territoryFill(feature, period))
       .attr("data-controller", (feature) => feature.properties.controller)
       .attr("data-territory", (feature) => feature.properties.name)
+      .attr("data-new-territory", (feature) => Math.floor(feature.properties.start) === year ? "true" : null)
       .attr("data-war-side", (feature) => territoryStatus(feature, period));
     emphasizeTerritories();
     renderHistoricalLabels(active);
@@ -441,6 +448,7 @@ export function createAtlas(container) {
 
   function hideHistoricalBoundaries() {
     currentTerritoryPeriod = null;
+    currentBoundaryYear = null;
     hoveredController = null;
     pinnedController = null;
     historicalG.style("display", "none");
@@ -767,60 +775,100 @@ export function createAtlas(container) {
     const g = overlayG;
     if (ctx.patternsLayer === "origins") { drawOrigins(g); return; }
     const activeEvent = ctx.activePatternEvent;
-    const activeIds = new Set(activeEvent?.people.map((person) => person.id) || []);
+    const activeIds = new Set(activeEvent?.people.slice(0, 4).map((person) => person.id) || []);
     const activeConflict = ctx.warPeriod?.archive_conflict;
-    // One faint path per journey (keeps thousands of legs cheap).
-    for (const j of store.journeys) {
-      const wp = j.waypoints.filter((w) => w.px != null);
-      if (wp.length < 2) continue;
-      let d = `M${wp[0].px},${wp[0].py}`;
-      for (let i = 1; i < wp.length; i++) d += `L${wp[i].px},${wp[i].py}`;
-      const active = activeIds.has(j.id);
-      const warVeteran = activeConflict && j.group === "Military Veterans" &&
-        j.conflicts.includes(activeConflict);
+
+    const corridors = activeConflict
+      ? (store.veteranCorridors.get(activeConflict) || []).filter((corridor) => corridor.count > 1).slice(0, 8)
+      : [];
+    const maximumCorridor = Math.max(1, ...corridors.map((corridor) => corridor.count));
+    for (const corridor of corridors) {
+      const a = projection([corridor.a.lng, corridor.a.lat]);
+      const b = projection([corridor.b.lng, corridor.b.lat]);
+      if (!a || !b) continue;
+      const datum = { ...corridor, a: { px: a[0], py: a[1] }, b: { px: b[0], py: b[1] } };
       g.append("path")
-        .attr("class", warVeteran ? "war-veteran-route" : "pattern-route")
-        .attr("d", d).attr("fill", "none").attr("stroke", GROUP_COLOR[j.group] || C.accent)
-        .attr("stroke-width", active ? 1.4 : (warVeteran ? 0.72 : 0.5))
+        .datum(datum)
+        .attr("class", "service-corridor")
+        .attr("d", legPath(datum.a, datum.b))
+        .attr("fill", "none")
+        .attr("stroke", C.accentDeep)
+        .attr("stroke-width", 0.8 + Math.sqrt(corridor.count / maximumCorridor) * 1.5)
+        .attr("stroke-linecap", "round")
         .attr("vector-effect", "non-scaling-stroke")
-        .attr("opacity", active ? 0.4 : (warVeteran ? 0.052 : 0.008));
+        .attr("opacity", 0.18 + corridor.count / maximumCorridor * 0.22)
+        .style("pointer-events", "stroke")
+        .style("cursor", "pointer")
+        .on("mouseenter", (event) => showTip(
+          event,
+          `${corridor.a.canonical} ↔ ${corridor.b.canonical} · ${corridor.count} veterans`,
+        ))
+        .on("mousemove", (event) => moveTip(event))
+        .on("mouseleave", hideTip);
     }
-    const year = ctx.scrubYear;
-    for (const j of store.journeys) {
-      const pos = api.pointAtYear(j, year); if (!pos) continue;
-      const col = GROUP_COLOR[j.group] || C.accent;
-      if (pos.glow) { dot(g, pos.x, pos.y, { r: 10, fill: col, op: 0.12 }); dot(g, pos.x, pos.y, { r: 6, fill: col, op: 0.24 }); }
-      dot(g, pos.x, pos.y, { r: 3.2, fill: pos.before ? C.dotIdle : col, stroke: C.paperSoft, sw: 0.8, op: pos.before ? 0.55 : 1 });
+
+    for (const journey of store.journeys) {
+      if (!activeIds.has(journey.id)) continue;
+      const waypoints = journey.waypoints.filter((waypoint) => waypoint.px != null);
+      if (waypoints.length < 2) continue;
+      let route = `M${waypoints[0].px},${waypoints[0].py}`;
+      for (let index = 1; index < waypoints.length; index++) {
+        route += `L${waypoints[index].px},${waypoints[index].py}`;
+      }
+      g.append("path")
+        .attr("class", "selected-testimony-route")
+        .attr("d", route)
+        .attr("fill", "none")
+        .attr("stroke", GROUP_COLOR[journey.group] || C.accent)
+        .attr("stroke-width", 1.6)
+        .attr("stroke-linecap", "round")
+        .attr("vector-effect", "non-scaling-stroke")
+        .attr("opacity", 0.64);
     }
 
     let activePoint = null;
-    for (const event of ctx.patternEvents || []) {
+    const rankedEvents = [...(ctx.patternEvents || [])]
+      .sort((a, b) => b.count - a.count || a.place.localeCompare(b.place));
+    const visibleEvents = rankedEvents.slice(0, size.w <= 820 ? 9 : 14);
+    if (activeEvent && !visibleEvents.some((event) => event.key === activeEvent.key)) {
+      visibleEvents.push(activeEvent);
+    }
+    for (const event of visibleEvents) {
       const point = projection([event.lng, event.lat]);
       if (!point) continue;
       const active = event.key === activeEvent?.key;
-      const radius = Math.min(16, 5 + Math.sqrt(event.count) * 2.2);
+      const radius = Math.min(12, 3.8 + Math.sqrt(event.count) * 1.5);
       if (active) {
-        dot(g, point[0], point[1], { r: radius + 7, fill: C.accent, op: 0.1 });
-        dot(g, point[0], point[1], { r: radius + 3, fill: "none", stroke: C.accent, sw: 1.4, op: 0.65 });
+        dot(g, point[0], point[1], { r: radius + 7, fill: C.accent, op: 0.08 });
+        dot(g, point[0], point[1], { r: radius + 3, fill: "none", stroke: C.accentDeep, sw: 1.5, op: 0.8 });
         activePoint = { x: point[0], y: point[1] };
       }
       const marker = dot(g, point[0], point[1], {
         r: radius,
-        fill: active ? C.accentDeep : C.paperSoft,
-        stroke: C.accent,
-        sw: active ? 2 : 1.2,
-        op: active ? 0.96 : 0.82,
+        fill: active ? C.accentDeep : "rgba(250,251,252,.9)",
+        stroke: active ? C.accentDeep : C.accentSoft,
+        sw: active ? 2 : 1,
+        op: active ? 0.98 : 0.76,
       });
       marker.attr("class", "pattern-event-marker")
+        .attr("role", "button")
+        .attr("tabindex", 0)
+        .attr("aria-label", `${event.year}, ${event.place}, ${event.count} ${event.count === 1 ? "testimony" : "testimonies"}`)
         .style("cursor", "pointer").attr("pointer-events", "all")
         .on("click", () => ctx.onEvent && ctx.onEvent(event.key))
+        .on("keydown", (keyboardEvent) => {
+          if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+            keyboardEvent.preventDefault();
+            if (ctx.onEvent) ctx.onEvent(event.key);
+          }
+        })
         .on("mouseenter", (pointerEvent) => showTip(
           pointerEvent,
           `${event.year} · ${event.place} · ${event.count} ${event.count === 1 ? "testimony" : "testimonies"}`,
         ))
         .on("mousemove", (pointerEvent) => moveTip(pointerEvent))
         .on("mouseleave", hideTip);
-      if (event.count > 1) {
+      if (active && event.count > 1) {
         label(g, point[0], point[1], `${event.count}`, {
           fs: 10,
           dy: -3,
@@ -829,7 +877,7 @@ export function createAtlas(container) {
         });
       }
     }
-    if (activePoint) moveCamera(activePoint, size.w <= 820 ? 1.2 : 1.35);
+    if (activePoint) moveCamera(activePoint, size.w <= 820 ? 1.1 : 1.18);
   }
 
   function drawOrigins(g) {
