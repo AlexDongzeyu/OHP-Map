@@ -1,8 +1,8 @@
-from pipeline.text import sentence_excerpt
-from pipeline import config
-
 import json
 import re
+
+from pipeline import config
+from pipeline.text import _ABBREVIATIONS, sentence_excerpt
 
 
 def test_sentence_excerpt_never_leaves_a_partial_sentence():
@@ -37,6 +37,20 @@ def test_sentence_excerpt_does_not_stop_at_abbreviations():
     assert sentence_excerpt(text, limit=75) == (
         "Mr. Bibla served with Maj. Smith in the U.S. Army near St. Catharines."
     )
+
+
+def test_python_browser_and_worker_share_the_same_abbreviations():
+    for relative in ("js/data.js", "worker/sync.js"):
+        source = (config.ROOT / relative).read_text(encoding="utf-8")
+        match = re.search(
+            r"const SENTENCE_ABBREVIATIONS = new Set\(\[(.*?)\]\);",
+            source,
+            re.DOTALL,
+        )
+        assert match
+        values = re.sub(r",\s*$", "", match.group(1))
+        javascript_values = set(json.loads(f"[{values}]"))
+        assert javascript_values == _ABBREVIATIONS
 
 
 def test_sentence_excerpt_can_include_the_next_nearby_sentence_end():

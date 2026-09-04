@@ -389,11 +389,16 @@ function serviceContext(store, journey) {
 }
 function recordingMeta(journey) {
   if (!journey.videoCount) return "";
-  const captionText = journey.transcriptStatus === "pending"
-    ? "caption audit pending"
-    : (journey.captionedVideoCount
-    ? `${journey.captionedVideoCount} with public captions`
-    : "no public caption track");
+  let captionText;
+  if (journey.transcriptStatus === "pending") {
+    captionText = "caption status pending";
+  } else if (journey.transcriptStatus === "unavailable") {
+    captionText = "caption status unavailable";
+  } else if (journey.captionedVideoCount) {
+    captionText = `${journey.captionedVideoCount} with public captions`;
+  } else {
+    captionText = "no public captions";
+  }
   return `<p class="recording-meta">
     <span>${journey.videoCount} interview ${journey.videoCount === 1 ? "chapter" : "chapters"}</span>
     <span>${captionText}</span>

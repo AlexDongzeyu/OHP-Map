@@ -2,6 +2,7 @@
 // rotating batch of existing profiles. New data is auto-extracted and remains unverified.
 import gazetteer from "../data/gazetteer.json";
 import geocodeCache from "../data/geocode_cache.json";
+import { mergeMediaCoverage } from "./media.js";
 
 const BASE = "https://ohp.crestwood.on.ca";
 const UA = "CrestwoodOHP-Map-Worker/2.0 (+https://github.com/AlexDongzeyu/OHP-Map)";
@@ -712,29 +713,15 @@ function toFeature(record) {
 
 function mergeFeature(existing, fresh) {
   if (existing.properties.review_status === "reviewed") {
-    const currentVideoCount = fresh.properties.video_count || 0;
-    const inventoryChanged =
-      existing.properties.video_inventory !== fresh.properties.video_inventory;
     return {
       ...existing,
       properties: {
         ...existing.properties,
-        video_count: currentVideoCount,
-        video_inventory: fresh.properties.video_inventory,
-        captioned_video_count: Math.min(
-          existing.properties.captioned_video_count || 0,
-          currentVideoCount,
-        ),
-        transcript_status: inventoryChanged
-          ? (currentVideoCount ? "pending" : "none")
-          : (existing.properties.transcript_status || fresh.properties.transcript_status || "none"),
+        ...mergeMediaCoverage(existing.properties, fresh.properties),
       },
     };
   }
   const waypoints = fresh.properties.waypoints || [];
-  const currentVideoCount = fresh.properties.video_count || 0;
-  const inventoryChanged =
-    existing.properties.video_inventory !== fresh.properties.video_inventory;
   const home = waypoints.find((waypoint) => waypoint.role === "birthplace") || waypoints[0];
   return {
     type: "Feature",
@@ -748,15 +735,7 @@ function mergeFeature(existing, fresh) {
       media_url: existing.properties.media_url || null,
       portrait: existing.properties.portrait || fresh.properties.portrait || null,
       portrait_rights: existing.properties.portrait_rights || fresh.properties.portrait_rights || null,
-      video_count: currentVideoCount,
-      video_inventory: fresh.properties.video_inventory,
-      captioned_video_count: Math.min(
-        existing.properties.captioned_video_count || 0,
-        currentVideoCount,
-      ),
-      transcript_status: inventoryChanged
-        ? (currentVideoCount ? "pending" : "none")
-        : (existing.properties.transcript_status || fresh.properties.transcript_status || "none"),
+      ...mergeMediaCoverage(existing.properties, fresh.properties),
       review_status: existing.properties.review_status || "pending",
       theme_tags: existing.properties.theme_tags?.length
         ? existing.properties.theme_tags

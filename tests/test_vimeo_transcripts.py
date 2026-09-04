@@ -1,6 +1,7 @@
 import json
 
 from pipeline import config, transcript_index
+from pipeline.vimeo_transcripts import _sync_video_inventory
 
 
 def _documents():
@@ -64,3 +65,16 @@ def test_transient_caption_errors_remain_pending():
         "videos": {"123": {"status": "error"}},
     })
     assert coverage["transcript_status"] == "pending"
+
+
+def test_resumed_audit_prunes_removed_video_ids():
+    entry = {
+        "video_count": 2,
+        "videos": {
+            "1": {"status": "captioned"},
+            "2": {"status": "no-public-captions"},
+        },
+    }
+    _sync_video_inventory(entry, ["1"])
+    assert entry["video_count"] == 1
+    assert set(entry["videos"]) == {"1"}

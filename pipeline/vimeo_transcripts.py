@@ -62,6 +62,16 @@ def _load_index() -> dict:
     }
 
 
+def _sync_video_inventory(entry: dict, video_ids: list[str]) -> None:
+    current_ids = set(video_ids)
+    entry["video_count"] = len(video_ids)
+    entry["videos"] = {
+        video_id: video
+        for video_id, video in entry.get("videos", {}).items()
+        if video_id in current_ids
+    }
+
+
 def _write_index(document: dict) -> None:
     document["updated_at"] = datetime.now(timezone.utc).isoformat()
     temporary = config.VIMEO_CAPTION_INDEX.with_suffix(".tmp")
@@ -167,13 +177,7 @@ def audit(
             "videos": {},
         })
         entry["archive_url"] = veteran["archive_url"]
-        entry["video_count"] = len(ids)
-        current_ids = set(ids)
-        entry["videos"] = {
-            video_id: video
-            for video_id, video in entry["videos"].items()
-            if video_id in current_ids
-        }
+        _sync_video_inventory(entry, ids)
         for video_id in ids:
             existing = entry["videos"].get(video_id, {})
             if refresh or existing.get("status") not in _FINAL_STATUSES:

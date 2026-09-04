@@ -242,8 +242,25 @@ const BASE = process.argv[2] || "http://localhost:8124";
         serviceMap.bio.length < 200 || /…$/.test(serviceMap.bio) ||
         !/[.!?][”"')\]]?$/.test(serviceMap.bio) ||
         !/interview chapters?/.test(serviceMap.recording || "") ||
+        !/no public captions/.test(serviceMap.recording || "") ||
         serviceMap.invalidPortrait) {
       throw new Error(`veteran service context is incomplete ${JSON.stringify(serviceMap)}`);
+    }
+  });
+  await check("unavailable Vimeo coverage is not reported as absent", async () => {
+    await page.$eval("#search", (input) => {
+      input.value = "Morris Adams";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await wait(250);
+    await page.waitForSelector("[data-survivor='adams-morris']", { timeout: 3000 });
+    await page.click("[data-survivor='adams-morris']");
+    const coverage = await page.$eval(
+      ".panel .recording-meta",
+      (element) => element.textContent.replace(/\s+/g, " ").trim(),
+    );
+    if (!/caption status unavailable/.test(coverage) || /no public captions/.test(coverage)) {
+      throw new Error(`unavailable caption coverage is misleading: ${coverage}`);
     }
   });
   await check("captioned veteran shows audited chapter coverage", async () => {
