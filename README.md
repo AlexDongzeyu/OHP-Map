@@ -5,8 +5,8 @@ An interactive memorial map of the whole **Crestwood Oral History Project**
 community members, and others** whom Crestwood students have interviewed. It turns
 hundreds of testimonies that are stored alphabetically — and so hide their own patterns —
 into one living map: a **Guided** scrollytelling story, a free **Explore** map (search,
-filter by community, click anyone), and a **Patterns** view with a year-driven historical
-war alignment layer, testimony journeys, and birthplace density.
+filter by community, click anyone), and a **Patterns** view with year-by-year historical
+territories from 1914–2026, wartime alignment, testimony journeys, and birthplace density.
 
 **Live data:** the map is populated with **real people across the archive's six
 categories**, scraped from the public OHP listings and auto-extracted from each public
@@ -196,9 +196,10 @@ geometry at the hometown (coordinate order **`[lng, lat]`**). Each waypoint keep
 **as-written** name and the **canonical** one. Properties also carry `review_status`
 (`pending`/`reviewed`) and `featured`. Also emitted: `place_index.json`
 (`canonical place → [survivor_id]`) and `connections.json` (each with a `verified` flag).
-`war_context.json` supplies the sourced 1914–1955 belligerent, occupation, and phase
-context used by Patterns and veteran routes; modern Natural Earth outlines remain visible
-for orientation rather than claiming exact historical borders.
+`war_context.json` supplies the sourced 1914–2026 belligerent and historical phase context.
+`historical_boundaries.json` contains compact, dated OpenHistoricalMap territory polygons;
+`historical_boundary_index.json` drives the change-density strip beneath the timeline.
+The reproducible builder lives in `tools/historical-boundaries/`.
 `geocode_cache.json` + `data/source/ohp_scraped.json` are committed so rebuilds are
 reproducible and offline. Validated against `data/schema/survivors.schema.json`.
 
@@ -293,7 +294,9 @@ by **Ilya Ilyankou & Jack Dougherty**; the visual direction is informed by the A
 Archives' *Transnational Remembrance* map. The vector-atlas front end and the
 ingest/extraction pipeline are custom. Built with **D3** (ISC) and **TopoJSON**
 (build-time, ISC); basemap geometry from **Natural Earth** via
-[**world-atlas**](https://github.com/topojson/world-atlas) (public domain); historical
+[**world-atlas**](https://github.com/topojson/world-atlas) (public domain); dated territory
+geometry from [**OpenHistoricalMap**](https://www.openhistoricalmap.org/copyright) (CC0);
+historical
 belligerent participation and entry/exit years derive from the
 [**Correlates of War Project Inter-State War Data v4.0**](https://correlatesofwar.org/data-sets/cow-war/);
 type set in

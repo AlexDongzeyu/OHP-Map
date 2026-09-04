@@ -8,6 +8,8 @@ const UA = "CrestwoodOHP-Map-Worker/2.0 (+https://github.com/AlexDongzeyu/OHP-Ma
 export const DATA_KEY = "survivors.geojson";
 export const STATUS_KEY = "ohp-sync-status.json";
 export const GAZETTEER_REVISION = gazetteer.revision;
+export const HISTORY_MIN_YEAR = 1914;
+export const HISTORY_MAX_YEAR = 2026;
 const SEEN_KEY = "ohp-seen-slugs.json";
 const FAILURE_KEY = "ohp-fetch-failures.json";
 const CURSOR_KEY = "ohp-refresh-cursor";
@@ -127,6 +129,8 @@ export async function syncSurvivors(env) {
         generator: "worker/sync.js",
         source: "cloudflare-live-sync",
         gazetteer_revision: GAZETTEER_REVISION,
+        time_min: HISTORY_MIN_YEAR,
+        time_max: HISTORY_MAX_YEAR,
         count: features.length,
         groups,
         group_order: GROUP_ORDER,
@@ -220,11 +224,26 @@ function mergeSeedPortraits(cached, seed) {
 }
 
 export async function ensureCurrentData(env, cached) {
-  if (cached.metadata?.gazetteer_revision === GAZETTEER_REVISION) return cached;
-  const seed = await loadSeedData(env);
-  const migrated = migrateCachedData(cached, seed);
-  await env.OHP_DATA.put(DATA_KEY, JSON.stringify(migrated));
-  return migrated;
+  let current = cached;
+  if (cached.metadata?.gazetteer_revision !== GAZETTEER_REVISION) {
+    const seed = await loadSeedData(env);
+    current = migrateCachedData(cached, seed);
+  }
+  if (
+    current.metadata?.time_min !== HISTORY_MIN_YEAR ||
+    current.metadata?.time_max !== HISTORY_MAX_YEAR
+  ) {
+    current = {
+      ...current,
+      metadata: {
+        ...(current.metadata || {}),
+        time_min: HISTORY_MIN_YEAR,
+        time_max: HISTORY_MAX_YEAR,
+      },
+    };
+  }
+  if (current !== cached) await env.OHP_DATA.put(DATA_KEY, JSON.stringify(current));
+  return current;
 }
 
 function migrateCachedData(cached, seed) {
@@ -281,6 +300,8 @@ function migrateCachedData(cached, seed) {
       reviewed,
       pending: features.length - reviewed,
       gazetteer_revision: GAZETTEER_REVISION,
+      time_min: HISTORY_MIN_YEAR,
+      time_max: HISTORY_MAX_YEAR,
       migrated_at: new Date().toISOString(),
     },
     features,

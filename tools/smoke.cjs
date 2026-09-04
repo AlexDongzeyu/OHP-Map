@@ -226,6 +226,10 @@ const BASE = process.argv[2] || "http://localhost:8124";
     await page.waitForSelector(".pattern-event-marker", { timeout: 5000 });
     await page.waitForSelector("[data-war-context]", { timeout: 5000 });
     await page.$eval(".scrubber .range", (el) => { el.value = "1944"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+    await page.waitForFunction(
+      () => document.documentElement.dataset.historicalBoundaries === "ready",
+      { timeout: 15000 },
+    );
     const yr = await page.$eval(".scrub-year", (el) => el.textContent);
     if (yr !== "1944") throw new Error("year=" + yr);
     const eventState = await page.evaluate(() => ({
@@ -233,9 +237,10 @@ const BASE = process.argv[2] || "http://localhost:8124";
       active: document.querySelectorAll(".event-card.on").length,
       markers: document.querySelectorAll(".pattern-event-marker").length,
       phase: document.querySelector(".war-brief > strong")?.textContent,
-      canada: document.querySelector("[data-country='Canada']")?.getAttribute("data-war-side"),
-      germany: document.querySelector("[data-country='Germany']")?.getAttribute("data-war-side"),
-      netherlands: document.querySelector("[data-country='Netherlands']")?.getAttribute("data-war-side"),
+      territories: document.querySelectorAll(".historical-territory").length,
+      canada: document.querySelector("[data-controller='Canada']")?.getAttribute("data-war-side"),
+      germany: document.querySelector("[data-controller='Germany']")?.getAttribute("data-war-side"),
+      occupied: document.querySelectorAll(".historical-territory[data-war-side='occupied']").length,
       veteranRoutes: document.querySelectorAll(".war-veteran-route").length,
     }));
     if (!eventState.cards || eventState.active !== 1 || eventState.markers < eventState.cards) {
@@ -244,10 +249,54 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (eventState.phase !== "Liberation from west and east" ||
         eventState.canada !== "coalition" ||
         eventState.germany !== "opposition" ||
-        eventState.netherlands !== "occupied" ||
+        eventState.territories < 140 ||
+        !eventState.occupied ||
         !eventState.veteranRoutes) {
       throw new Error(`historical war layer is incomplete ${JSON.stringify(eventState)}`);
     }
+    await page.$eval(".scrubber .range", (el) => { el.value = "1914"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+    const firstWorld = await page.evaluate(() => ({
+      phase: document.querySelector(".war-brief > strong")?.textContent,
+      austriaHungary: Boolean(document.querySelector("[data-territory='Austria-Hungary']")),
+      hash: location.hash,
+    }));
+    if (firstWorld.phase !== "War begins in Europe" ||
+        !firstWorld.austriaHungary ||
+        firstWorld.hash !== "#/patterns/1914") {
+      throw new Error(`1914 territory state is incorrect ${JSON.stringify(firstWorld)}`);
+    }
+    await page.$eval("[data-controller='United Kingdom']", (territory) => {
+      territory.dispatchEvent(new MouseEvent("click", {
+        bubbles: true,
+        clientX: 800,
+        clientY: 420,
+      }));
+    });
+    const controlFocus = await page.evaluate(() => ({
+      controlledAreas: document.querySelectorAll("[data-controller='United Kingdom']").length,
+      focusedOpacity: document.querySelector("[data-controller='United Kingdom']")?.getAttribute("opacity"),
+      otherOpacity: document.querySelector("[data-controller='Germany']")?.getAttribute("opacity"),
+    }));
+    if (controlFocus.controlledAreas < 10 ||
+        controlFocus.focusedOpacity !== "0.96" ||
+        controlFocus.otherOpacity !== "0.38") {
+      throw new Error(`territorial control focus failed ${JSON.stringify(controlFocus)}`);
+    }
+    await page.$eval("[data-controller='United Kingdom']", (territory) => {
+      territory.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.$eval(".scrubber .range", (el) => { el.value = "2026"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+    const present = await page.evaluate(() => ({
+      phase: document.querySelector(".war-brief > strong")?.textContent,
+      russia: Boolean(document.querySelector("[data-territory='Russia']")),
+      ukraine: Boolean(document.querySelector("[data-territory='Ukraine']")),
+      maximum: document.querySelector(".scrubber .range")?.max,
+    }));
+    if (present.phase !== "The map as it stands now" ||
+        !present.russia || !present.ukraine || present.maximum !== "2026") {
+      throw new Error(`current territory state is incorrect ${JSON.stringify(present)}`);
+    }
+    await page.$eval(".scrubber .range", (el) => { el.value = "1944"; el.dispatchEvent(new Event("input", { bubbles: true })); });
     const beforeYear = Number(yr);
     await page.click("[data-act='next-year']");
     const nextYear = await page.$eval(".scrub-year", (el) => Number(el.textContent));
@@ -260,7 +309,7 @@ const BASE = process.argv[2] || "http://localhost:8124";
     await page.waitForSelector(".about-wrap .about-grid", { timeout: 5000 });
   });
   await check("patterns deep link opens at the 1944 war map", async () => {
-    await page.goto(BASE + "/?deep-link=patterns#/patterns", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.goto(BASE + "/?deep-link=patterns#/patterns/1944", { waitUntil: "domcontentloaded", timeout: 40000 });
     await page.waitForSelector("[data-war-context]", { timeout: 15000 });
     const state = await page.evaluate(() => ({
       year: document.querySelector(".scrub-year")?.textContent,

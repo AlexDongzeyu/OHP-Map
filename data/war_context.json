@@ -1,5 +1,5 @@
 {
-  "_about": "A compact, year-driven historical alignment layer for the OHP Map. Belligerent participation and entry/exit years are derived from Correlates of War Inter-State War Data v4.0. Occupied and contested countries are broad annual context, not precise front lines. Present-day Natural Earth outlines remain visible for orientation; this file does not claim to reconstruct historical borders.",
+  "_about": "A compact, year-driven context layer for the OHP Map. Belligerent participation and entry/exit years are derived from Correlates of War Inter-State War Data v4.0. Occupied and contested countries are broad annual context, not precise front lines. Dated historical territory polygons are supplied separately from OpenHistoricalMap.",
   "sources": [
     {
       "label": "Correlates of War Project, Inter-State War Data v4.0",
@@ -14,7 +14,12 @@
     {
       "label": "Natural Earth",
       "url": "https://www.naturalearthdata.com/about/terms-of-use/",
-      "use": "Public-domain present-day country outlines used for orientation"
+      "use": "Public-domain fallback outlines used while historical geometry loads"
+    },
+    {
+      "label": "OpenHistoricalMap",
+      "url": "https://www.openhistoricalmap.org/copyright",
+      "use": "CC0 dated territory and administrative boundary polygons"
     }
   ],
   "periods": [
@@ -169,10 +174,10 @@
       "phase": "Liberation from west and east",
       "summary": "The Normandy landings opened a western front while Soviet armies advanced across eastern Europe. Canadian forces fought through France, Belgium, and the Netherlands.",
       "coalition_label": "Allied powers",
-      "opposition_label": "Axis powers",
-      "coalition": ["Australia", "Belgium", "Brazil", "Bulgaria", "Canada", "China", "France", "Greece", "India", "Italy", "Netherlands", "New Zealand", "Poland", "Romania", "Russia", "South Africa", "United Kingdom", "United States of America"],
-      "opposition": ["Austria", "Germany", "Hungary", "Japan", "Slovakia"],
-      "occupied": ["Albania", "Bosnia and Herz.", "Croatia", "Czechia", "Denmark", "Hungary", "Indonesia", "Latvia", "Lithuania", "Macedonia", "Malaysia", "Montenegro", "Myanmar", "Netherlands", "Norway", "Philippines", "Poland", "Serbia", "Slovenia"]
+      "opposition_label": "Axis powers and co-belligerents",
+      "coalition": ["Australia", "Belgium", "Brazil", "Canada", "China", "France", "India", "Italy", "Netherlands", "New Zealand", "Poland", "Russia", "South Africa", "United Kingdom", "United States of America"],
+      "opposition": ["Austria", "Bulgaria", "Finland", "Germany", "Hungary", "Japan", "Romania", "Slovakia"],
+      "occupied": ["Albania", "Bosnia and Herz.", "Croatia", "Czechia", "Denmark", "Greece", "Hungary", "Indonesia", "Italy", "Latvia", "Lithuania", "Macedonia", "Malaysia", "Montenegro", "Myanmar", "Netherlands", "Norway", "Philippines", "Poland", "Serbia", "Slovenia"]
     },
     {
       "start": 1945,
@@ -233,6 +238,110 @@
       "archive_conflict": null,
       "phase": "An armed peace",
       "summary": "Major fighting in Korea had stopped, but the peninsula remained divided and Canadian personnel continued to serve in the region.",
+      "coalition_label": null,
+      "opposition_label": null,
+      "coalition": [],
+      "opposition": [],
+      "occupied": []
+    },
+    {
+      "start": 1956,
+      "end": 1960,
+      "conflict": "Decolonization",
+      "archive_conflict": null,
+      "phase": "Empires begin to recede",
+      "summary": "New sovereign states appeared across Africa and Asia while Cold War alliances hardened. The boundary layer shows each mid-year territorial state.",
+      "coalition_label": null,
+      "opposition_label": null,
+      "coalition": [],
+      "opposition": [],
+      "occupied": []
+    },
+    {
+      "start": 1961,
+      "end": 1974,
+      "conflict": "Decolonization and Cold War",
+      "archive_conflict": null,
+      "phase": "A rapidly changing world map",
+      "summary": "Colonial administrations gave way to independent states while divided countries and Cold War frontiers remained.",
+      "coalition_label": null,
+      "opposition_label": null,
+      "coalition": [],
+      "opposition": [],
+      "occupied": []
+    },
+    {
+      "start": 1975,
+      "end": 1988,
+      "conflict": "Late Cold War",
+      "archive_conflict": null,
+      "phase": "Post-colonial borders settle",
+      "summary": "Most former colonies were independent, but divided states, occupations, and unresolved territorial claims continued.",
+      "coalition_label": null,
+      "opposition_label": null,
+      "coalition": [],
+      "opposition": [],
+      "occupied": []
+    },
+    {
+      "start": 1989,
+      "end": 1991,
+      "conflict": "End of the Cold War",
+      "archive_conflict": null,
+      "phase": "Walls fall and unions dissolve",
+      "summary": "German reunification and the dissolution of the Soviet Union transformed the political map in only a few years.",
+      "coalition_label": null,
+      "opposition_label": null,
+      "coalition": [],
+      "opposition": [],
+      "occupied": []
+    },
+    {
+      "start": 1992,
+      "end": 2000,
+      "conflict": "Post-Cold War",
+      "archive_conflict": null,
+      "phase": "New states and new borders",
+      "summary": "Successor states emerged from the Soviet Union, Yugoslavia, and Czechoslovakia while other borders remained disputed.",
+      "coalition_label": null,
+      "opposition_label": null,
+      "coalition": [],
+      "opposition": [],
+      "occupied": []
+    },
+    {
+      "start": 2001,
+      "end": 2010,
+      "conflict": "Early twenty-first century",
+      "archive_conflict": null,
+      "phase": "Borders amid intervention and independence",
+      "summary": "The territorial map changed more slowly, though new states and contested administrations continued to appear.",
+      "coalition_label": null,
+      "opposition_label": null,
+      "coalition": [],
+      "opposition": [],
+      "occupied": []
+    },
+    {
+      "start": 2011,
+      "end": 2019,
+      "conflict": "Recent world",
+      "archive_conflict": null,
+      "phase": "Independence and unresolved claims",
+      "summary": "South Sudan became independent while several borders, occupations, and recognition claims remained unsettled.",
+      "coalition_label": null,
+      "opposition_label": null,
+      "coalition": [],
+      "opposition": [],
+      "occupied": []
+    },
+    {
+      "start": 2020,
+      "end": 2026,
+      "conflict": "Present day",
+      "archive_conflict": null,
+      "phase": "The map as it stands now",
+      "summary": "The latest OpenHistoricalMap relations are shown through 2026, including disputed and time-bounded administrations where mapped.",
       "coalition_label": null,
       "opposition_label": null,
       "coalition": [],

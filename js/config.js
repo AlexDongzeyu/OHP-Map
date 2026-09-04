@@ -54,7 +54,7 @@ export const ROLE_LABEL = {
   resettlement: "New life",
 };
 
-export const TIME = { min: 1914, max: 1955 };
+export const TIME = { min: 1914, max: 2026 };
 
 export const SYSTEM_REDUCED_MOTION =
   window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;

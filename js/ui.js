@@ -260,7 +260,7 @@ export function patterns(store, state) {
   const topOrigin = [...store.originCounts.entries()].sort((a, b) => b[1] - a[1])[0];
   const toggle = `
     <div class="layer-toggle" role="tablist" aria-label="Pattern layer">
-      <button class="seg ${layer === "journeys" ? "on" : ""}" data-layer="journeys">War &amp; journeys</button>
+      <button class="seg ${layer === "journeys" ? "on" : ""}" data-layer="journeys">History &amp; journeys</button>
       <button class="seg ${layer === "origins" ? "on" : ""}" data-layer="origins">Where people came from</button>
     </div>`;
 
@@ -284,10 +284,10 @@ export function patterns(store, state) {
   return `
   <div class="ov ov-patterns">
     <div class="patterns-intro historical-patterns">
-      <h2 class="serif-xl">War &amp; testimony</h2>
-      <p class="kicker">Patterns · conflict, time, and place</p>
-      <p class="lede sm">Move year by year. Country shading shows who was fighting while
-        testimony routes remain visible above the historical context.</p>
+      <h2 class="serif-xl">Territory &amp; testimony</h2>
+      <p class="kicker">Patterns · borders, conflict, and memory</p>
+      <p class="lede sm">Move from 1914 to today. Dated boundaries show who controlled each
+        territory while testimony routes remain visible above the historical map.</p>
       ${toggle}
       <div class="pattern-events" data-pattern-events>${patternsEvents(store, state)}</div>
     </div>
@@ -295,7 +295,8 @@ export function patterns(store, state) {
       <div class="scrub-head"><span class="micro-label">Historical timeline</span>
         <span class="scrub-year" data-year>${state.scrubYear}</span></div>
       <input class="range" type="range" min="${store.time.min}" max="${store.time.max}" step="1" value="${state.scrubYear}" data-scrub aria-label="Year, ${store.time.min} to ${store.time.max}">
-      <div class="scrub-ticks"><span>${store.time.min}</span><span>1939</span><span>1945</span><span>${store.time.max}</span></div>
+      ${boundaryDensity(store, state.scrubYear)}
+      <div class="scrub-ticks"><span>${store.time.min}</span><span>1945</span><span>1989</span><span>${store.time.max}</span></div>
     </div>
   </div>`;
 }
@@ -359,8 +360,9 @@ export function about(store) {
         <div><h2>Credits</h2><p>Testimonies: the Crestwood Oral History Project
           (<a href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">ohp.crestwood.on.ca</a>).
           Historical belligerents: Correlates of War Project, Inter-State War Data v4.0.
-          Basemap geometry: Natural Earth via world-atlas; present-day outlines are retained
-          for orientation and do not claim to reconstruct every historical border. Built in memory of
+          Dated territory polygons: OpenHistoricalMap (CC0). Fallback basemap geometry:
+          Natural Earth via world-atlas. Historical relations are community-mapped and retain
+          their source dates and names. Built in memory of
           those who told their stories so that others would know. Source:
           <a href="https://github.com/AlexDongzeyu/OHP-Map" target="_blank" rel="noopener">AlexDongzeyu/OHP-Map</a>.</p></div>
       </div>
@@ -405,6 +407,7 @@ function serviceContext(store, journey) {
 function warBrief(store, year, previousDisabled, nextDisabled) {
   const context = store.warAt(year);
   if (!context) return "";
+  const boundary = store.historicalIndex.years.find((entry) => entry.year === year);
   const veterans = context.archive_conflict
     ? store.journeys.filter((journey) => (
       journey.group === "Military Veterans" &&
@@ -417,7 +420,11 @@ function warBrief(store, year, previousDisabled, nextDisabled) {
       <span><i class="opposition"></i>${esc(context.opposition_label)}</span>
       ${context.occupied.length ? '<span><i class="occupied"></i>Occupied / contested</span>' : ""}
       ${veterans ? `<span><i class="route"></i>${veterans} archive veterans</span>` : ""}
-    </div>` : "";
+    </div>` : `
+    <div class="war-legend" aria-label="Territorial map legend">
+      <span><i class="territory"></i>Dated territory</span>
+      <span><i class="route"></i>Testimony journey</span>
+    </div>`;
   return `<section class="war-brief" data-war-context>
     <div class="war-brief-top">
       <span class="micro-label">${esc(context.conflict)}</span>
@@ -434,8 +441,19 @@ function warBrief(store, year, previousDisabled, nextDisabled) {
     <strong>${esc(context.phase)}</strong>
     <p>${esc(context.summary)}</p>
     ${legend}
-    <small>Historical alignment on present-day outlines · COW v4.0</small>
+    <small>${boundary ? `${boundary.active} mapped territories · ` : ""}OpenHistoricalMap CC0 · boundaries at mid-year · war alignment spans the selected year · hover or tap to trace control</small>
   </section>`;
+}
+function boundaryDensity(store, selectedYear) {
+  const years = store.historicalIndex?.years || [];
+  const maximum = Math.max(1, ...years.map((entry) => entry.changes));
+  return `<div class="boundary-density" aria-label="Frequency of mapped territorial changes by year">
+    ${years.map((entry) => {
+      const height = Math.max(12, Math.round(entry.changes / maximum * 100));
+      return `<i data-boundary-year="${entry.year}" class="${entry.year === selectedYear ? "on" : ""}"
+        style="--change-height:${height}%" title="${entry.year}: ${entry.changes} mapped boundary changes"></i>`;
+    }).join("")}
+  </div>`;
 }
 function trimQuote(q) {
   const s = String(q).trim().replace(/\s+/g, " ");

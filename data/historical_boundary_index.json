@@ -1,0 +1,573 @@
+{
+  "source": "OpenHistoricalMap",
+  "source_license": "CC0",
+  "min_year": 1914,
+  "max_year": 2026,
+  "years": [
+    {
+      "year": 1914,
+      "active": 171,
+      "changes": 20
+    },
+    {
+      "year": 1915,
+      "active": 169,
+      "changes": 8
+    },
+    {
+      "year": 1916,
+      "active": 172,
+      "changes": 34
+    },
+    {
+      "year": 1917,
+      "active": 173,
+      "changes": 12
+    },
+    {
+      "year": 1918,
+      "active": 178,
+      "changes": 25
+    },
+    {
+      "year": 1919,
+      "active": 176,
+      "changes": 17
+    },
+    {
+      "year": 1920,
+      "active": 180,
+      "changes": 60
+    },
+    {
+      "year": 1921,
+      "active": 191,
+      "changes": 35
+    },
+    {
+      "year": 1922,
+      "active": 186,
+      "changes": 38
+    },
+    {
+      "year": 1923,
+      "active": 185,
+      "changes": 5
+    },
+    {
+      "year": 1924,
+      "active": 185,
+      "changes": 28
+    },
+    {
+      "year": 1925,
+      "active": 184,
+      "changes": 23
+    },
+    {
+      "year": 1926,
+      "active": 190,
+      "changes": 28
+    },
+    {
+      "year": 1927,
+      "active": 186,
+      "changes": 11
+    },
+    {
+      "year": 1928,
+      "active": 182,
+      "changes": 6
+    },
+    {
+      "year": 1929,
+      "active": 182,
+      "changes": 8
+    },
+    {
+      "year": 1930,
+      "active": 182,
+      "changes": 5
+    },
+    {
+      "year": 1931,
+      "active": 185,
+      "changes": 12
+    },
+    {
+      "year": 1932,
+      "active": 181,
+      "changes": 10
+    },
+    {
+      "year": 1933,
+      "active": 182,
+      "changes": 4
+    },
+    {
+      "year": 1934,
+      "active": 181,
+      "changes": 11
+    },
+    {
+      "year": 1935,
+      "active": 185,
+      "changes": 17
+    },
+    {
+      "year": 1936,
+      "active": 178,
+      "changes": 15
+    },
+    {
+      "year": 1937,
+      "active": 178,
+      "changes": 7
+    },
+    {
+      "year": 1938,
+      "active": 177,
+      "changes": 22
+    },
+    {
+      "year": 1939,
+      "active": 178,
+      "changes": 38
+    },
+    {
+      "year": 1940,
+      "active": 175,
+      "changes": 34
+    },
+    {
+      "year": 1941,
+      "active": 175,
+      "changes": 40
+    },
+    {
+      "year": 1942,
+      "active": 168,
+      "changes": 28
+    },
+    {
+      "year": 1943,
+      "active": 171,
+      "changes": 31
+    },
+    {
+      "year": 1944,
+      "active": 170,
+      "changes": 26
+    },
+    {
+      "year": 1945,
+      "active": 169,
+      "changes": 58
+    },
+    {
+      "year": 1946,
+      "active": 173,
+      "changes": 45
+    },
+    {
+      "year": 1947,
+      "active": 172,
+      "changes": 30
+    },
+    {
+      "year": 1948,
+      "active": 173,
+      "changes": 27
+    },
+    {
+      "year": 1949,
+      "active": 172,
+      "changes": 31
+    },
+    {
+      "year": 1950,
+      "active": 172,
+      "changes": 14
+    },
+    {
+      "year": 1951,
+      "active": 173,
+      "changes": 17
+    },
+    {
+      "year": 1952,
+      "active": 170,
+      "changes": 15
+    },
+    {
+      "year": 1953,
+      "active": 169,
+      "changes": 15
+    },
+    {
+      "year": 1954,
+      "active": 167,
+      "changes": 9
+    },
+    {
+      "year": 1955,
+      "active": 167,
+      "changes": 10
+    },
+    {
+      "year": 1956,
+      "active": 166,
+      "changes": 17
+    },
+    {
+      "year": 1957,
+      "active": 162,
+      "changes": 8
+    },
+    {
+      "year": 1958,
+      "active": 159,
+      "changes": 56
+    },
+    {
+      "year": 1959,
+      "active": 162,
+      "changes": 8
+    },
+    {
+      "year": 1960,
+      "active": 162,
+      "changes": 47
+    },
+    {
+      "year": 1961,
+      "active": 163,
+      "changes": 25
+    },
+    {
+      "year": 1962,
+      "active": 164,
+      "changes": 33
+    },
+    {
+      "year": 1963,
+      "active": 165,
+      "changes": 35
+    },
+    {
+      "year": 1964,
+      "active": 164,
+      "changes": 23
+    },
+    {
+      "year": 1965,
+      "active": 163,
+      "changes": 21
+    },
+    {
+      "year": 1966,
+      "active": 165,
+      "changes": 25
+    },
+    {
+      "year": 1967,
+      "active": 165,
+      "changes": 35
+    },
+    {
+      "year": 1968,
+      "active": 164,
+      "changes": 12
+    },
+    {
+      "year": 1969,
+      "active": 164,
+      "changes": 14
+    },
+    {
+      "year": 1970,
+      "active": 164,
+      "changes": 22
+    },
+    {
+      "year": 1971,
+      "active": 169,
+      "changes": 32
+    },
+    {
+      "year": 1972,
+      "active": 165,
+      "changes": 17
+    },
+    {
+      "year": 1973,
+      "active": 166,
+      "changes": 18
+    },
+    {
+      "year": 1974,
+      "active": 164,
+      "changes": 17
+    },
+    {
+      "year": 1975,
+      "active": 165,
+      "changes": 35
+    },
+    {
+      "year": 1976,
+      "active": 166,
+      "changes": 28
+    },
+    {
+      "year": 1977,
+      "active": 166,
+      "changes": 39
+    },
+    {
+      "year": 1978,
+      "active": 166,
+      "changes": 18
+    },
+    {
+      "year": 1979,
+      "active": 168,
+      "changes": 24
+    },
+    {
+      "year": 1980,
+      "active": 168,
+      "changes": 8
+    },
+    {
+      "year": 1981,
+      "active": 169,
+      "changes": 9
+    },
+    {
+      "year": 1982,
+      "active": 169,
+      "changes": 26
+    },
+    {
+      "year": 1983,
+      "active": 170,
+      "changes": 7
+    },
+    {
+      "year": 1984,
+      "active": 173,
+      "changes": 20
+    },
+    {
+      "year": 1985,
+      "active": 173,
+      "changes": 13
+    },
+    {
+      "year": 1986,
+      "active": 172,
+      "changes": 12
+    },
+    {
+      "year": 1987,
+      "active": 174,
+      "changes": 11
+    },
+    {
+      "year": 1988,
+      "active": 174,
+      "changes": 7
+    },
+    {
+      "year": 1989,
+      "active": 176,
+      "changes": 12
+    },
+    {
+      "year": 1990,
+      "active": 178,
+      "changes": 22
+    },
+    {
+      "year": 1991,
+      "active": 178,
+      "changes": 33
+    },
+    {
+      "year": 1992,
+      "active": 195,
+      "changes": 20
+    },
+    {
+      "year": 1993,
+      "active": 197,
+      "changes": 11
+    },
+    {
+      "year": 1994,
+      "active": 197,
+      "changes": 11
+    },
+    {
+      "year": 1995,
+      "active": 197,
+      "changes": 0
+    },
+    {
+      "year": 1996,
+      "active": 198,
+      "changes": 16
+    },
+    {
+      "year": 1997,
+      "active": 197,
+      "changes": 8
+    },
+    {
+      "year": 1998,
+      "active": 198,
+      "changes": 11
+    },
+    {
+      "year": 1999,
+      "active": 197,
+      "changes": 12
+    },
+    {
+      "year": 2000,
+      "active": 198,
+      "changes": 12
+    },
+    {
+      "year": 2001,
+      "active": 198,
+      "changes": 1
+    },
+    {
+      "year": 2002,
+      "active": 196,
+      "changes": 7
+    },
+    {
+      "year": 2003,
+      "active": 198,
+      "changes": 6
+    },
+    {
+      "year": 2004,
+      "active": 200,
+      "changes": 12
+    },
+    {
+      "year": 2005,
+      "active": 198,
+      "changes": 2
+    },
+    {
+      "year": 2006,
+      "active": 199,
+      "changes": 5
+    },
+    {
+      "year": 2007,
+      "active": 201,
+      "changes": 9
+    },
+    {
+      "year": 2008,
+      "active": 201,
+      "changes": 3
+    },
+    {
+      "year": 2009,
+      "active": 201,
+      "changes": 2
+    },
+    {
+      "year": 2010,
+      "active": 201,
+      "changes": 0
+    },
+    {
+      "year": 2011,
+      "active": 201,
+      "changes": 3
+    },
+    {
+      "year": 2012,
+      "active": 204,
+      "changes": 6
+    },
+    {
+      "year": 2013,
+      "active": 202,
+      "changes": 2
+    },
+    {
+      "year": 2014,
+      "active": 202,
+      "changes": 0
+    },
+    {
+      "year": 2015,
+      "active": 202,
+      "changes": 4
+    },
+    {
+      "year": 2016,
+      "active": 202,
+      "changes": 0
+    },
+    {
+      "year": 2017,
+      "active": 202,
+      "changes": 0
+    },
+    {
+      "year": 2018,
+      "active": 202,
+      "changes": 14
+    },
+    {
+      "year": 2019,
+      "active": 202,
+      "changes": 6
+    },
+    {
+      "year": 2020,
+      "active": 202,
+      "changes": 0
+    },
+    {
+      "year": 2021,
+      "active": 202,
+      "changes": 6
+    },
+    {
+      "year": 2022,
+      "active": 202,
+      "changes": 2
+    },
+    {
+      "year": 2023,
+      "active": 202,
+      "changes": 3
+    },
+    {
+      "year": 2024,
+      "active": 201,
+      "changes": 2
+    },
+    {
+      "year": 2025,
+      "active": 201,
+      "changes": 0
+    },
+    {
+      "year": 2026,
+      "active": 201,
+      "changes": 2
+    }
+  ]
+}

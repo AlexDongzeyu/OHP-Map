@@ -22,10 +22,10 @@ OUT_GEOJSON = DATA / "survivors.geojson"
 OUT_PLACE_INDEX = DATA / "place_index.json"
 OUT_CONNECTIONS = DATA / "connections.json"
 
-# Time window the front-end scrubber spans (doc 01 / F10). Widened to cover veterans
-# (WWII through Korea) as well as Holocaust survivors.
+# Time window spans the historical territory layer while testimony events remain sparse
+# outside the years explicitly dated in the archive.
 TIME_MIN = 1914
-TIME_MAX = 1955
+TIME_MAX = 2026
 
 # WordPress source of truth (doc 04). We only ever READ.
 WP_BASE = "https://ohp.crestwood.on.ca"

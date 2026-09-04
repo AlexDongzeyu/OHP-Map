@@ -24,8 +24,9 @@ SOFTWARE.
 
 Third-party components retain their own licenses (kept in /vendor):
   - D3 (d3.min.js) — ISC
-  - TopoJSON client (build-time only) — ISC
+  - TopoJSON client and server — ISC
   - world-atlas / Natural Earth basemap geometry — public domain
+  - OpenHistoricalMap dated territory geometry — CC0
   - Spectral & Public Sans typefaces — SIL Open Font License 1.1
 Survivor testimony content belongs to the Crestwood Oral History Project and the
 survivors and their families; it is used here only as short excerpts that link back

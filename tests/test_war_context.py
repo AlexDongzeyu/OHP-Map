@@ -22,7 +22,7 @@ def _at(context, year):
 
 def test_historical_periods_cover_every_timeline_year_once():
     context, _ = _load()
-    for year in range(1914, 1956):
+    for year in range(1914, 2027):
         _at(context, year)
 
 
@@ -56,6 +56,8 @@ def test_key_war_years_have_expected_alignments():
     assert second_world_war["archive_conflict"] == "Second World War"
     assert "Canada" in second_world_war["coalition"]
     assert "Germany" in second_world_war["opposition"]
+    assert {"Bulgaria", "Finland", "Romania"} <= set(second_world_war["opposition"])
+    assert second_world_war["opposition_label"] == "Axis powers and co-belligerents"
     assert "Netherlands" in second_world_war["occupied"]
 
     opening_western_campaign = _at(context, 1940)
@@ -73,8 +75,57 @@ def test_key_war_years_have_expected_alignments():
 
 def test_nonwar_periods_do_not_claim_belligerents():
     context, _ = _load()
-    for year in (1925, 1948, 1955):
+    for year in (1925, 1948, 1955, 1989, 2026):
         period = _at(context, year)
         assert period["archive_conflict"] is None
         assert period["coalition"] == []
         assert period["opposition"] == []
+
+
+def test_historical_topology_contains_dated_control_areas():
+    topology = json.loads(
+        (config.DATA / "historical_boundaries.json").read_text(encoding="utf-8"),
+    )
+    assert topology["type"] == "Topology"
+    assert topology["metadata"]["source_license"] == "CC0"
+    territories = topology["objects"]["territories"]["geometries"]
+    assert len(territories) > 1000
+    assert all(
+        territory["properties"].get("name") and
+        isinstance(territory["properties"].get("start"), (int, float))
+        for territory in territories
+    )
+    controllers = {
+        territory["properties"]["name"]: territory["properties"]["controller"]
+        for territory in territories
+    }
+    assert controllers["Dominion of Canada"] == "Canada"
+    assert controllers["British Raj"] == "United Kingdom"
+    assert controllers["United States"] == "United States of America"
+    assert controllers["United States of Venezuela"] == "United States of Venezuela"
+
+    def names_at(year):
+        instant = year + 0.5
+        return {
+            territory["properties"]["name"]
+            for territory in territories
+            if territory["properties"]["start"] <= instant and (
+                territory["properties"]["end"] is None or
+                territory["properties"]["end"] > instant
+            )
+        }
+
+    assert {"Austria-Hungary", "German Reich", "Dominion of Canada"} <= names_at(1914)
+    assert {"German Reich", "Soviet Union", "Canada"} <= names_at(1944)
+    assert {"North Korea (1948-1953)", "South Korea"} <= names_at(1951)
+    assert {"Canada", "Germany", "Russia", "Ukraine"} <= names_at(2026)
+
+
+def test_historical_index_covers_every_year_and_marks_changes():
+    index = json.loads(
+        (config.DATA / "historical_boundary_index.json").read_text(encoding="utf-8"),
+    )
+    assert index["source_license"] == "CC0"
+    assert [entry["year"] for entry in index["years"]] == list(range(1914, 2027))
+    assert all(entry["active"] >= 140 for entry in index["years"])
+    assert any(entry["changes"] >= 30 for entry in index["years"])

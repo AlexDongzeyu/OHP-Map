@@ -110,11 +110,12 @@ function toJourney(props) {
 }
 
 export async function loadData() {
-  const [geojson, placeIndex, connections, warContext] = await Promise.all([
+  const [geojson, placeIndex, connections, warContext, historicalIndex] = await Promise.all([
     getJSON("survivors.geojson"),
     getJSON("place_index.json"),
     getJSON("connections.json"),
     getJSON("war_context.json"),
+    getJSON("historical_boundary_index.json"),
   ]);
 
   const journeys = geojson.features.map((f) => toJourney(f.properties));
@@ -182,8 +183,12 @@ export async function loadData() {
     placeCount: places.size,
     shared: sharedPlaces(journeys),
     defaultGuidedId: richDefault ? richDefault.id : (journeys[0] && journeys[0].id),
-    time: { min: meta.time_min || TIME.min, max: meta.time_max || TIME.max },
+    time: {
+      min: Math.min(meta.time_min || TIME.min, historicalIndex.min_year),
+      max: Math.max(meta.time_max || TIME.max, historicalIndex.max_year),
+    },
     warContext,
+    historicalIndex,
     warAt,
     warForJourney,
   };

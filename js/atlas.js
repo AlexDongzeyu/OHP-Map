@@ -13,16 +13,20 @@
 import { C, GROUP_COLOR, motionEnabled, SYSTEM_REDUCED_MOTION } from "./config.js";
 
 const d3 = window.d3;
+const topojson = window.topojson;
 
 export function createAtlas(container) {
   let world = null;
-  let svg, globeG, camera, countriesG, overlayG, countrySel = null;
+  let svg, globeG, camera, countriesG, historicalG, historicalLabelsG, overlayG, countrySel = null;
   let projection, path, gProjection, gPath;
   let size = { w: 0, h: 0 }, currentK = 1;
   let store = null, tipEl = null, zoom = null;
   let view = null, rotateRAF = null, rot = [-40, -32, 0];
   let globeRoutePool = [], globeRouteBatch = [], globeRouteCursor = 0;
   let globeRouteChangedAt = 0, globePhase = 0;
+  let historicalFeatures = null, historicalPromise = null;
+  let currentTerritoryPeriod = null;
+  let hoveredController = null, pinnedController = null;
   const api = {};
 
   api.ready = (async function init() {
@@ -51,7 +55,10 @@ export function createAtlas(container) {
       .attr("width", "100%").attr("height", "100%").attr("fill", C.ocean);
     globeG = svg.append("g").attr("class", "globe").style("display", "none");
     camera = svg.append("g").attr("class", "camera").style("transform-origin", "0 0");
-    countriesG = camera.append("g");
+    countriesG = camera.append("g").attr("class", "modern-countries");
+    historicalG = camera.append("g").attr("class", "historical-territories").style("display", "none");
+    historicalLabelsG = camera.append("g").attr("class", "historical-labels")
+      .style("display", "none").style("pointer-events", "none");
     overlayG = camera.append("g");
 
     const interruptCamera = () => svg.interrupt().interrupt("camera");
@@ -67,7 +74,7 @@ export function createAtlas(container) {
 
   function rescale() {
     overlayG.selectAll("[data-r]").attr("r", function () { return +this.getAttribute("data-r") / currentK; });
-    overlayG.selectAll("[data-fs]").attr("font-size", function () { return (+this.getAttribute("data-fs") / currentK) + "px"; });
+    camera.selectAll("[data-fs]").attr("font-size", function () { return (+this.getAttribute("data-fs") / currentK) + "px"; });
     overlayG.selectAll("[data-y0]").attr("y", function () {
       return +this.getAttribute("data-y0") - (+this.getAttribute("data-dy")) / currentK;
     });
@@ -246,6 +253,201 @@ export function createAtlas(container) {
       })
       .on("mousemove.war", (event) => moveTip(event))
       .on("mouseleave.war", hideTip);
+  }
+
+  function ensureHistoricalBoundaries() {
+    if (historicalFeatures || historicalPromise) return historicalPromise;
+    document.documentElement.dataset.historicalBoundaries = "loading";
+    historicalPromise = fetch("data/historical_boundaries.json", { cache: "force-cache" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Historical boundaries failed to load: ${response.status}`);
+        return response.json();
+      })
+      .then((topology) => {
+        if (!topojson?.feature || !topology.objects?.territories) {
+          throw new Error("Historical boundary topology is invalid or TopoJSON is unavailable");
+        }
+        historicalFeatures = topojson.feature(topology, topology.objects.territories).features;
+        document.documentElement.dataset.historicalBoundaries = "ready";
+        if (api._last) api._last();
+        return historicalFeatures;
+      })
+      .catch((error) => {
+        document.documentElement.dataset.historicalBoundaries = "error";
+        console.error(error);
+        return null;
+      });
+    return historicalPromise;
+  }
+
+  function territoryStatus(feature, period) {
+    if (!period) return "neutral";
+    const { controller, name, kind } = feature.properties;
+    if ((period.occupied || []).includes(controller) || (period.occupied || []).includes(name)) {
+      return "occupied";
+    }
+    if (kind === "occupation") return "occupied";
+    if ((period.coalition || []).includes(controller)) return "coalition";
+    if ((period.opposition || []).includes(controller)) return "opposition";
+    return "neutral";
+  }
+
+  function territoryFill(feature, period) {
+    const status = territoryStatus(feature, period);
+    if (status === "coalition") return C.warCoalition;
+    if (status === "opposition") return C.warOpposition;
+    if (status === "occupied") return "url(#war-occupied)";
+    const token = String(feature.properties.controller || feature.properties.name);
+    let hash = 0;
+    for (let index = 0; index < token.length; index++) hash = ((hash << 5) - hash + token.charCodeAt(index)) | 0;
+    return ["#D6DEE3", "#CFD9DF", "#DCE3E6", "#C8D4DB"][Math.abs(hash) % 4];
+  }
+
+  function territoryYears(feature) {
+    const start = Math.max(1, Math.floor(feature.properties.start));
+    const end = feature.properties.end == null ? "present" : Math.max(start, Math.ceil(feature.properties.end) - 1);
+    return `${start}–${end}`;
+  }
+
+  function territoryDescription(feature) {
+    const { name, controller, kind } = feature.properties;
+    const control = controller && controller !== name ? ` · administered by ${controller}` : "";
+    const type = kind ? ` · ${String(kind).replaceAll("_", " ")}` : "";
+    const status = territoryStatus(feature, currentTerritoryPeriod);
+    const alignment = status === "coalition"
+      ? currentTerritoryPeriod?.coalition_label
+      : (status === "opposition"
+        ? currentTerritoryPeriod?.opposition_label
+        : (status === "occupied" ? "occupied / contested" : null));
+    return `${name}${control}${type} · ${territoryYears(feature)}${alignment ? ` · ${alignment}` : ""}`;
+  }
+
+  function emphasizeTerritories() {
+    const territories = historicalG.selectAll(".historical-territory");
+    const requested = pinnedController || hoveredController;
+    const controller = requested && territories.data().some(
+      (feature) => feature.properties.controller === requested,
+    ) ? requested : null;
+    territories
+      .attr("opacity", (feature) => (
+        controller && feature.properties.controller !== controller ? 0.38 : 0.96
+      ))
+      .attr("stroke", (feature) => (
+        controller && feature.properties.controller === controller ? C.accentDeep : C.warBorder
+      ))
+      .attr("stroke-width", (feature) => (
+        controller && feature.properties.controller === controller ? 1.25 : 0.55
+      ));
+  }
+
+  function renderHistoricalLabels(features) {
+    const byName = new Map();
+    for (const feature of features) {
+      const name = feature.properties.name;
+      const area = Number(feature.properties.area_km2) || d3.geoArea(feature);
+      if (!byName.has(name) || area > byName.get(name).area) byName.set(name, { feature, area });
+    }
+    const limit = size.w <= 820 ? 0 : 15;
+    const labels = [...byName.values()]
+      .filter((entry) => entry.area > 120000)
+      .sort((a, b) => b.area - a.area)
+      .slice(0, limit)
+      .map((entry) => {
+        const point = path.centroid(entry.feature);
+        return { ...entry, x: point[0], y: point[1] };
+      })
+      .filter((entry) => Number.isFinite(entry.x) && Number.isFinite(entry.y));
+    historicalLabelsG.selectAll("text").data(labels, (entry) => entry.feature.properties.id).join(
+      (enter) => enter.append("text")
+        .attr("text-anchor", "middle")
+        .attr("paint-order", "stroke")
+        .attr("stroke", "rgba(241,243,245,.92)")
+        .attr("stroke-width", 3)
+        .attr("stroke-linejoin", "round")
+        .attr("fill", C.anchorInk)
+        .attr("font-family", "'Public Sans',sans-serif")
+        .attr("font-weight", 600)
+        .attr("letter-spacing", ".05em"),
+      (update) => update,
+      (exit) => exit.remove(),
+    )
+      .attr("x", (entry) => entry.x)
+      .attr("y", (entry) => entry.y)
+      .attr("data-fs", 9)
+      .attr("font-size", `${9 / currentK}px`)
+      .text((entry) => {
+        const name = entry.feature.properties.name
+          .replace(/^Dominion of /i, "")
+          .replace(/^United Kingdom of Great Britain and Ireland$/i, "United Kingdom");
+        return (name.length > 26 ? `${name.slice(0, 24)}…` : name).toUpperCase();
+      });
+  }
+
+  function showHistoricalBoundaries(year, period) {
+    currentTerritoryPeriod = period;
+    if (!historicalFeatures) {
+      historicalG.style("display", "none");
+      historicalLabelsG.style("display", "none");
+      countriesG.style("display", null);
+      ensureHistoricalBoundaries();
+      return false;
+    }
+    const instant = year + 0.5;
+    const active = historicalFeatures
+      .filter((feature) => (
+        feature.properties.start <= instant &&
+        (feature.properties.end == null || feature.properties.end > instant)
+      ))
+      .sort((a, b) => Number(a.properties.kind === "occupation") - Number(b.properties.kind === "occupation"));
+    countriesG.style("display", "none");
+    historicalG.style("display", null);
+    historicalLabelsG.style("display", null);
+    historicalG.selectAll(".historical-territory").data(active, (feature) => feature.properties.id).join(
+      (enter) => enter.append("path")
+        .attr("class", "historical-territory")
+        .attr("vector-effect", "non-scaling-stroke")
+        .style("cursor", "pointer")
+        .on("mouseenter.territory", (event, feature) => {
+          hoveredController = feature.properties.controller;
+          emphasizeTerritories();
+          showTip(event, territoryDescription(feature));
+        })
+        .on("mousemove.territory", (event) => moveTip(event))
+        .on("mouseleave.territory", () => {
+          hoveredController = null;
+          emphasizeTerritories();
+          hideTip();
+        })
+        .on("click.territory", (event, feature) => {
+          event.stopPropagation();
+          const controller = feature.properties.controller;
+          pinnedController = pinnedController === controller ? null : controller;
+          emphasizeTerritories();
+          showTip(event, territoryDescription(feature));
+        }),
+      (update) => update,
+      (exit) => exit.remove(),
+    )
+      .order()
+      .attr("d", path)
+      .attr("fill", (feature) => territoryFill(feature, period))
+      .attr("data-controller", (feature) => feature.properties.controller)
+      .attr("data-territory", (feature) => feature.properties.name)
+      .attr("data-war-side", (feature) => territoryStatus(feature, period));
+    emphasizeTerritories();
+    renderHistoricalLabels(active);
+    return true;
+  }
+
+  function hideHistoricalBoundaries() {
+    currentTerritoryPeriod = null;
+    hoveredController = null;
+    pinnedController = null;
+    historicalG.style("display", "none");
+    historicalLabelsG.style("display", "none");
+    countriesG.style("display", null);
+    document.documentElement.dataset.historicalBoundaries =
+      historicalFeatures ? "inactive" : (historicalPromise ? "loading" : "idle");
   }
 
   function buildGlobeRoutePool() {
@@ -434,9 +636,19 @@ export function createAtlas(container) {
     showGlobe(false);
     const interactive = v === "explore" || v === "patterns";
     svg.style("pointer-events", interactive ? "auto" : "none");
-    if (v === "patterns" && ctx.patternsLayer === "origins") paintChoropleth(true);
-    else if (ctx.warPeriod) paintWarContext(ctx.warPeriod);
-    else paintChoropleth(false);
+    const historicalReady = ctx.boundaryYear != null
+      ? showHistoricalBoundaries(ctx.boundaryYear, ctx.warPeriod)
+      : (hideHistoricalBoundaries(), false);
+    if (v === "patterns" && ctx.patternsLayer === "origins") {
+      hideHistoricalBoundaries();
+      paintChoropleth(true);
+    } else if (historicalReady) {
+      paintChoropleth(false);
+    } else if (ctx.warPeriod) {
+      paintWarContext(ctx.warPeriod);
+    } else {
+      paintChoropleth(false);
+    }
     if (v === "guided") {
       if (changed) clearOverlay();
       drawGuided(ctx);

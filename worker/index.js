@@ -11,6 +11,8 @@
 import {
   DATA_KEY,
   GAZETTEER_REVISION,
+  HISTORY_MAX_YEAR,
+  HISTORY_MIN_YEAR,
   STATUS_KEY,
   ensureCurrentData,
   syncSurvivors,
@@ -34,7 +36,11 @@ export default {
       const cached = await env.OHP_DATA.get(DATA_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
-        const current = parsed.metadata?.gazetteer_revision === GAZETTEER_REVISION
+        const current = (
+          parsed.metadata?.gazetteer_revision === GAZETTEER_REVISION &&
+          parsed.metadata?.time_min === HISTORY_MIN_YEAR &&
+          parsed.metadata?.time_max === HISTORY_MAX_YEAR
+        )
           ? cached
           : JSON.stringify(await ensureCurrentData(env, parsed));
         return new Response(current, {

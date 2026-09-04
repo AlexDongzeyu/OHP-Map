@@ -89,12 +89,19 @@ function atlasCtx() {
   const guided = store.byId.get(state.guidedId);
   const selected = store.byId.get(state.selectedId);
   let warPeriod = null;
+  let boundaryYear = null;
   if (state.view === "patterns" && state.patternsLayer === "journeys") {
     warPeriod = store.warAt(state.scrubYear);
+    boundaryYear = state.scrubYear;
   } else if (state.view === "guided" && guided) {
-    warPeriod = store.warForJourney(guided, guided.waypoints[state.guidedIndex]?.year);
+    const waypointYear = guided.waypoints[state.guidedIndex]?.year;
+    warPeriod = store.warForJourney(guided, waypointYear);
+    boundaryYear = warPeriod && waypointYear >= warPeriod.start && waypointYear <= warPeriod.end
+      ? waypointYear
+      : guided.serviceYear;
   } else if (state.view === "explore" && selected) {
     warPeriod = store.warForJourney(selected);
+    boundaryYear = warPeriod ? selected.serviceYear : null;
   }
   return {
     selectedId: state.selectedId,
@@ -106,6 +113,7 @@ function atlasCtx() {
     patternEvents,
     activePatternEvent: patternEvents.find((event) => event.key === state.patternEventKey) || patternEvents[0] || null,
     warPeriod,
+    boundaryYear,
     matches: matchPredicate(),
     onSelect: (id) => selectSurvivor(id),
     onEvent: (key) => setPatternEvent(key),
@@ -160,7 +168,10 @@ function go(view) {
   if (!VIEWS.includes(view)) view = "landing";
   state.view = view;
   if (view === "guided" && !state.guidedId) state.guidedId = store.defaultGuidedId;
-  setHash(view === "landing" ? "" : `#/${view}`);
+  const hash = view === "landing" ? "" : (
+    view === "patterns" ? `#/patterns/${state.scrubYear}` : `#/${view}`
+  );
+  setHash(hash);
   render();
 }
 function startGuided(id) {
@@ -211,6 +222,9 @@ function setLayer(layer) {
 function setScrub(year) {
   state.scrubYear = Math.max(store.time.min, Math.min(store.time.max, year));
   state.patternEventKey = eventsForYear()[0]?.key || null;
+  if (state.view === "patterns") {
+    history.replaceState(null, "", `#/patterns/${state.scrubYear}`);
+  }
   refreshPatternEvents();
   atlas.render("patterns", atlasCtx());
   if (!state.patternEventKey) atlas.resetCamera();
@@ -221,6 +235,7 @@ function setPatternEvent(key) {
   if (!event) return;
   state.scrubYear = event.year;
   state.patternEventKey = event.key;
+  history.replaceState(null, "", `#/patterns/${state.scrubYear}`);
   refreshPatternEvents();
   atlas.render("patterns", atlasCtx());
 }
@@ -246,6 +261,9 @@ function refreshPatternEvents() {
   });
   const range = document.querySelector("[data-scrub]");
   if (range) range.value = state.scrubYear;
+  document.querySelectorAll("[data-boundary-year]").forEach((marker) => {
+    marker.classList.toggle("on", Number(marker.dataset.boundaryYear) === state.scrubYear);
+  });
   motion.animatePatternEvent();
 }
 
@@ -339,6 +357,13 @@ function route() {
   if (kind === "place" && value) {
     const found = store.journeys.find((j) => j.waypoints.some((w) => slug(w.canonical) === value));
     state.view = "explore"; state.selectedId = found ? found.id : null; render(); return;
+  }
+  if (kind === "patterns" && value && /^\d{4}$/.test(value)) {
+    state.scrubYear = Math.max(store.time.min, Math.min(store.time.max, Number(value)));
+    state.patternEventKey = eventsForYear()[0]?.key || null;
+    state.view = "patterns";
+    render();
+    return;
   }
   if (VIEWS.includes(kind)) { state.view = kind; render(); return; }
   state.view = "landing"; render();
