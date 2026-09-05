@@ -44,6 +44,23 @@ supports country/place search, dated administration details and flags, layer con
 historical/current comparison, year playback, and shareable views. WordPress remains
 the source; the Cloudflare Worker keeps the public inventory current.
 
+Community checkboxes include or exclude only the named group. **Select all**, **Clear
+selection**, and **Reset filters** are explicit actions. Searches match names, current
+place names, and source spellings. A country in **Route origins** opens its exact account
+cohort, not every biography that mentions that country; those filters can be shared in
+an Explore URL.
+
+Each account has persistent navigation to its text, photographs, interview chapters,
+and places. The map shows only that selected account, labels current versus historical
+borders, and explains when there is not enough evidence to draw a route. A chapter link
+to OHP is not a guarantee of available playback.
+
+Historical search asks visitors to choose between ambiguous results. If the dated
+geometry fails to load, a visible notice identifies the neutral, present-day basemap and
+offers a retry without resetting the year or layers. About and the year-context sources
+include a readable boundary-audit summary, with the underlying report labelled as a
+technical JSON download.
+
 ---
 
 ## Quick start (offline, ~2 minutes)

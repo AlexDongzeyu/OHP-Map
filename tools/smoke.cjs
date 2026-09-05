@@ -346,7 +346,25 @@ function assertCounterMotion(label, { targets, samples }) {
       input.value = ""; input.dispatchEvent(new Event("input", { bubbles: true }));
     });
   });
-  await check("explore: group chips + grouped rail", async () => {
+  await check("keyboard skip keeps the current route and reaches main content", async () => {
+    for (const selector of [".brand", ".nav-tab[data-view='patterns']", ".nav-plain[data-view='about']", ".nav-tab[data-view='explore']"]) {
+      await page.click(selector);
+      await wait(650);
+      const hash = await page.evaluate(() => location.hash);
+      await page.$eval(".skip-link", (link) => link.focus());
+      await page.keyboard.press("Enter");
+      await wait(100);
+      const skipped = await page.evaluate(() => ({
+        hash: location.hash,
+        inMain: Boolean(document.activeElement.closest("main#overlay")),
+        mapsAsApplications: document.querySelectorAll("#map[role='application']").length,
+      }));
+      if (skipped.hash !== hash || !skipped.inMain || skipped.mapsAsApplications) {
+        throw new Error(`skip navigation changed the page ${JSON.stringify(skipped)}`);
+      }
+    }
+  });
+  await check("explore: native community filters and grouped rail", async () => {
     await page.click(".nav-tab[data-view='explore']");
     await page.waitForSelector(".rail .gchip", { timeout: 5000 });
     await page.waitForSelector(".rail .rail-ghead", { timeout: 5000 });
@@ -369,14 +387,30 @@ function assertCounterMotion(label, { targets, samples }) {
     await page.click(".collection-filters summary");
     await page.click("[data-group='Military Veterans']");
     const filtered = await page.evaluate(() => ({
-      selected: [...document.querySelectorAll(".gchip[aria-pressed='true']")].map((button) => button.dataset.group),
+      selected: [...document.querySelectorAll("[data-group]:checked")].map((input) => input.dataset.group),
       groups: [...document.querySelectorAll(".rail-ghead")].map((element) => element.textContent.trim()),
     }));
-    if (filtered.selected.length !== 1 || filtered.selected[0] !== "Military Veterans" ||
-        filtered.groups.length !== 1 || !filtered.groups[0].startsWith("Military Veterans")) {
+    if (filtered.selected.length !== 4 || filtered.selected.includes("Military Veterans") ||
+        filtered.groups.some((name) => name.startsWith("Military Veterans"))) {
       throw new Error(`community filter failed ${JSON.stringify(filtered)}`);
     }
+    await page.click("[data-act='no-groups']");
+    const empty = await page.evaluate(() => ({
+      selected: document.querySelectorAll("[data-group]:checked").length,
+      cards: document.querySelectorAll(".rail-card").length,
+      markers: document.querySelectorAll("#map [data-person]").length,
+      message: document.querySelector(".rail-empty p")?.textContent,
+    }));
+    if (empty.selected || empty.cards || empty.markers || empty.message !== "No communities selected") {
+      throw new Error(`clearing communities silently restored results ${JSON.stringify(empty)}`);
+    }
     await page.click("[data-group='Military Veterans']");
+    if (await page.$$eval("[data-group]:checked", (inputs) => inputs.length) !== 1) {
+      throw new Error("one checkbox did not select exactly one community");
+    }
+    await page.click("[data-group='Military Veterans']");
+    if (await page.$(".rail-card")) throw new Error("unchecking the final community restored the whole collection");
+    await page.click("[data-act='all-groups']");
     await page.$eval(".collection-filters", (details) => { details.open = true; });
     const source = await page.$eval("[data-rail-list]", (list) => {
       list.scrollTop = list.scrollHeight;
@@ -451,6 +485,62 @@ function assertCounterMotion(label, { targets, samples }) {
     if (reframed <= 1.01) throw new Error("resizing lost the selected account's map framing");
     await page.setViewport({ width: 1366, height: 850 });
     await wait(1300);
+  });
+  await check("account navigation stays visible and browser Back restores the collection", async () => {
+    await page.click(".profile-heading");
+    if (!await page.$(".panel")) throw new Error("clicking ordinary profile content closed the account");
+    await page.$eval(".panel", (panel) => { panel.scrollTop = panel.scrollHeight; });
+    const toolbar = await page.evaluate(() => {
+      const panel = document.querySelector(".panel").getBoundingClientRect();
+      const bar = document.querySelector(".profile-toolbar").getBoundingClientRect();
+      return {
+        top: bar.top, bottom: bar.bottom, panelTop: panel.top,
+        routes: document.querySelector(".profile-route-status").textContent,
+        backgroundPeople: document.querySelectorAll("#map [data-person]").length,
+      };
+    });
+    if (toolbar.top < toolbar.panelTop - 1 || toolbar.bottom > toolbar.panelTop + 110 ||
+        toolbar.backgroundPeople || !toolbar.routes.includes("not exact travel paths")) {
+      throw new Error(`reader navigation or map context is unclear ${JSON.stringify(toolbar)}`);
+    }
+    for (const section of ["profile-photographs", "profile-interviews", "profile-story"]) {
+      await page.click(`[data-profile-section='${section}']`);
+      await wait(700);
+      const target = await page.$eval(`#${section}`, (element) => ({
+        focused: document.activeElement.id,
+        top: element.getBoundingClientRect().top,
+        toolbarBottom: document.querySelector(".profile-toolbar").getBoundingClientRect().bottom,
+      }));
+      if (target.focused !== section || target.top < target.toolbarBottom + 8) {
+        throw new Error(`section shortcut hides its target ${section} ${JSON.stringify(target)}`);
+      }
+    }
+    await page.goBack();
+    await page.waitForFunction(() => location.hash.startsWith("#/explore") && !document.querySelector(".panel"));
+    if (await page.$eval("#search", (input) => input.value) !== "Norman Baker") {
+      throw new Error("browser Back lost the collection search");
+    }
+    await page.click("[data-survivor='baker-norman']");
+    await page.click(".nav-tab[data-view='explore']");
+    if (await page.$(".panel")) throw new Error("Explore reopened the selected profile instead of the collection");
+    await page.click("[data-survivor='baker-norman']");
+  });
+  await check("unmapped accounts explain the missing route beside the identity", async () => {
+    await page.evaluate(() => { location.hash = "#/survivor/aldous-amanda"; });
+    await page.waitForFunction(() => document.getElementById("profile-name")?.textContent === "Amanda Aldous");
+    const unmapped = await page.evaluate(() => ({
+      notice: document.querySelector(".profile-route-status").textContent,
+      noticeTop: document.querySelector(".profile-route-status").getBoundingClientRect().top,
+      sourceTop: document.querySelector(".profile-actions").getBoundingClientRect().top,
+      drawn: document.querySelectorAll("#map .explore-route, #map [data-person]").length,
+      action: document.querySelector(".interview-action").textContent.trim(),
+      chapterNote: document.querySelector(".profile-interviews .section-note").textContent,
+    }));
+    if (unmapped.notice !== "No places have been mapped for this account." || unmapped.drawn ||
+        unmapped.noticeTop >= unmapped.sourceTop || unmapped.action !== "View interview chapters" ||
+        !unmapped.chapterNote.includes("access may also be restricted")) {
+      throw new Error(`unmapped or external-only account overpromises ${JSON.stringify(unmapped)}`);
+    }
   });
   await check("caption statuses distinguish inaccessible and captionless videos", async () => {
     const coverage = await page.evaluate(async () => {
@@ -531,6 +621,14 @@ function assertCounterMotion(label, { targets, samples }) {
           !player.title.includes("Wally Adam") || player.count !== 1) {
         throw new Error(`the interview player is not wired correctly ${JSON.stringify(player)}`);
       }
+      await page.$eval(".player-frame iframe", (frame) => { frame.dataset.preserved = "yes"; });
+      await page.$eval(".collection-filters", (details) => { details.open = true; });
+      await page.click("[data-group='Community Members']");
+      if (await page.$eval(".player-frame iframe", (frame) => frame.dataset.preserved) !== "yes") {
+        throw new Error("changing collection filters interrupted the interview player");
+      }
+      await page.click("[data-act='all-groups']");
+      await page.$eval(".collection-filters", (details) => { details.open = false; });
       await page.click("[data-act='close-video']");
       if (await page.$(".player-frame iframe")) throw new Error("closing the player left a video running");
     } finally {
@@ -596,16 +694,6 @@ function assertCounterMotion(label, { targets, samples }) {
         .every((element) => element.__data__.year === 1944 && element.__data__.count > 1),
       routeAvailability: document.querySelector("[data-route-availability]")?.textContent,
       selectedRoutes: document.querySelectorAll(".selected-testimony-route").length,
-      errorMessage: (() => {
-        const root = document.documentElement;
-        root.dataset.historicalBoundaries = "error";
-        const content = getComputedStyle(
-          document.querySelector(".war-brief-content > small"),
-          "::after",
-        ).content;
-        root.dataset.historicalBoundaries = "ready";
-        return content;
-      })(),
     }));
     if (!eventState.markers || eventState.activeMarkers || eventState.selectedRoutes) {
       throw new Error("historical event layer should open without a forced selection");
@@ -617,8 +705,7 @@ function assertCounterMotion(label, { targets, samples }) {
         !eventState.occupied ||
         !eventState.corridorEvidence ||
         (!eventState.corridors && !/No shared city\/site routes/.test(eventState.routeAvailability || "")) ||
-        eventState.corridors > 8 ||
-        !/historical geometry unavailable/.test(eventState.errorMessage || "")) {
+        eventState.corridors > 8) {
       throw new Error(`historical war layer is incomplete ${JSON.stringify(eventState)}`);
     }
     await page.$eval(".pattern-event-marker", (marker) => {
@@ -768,6 +855,85 @@ function assertCounterMotion(label, { targets, samples }) {
     }
     await page.click("[data-act='clear-country']");
   });
+  await check("history search asks about ambiguity and clears obsolete selections", async () => {
+    await page.type("[data-country-search]", "united");
+    await page.click("[data-history-search] button");
+    await page.waitForSelector("[data-history-results]:not([hidden])");
+    const choices = await page.$$eval("[data-history-match]", (buttons) => buttons.map((button) => ({
+      index: button.dataset.historyMatch, name: button.querySelector("span").textContent,
+    })));
+    if (choices.length < 2 || await page.$(".country-inspector")) {
+      throw new Error("an ambiguous name silently selected the first match");
+    }
+    const uk = choices.find((choice) => choice.name === "United Kingdom");
+    if (!uk) throw new Error("the disambiguation list omitted the United Kingdom");
+    await page.click(`[data-history-match='${uk.index}']`);
+    await page.click("[data-country-search]");
+    await page.keyboard.down("Control"); await page.keyboard.press("KeyA"); await page.keyboard.up("Control");
+    await page.keyboard.press("Backspace");
+    const cleared = await page.evaluate(() => ({
+      country: Boolean(document.querySelector(".country-inspector")),
+      query: document.querySelector("[data-country-search]").value,
+      hash: location.hash,
+    }));
+    if (cleared.country || cleared.query || cleared.hash.includes("country=")) {
+      throw new Error(`clearing search retained the selection ${JSON.stringify(cleared)}`);
+    }
+    await page.type("[data-country-search]", "East Germany");
+    await page.click("[data-history-search] button");
+    await page.waitForSelector(".country-inspector");
+    await page.$eval("[data-year-entry]", (input) => {
+      input.value = "1992"; input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const changedYear = await page.evaluate(() => ({
+      country: Boolean(document.querySelector(".country-inspector")),
+      query: document.querySelector("[data-country-search]").value,
+      message: document.querySelector("[data-search-status]").textContent,
+      hash: location.hash,
+    }));
+    if (changedYear.country || changedYear.query || changedYear.hash.includes("country=") ||
+        !changedYear.message.includes("East Germany has no mapped territory in 1992")) {
+      throw new Error(`changing the year silently lost the country ${JSON.stringify(changedYear)}`);
+    }
+  });
+  await check("origin charts open exact, shareable account cohorts", async () => {
+    await page.click("[data-layer='origins']");
+    await page.click("[data-origin='Canada']");
+    await page.waitForSelector("[data-origin-filter]:not([hidden])");
+    const cohort = await page.evaluate(async () => {
+      const { loadData, journeyFilter } = await import("./js/data.js");
+      const store = await loadData();
+      const expected = store.journeys.filter((journey) => journey.originCountry === "Canada").map((journey) => journey.id);
+      const mentions = store.journeys.filter(journeyFilter({
+        query: "Canada", groupFilter: new Set(store.groups.map((group) => group.name)),
+      })).length;
+      return {
+        expected, mentions,
+        markers: [...document.querySelectorAll("#map [data-person]")].map((marker) => marker.dataset.person),
+        cards: [...document.querySelectorAll(".rail-card")].map((card) => card.dataset.survivor),
+        count: document.querySelector("[data-rail-count]").textContent,
+        hash: location.hash,
+      };
+    });
+    if (cohort.mentions <= cohort.expected.length ||
+        cohort.markers.length !== cohort.expected.length ||
+        cohort.markers.concat(cohort.cards).some((id) => !cohort.expected.includes(id)) ||
+        !cohort.count.includes(`of ${cohort.expected.length} shown`) || !cohort.hash.includes("origin=Canada")) {
+      throw new Error(`the origin chart opened a general text search ${JSON.stringify(cohort)}`);
+    }
+    await page.goto(BASE + "/?origin-cohort=1" + cohort.hash, { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    if (await page.$eval("[data-origin-name]", (name) => name.textContent) !== "Canada") {
+      throw new Error("the origin cohort did not survive a shared-link reload");
+    }
+    await page.click(".rail-card");
+    await page.click(".panel-close");
+    if (await page.$eval("[data-origin-filter]", (filter) => filter.hidden)) {
+      throw new Error("closing an account lost its origin cohort");
+    }
+    await page.click("[data-act='origin-overview']");
+    await page.click("[data-layer='journeys']");
+  });
   await check("historical layer controls and comparison are functional", async () => {
     await page.$eval("[data-year-entry]", (input) => {
       input.value = "1944";
@@ -808,6 +974,16 @@ function assertCounterMotion(label, { targets, samples }) {
     await page.click("[data-act='zoom-in']");
     await wait(400);
     await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async () => { throw new DOMException("Permission denied", "NotAllowedError"); } },
+      });
+    });
+    await page.click("[data-act='share-map']");
+    if (await page.$eval("[data-share-address]", (input) => input.hidden || !input.value.startsWith(location.origin))) {
+      throw new Error("blocked clipboard did not offer a selectable map link");
+    }
+    await page.evaluate(() => {
       window.__copiedMap = "";
       Object.defineProperty(navigator, "clipboard", {
         configurable: true,
@@ -815,6 +991,9 @@ function assertCounterMotion(label, { targets, samples }) {
       });
     });
     await page.click("[data-act='share-map']");
+    if (!await page.$eval("[data-share-address]", (input) => input.hidden)) {
+      throw new Error("successful copying left a stale fallback input visible");
+    }
     const copied = await page.evaluate(() => window.__copiedMap);
     const hash = new URL(copied).hash;
     const params = new URLSearchParams(hash.split("?")[1]);
@@ -854,8 +1033,11 @@ function assertCounterMotion(label, { targets, samples }) {
       sources: document.querySelectorAll(".about-sources dd").length,
       communities: document.querySelectorAll(".collection-ledger dd").length,
       current: document.querySelector("[aria-current='page']")?.dataset.view,
+      audit: document.querySelector(".geometry-audit dd")?.textContent,
+      technical: document.querySelector(".geometry-audit a[download]")?.textContent,
     }));
-    if (about.sources < 7 || about.communities !== 5 || about.current !== "about") {
+    if (about.sources < 7 || about.communities !== 5 || about.current !== "about" ||
+        about.audit !== "1,181" || !about.technical?.includes("(JSON)")) {
       throw new Error(`archive source ledger is incomplete ${JSON.stringify(about)}`);
     }
   });
@@ -917,6 +1099,12 @@ function assertCounterMotion(label, { targets, samples }) {
     if (detail.top < 120) throw new Error("person sheet hides the entire map");
     if (detail.bottom > 845) throw new Error("person sheet overflows the viewport");
     if (!detail.hasCloseIcon) throw new Error("person sheet close action is not an SVG icon");
+    await page.$eval(".panel", (panel) => { panel.scrollTop = panel.scrollHeight; });
+    const reachable = await page.$eval(".panel-close", (button) => {
+      const rect = button.getBoundingClientRect();
+      return rect.height >= 44 && document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest("button") === button;
+    });
+    if (!reachable) throw new Error("the long mobile account lost its close control");
     await page.click(".panel-close");
     if (await page.$(".panel")) throw new Error("mobile profile did not close with a pointer");
   });
@@ -987,9 +1175,12 @@ function assertCounterMotion(label, { targets, samples }) {
         const endpoints = [0, path.getTotalLength()].map((length) => (
           path.getPointAtLength(length).matrixTransform(matrix).y
         ));
-        return { top: panel.top, endpoints, overflow: document.documentElement.scrollWidth > innerWidth };
+        return {
+          top: panel.top, endpoints, overflow: document.documentElement.scrollWidth > innerWidth,
+          scale: Number(document.querySelector(".camera").getAttribute("transform").match(/scale\(([^)]+)\)/)[1]),
+        };
       });
-      if (profile.overflow ||
+      if (profile.overflow || profile.scale <= 4 ||
           (viewport.width <= 820 && profile.endpoints.some((y) => y >= profile.top - 4 || y <= 100))) {
         throw new Error(`profile map is obscured at ${viewport.width}px ${JSON.stringify(profile)}`);
       }
@@ -1014,6 +1205,27 @@ function assertCounterMotion(label, { targets, samples }) {
         return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest("button") === button;
       }));
       if (!controls) throw new Error(`map controls are covered at ${viewport.width}px`);
+    }
+  });
+  await check("small-phone community choices leave a clear way back to results", async () => {
+    await page.setViewport({ width: 320, height: 568 });
+    await page.goto(BASE + "/?small-filters=1#/explore", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    await page.click(".collection-filters summary");
+    await page.click("[data-act='no-groups']");
+    await page.click("[data-group='Crestwood Families']");
+    await page.click("[data-act='close-filters']");
+    const filters = await page.evaluate(() => ({
+      open: document.querySelector(".collection-filters").open,
+      focused: document.activeElement === document.querySelector(".collection-filters summary"),
+      selected: [...document.querySelectorAll("[data-group]:checked")].map((input) => input.dataset.group),
+      listHeight: document.querySelector("[data-rail-list]").clientHeight,
+      groups: [...document.querySelectorAll(".rail-ghead")].map((heading) => heading.textContent),
+      overflow: document.documentElement.scrollWidth > innerWidth,
+    }));
+    if (filters.open || !filters.focused || filters.selected.join() !== "Crestwood Families" ||
+        filters.listHeight < 80 || filters.groups.length !== 1 || filters.overflow) {
+      throw new Error(`small-phone filters obstruct the results ${JSON.stringify(filters)}`);
     }
   });
   await check("reduced motion keeps a readable, still archive", async () => {
@@ -1113,6 +1325,107 @@ function assertCounterMotion(label, { targets, samples }) {
       if (await recovery.$(`${cover}:not([hidden])`)) throw new Error(`${asset} retry left the failure visible`);
     }
     await recovery.close();
+  });
+
+  await check("historical failures show the current basemap and retry without losing settings", async () => {
+    const recovery = await browser.newPage();
+    recovery.on("pageerror", (error) => errors.push("historical recovery: " + (error.stack || error.message)));
+    await recovery.setRequestInterception(true);
+    let fail = true, mode = "503", requests = 0;
+    recovery.on("request", (request) => {
+      if (!request.url().includes("/data/historical_boundaries.json")) return request.continue();
+      requests++;
+      if (!fail) return request.continue();
+      request.respond({
+        status: mode === "503" ? 503 : 200,
+        contentType: "application/json",
+        headers: { "cache-control": "public, max-age=3600" },
+        body: mode === "503" ? "{}" : "{\"type\":\"Topology\",\"objects\":{}}",
+      });
+    });
+    for (const [failure, width, height] of [["503", 390, 844], ["invalid", 320, 568]]) {
+      mode = failure; fail = true; requests = 0;
+      await recovery.setViewport({ width, height });
+      await recovery.goto(BASE + `/?history-recovery=${mode}#/patterns/1960?flags=0&opacity=0.6&compare=1`, {
+        waitUntil: "domcontentloaded", timeout: 40000,
+      });
+      await recovery.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await recovery.waitForFunction(() => document.documentElement.dataset.historicalBoundaries === "error");
+      const failed = await recovery.evaluate(() => {
+        const notice = document.querySelector("[data-boundary-notice]");
+        const button = notice.querySelector("button");
+        const rect = button.getBoundingClientRect();
+        return {
+          visible: !notice.hidden,
+          message: notice.textContent,
+          reachable: document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest("button") === button,
+          misleading: document.querySelectorAll(".modern-countries [data-war-side], .historical-flag").length,
+          comparisonVisible: !document.querySelector("[data-compare-caption]").hidden,
+          divider: document.querySelector("#map").dataset.comparing,
+        };
+      });
+      if (!failed.visible || !failed.reachable || failed.misleading || failed.comparisonVisible || failed.divider !== "false" ||
+          !failed.message.includes("1960 borders could not load") || !failed.message.includes("today's basemap")) {
+        throw new Error(`historical failure is hidden or misleading ${JSON.stringify(failed)}`);
+      }
+      fail = false;
+      await recovery.click("[data-act='retry-history']");
+      await recovery.waitForFunction(() => document.documentElement.dataset.historicalBoundaries === "ready", { timeout: 20000 });
+      const restored = await recovery.evaluate(() => ({
+        notice: document.querySelector("[data-boundary-notice]").hidden,
+        year: document.querySelector("[data-year-entry]").value,
+        flags: document.querySelector("[data-history-setting='flags']").checked,
+        opacity: document.querySelector("[data-history-opacity]").value,
+        comparison: document.querySelector("[data-history-setting='compare']").checked,
+        comparisonVisible: !document.querySelector("[data-compare-caption]").hidden,
+        divider: document.querySelector("#map").dataset.comparing,
+        borders: document.querySelectorAll(".historical-territory").length,
+      }));
+      if (!restored.notice || restored.year !== "1960" || restored.flags || restored.opacity !== "0.6" ||
+          !restored.comparison || !restored.comparisonVisible || restored.divider !== "true" || !restored.borders || requests !== 2) {
+        throw new Error(`retry lost the view or reused bad geometry ${JSON.stringify({ ...restored, requests })}`);
+      }
+    }
+    await recovery.close();
+  });
+
+  await check("compact link sharing is readable and dismissible", async () => {
+    await page.setViewport({ width: 320, height: 568 });
+    await page.goto(BASE + "/?compact-share=1#/patterns/1960?compare=1", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    await page.waitForFunction(() => document.documentElement.dataset.historicalBoundaries === "ready");
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async () => { throw new DOMException("Blocked", "NotAllowedError"); } },
+      });
+    });
+    await page.click("[data-act='share-map']");
+    const feedback = await page.$eval(".share-feedback", (element) => {
+      const rect = element.getBoundingClientRect();
+      const close = element.querySelector(".share-close");
+      const button = close.getBoundingClientRect();
+      return {
+        visible: !element.hidden,
+        background: getComputedStyle(element).backgroundColor,
+        left: rect.left, right: rect.right, bottom: rect.bottom, height: innerHeight,
+        reachable: document.elementFromPoint(button.x + button.width / 2, button.y + button.height / 2)?.closest("button") === close,
+        link: !element.querySelector("[data-share-address]").hidden,
+      };
+    });
+    if (!feedback.visible || !feedback.link || !feedback.reachable || feedback.background !== "rgb(250, 249, 245)" ||
+        feedback.left < 0 || feedback.right > 320 || feedback.bottom > feedback.height) {
+      throw new Error(`compact link sharing is obscured ${JSON.stringify(feedback)}`);
+    }
+    await page.keyboard.press("Escape");
+    const closed = await page.evaluate(() => ({
+      hidden: document.querySelector(".share-feedback").hidden,
+      expanded: document.querySelector("[data-act='share-map']").getAttribute("aria-expanded"),
+      focused: document.activeElement.dataset.act,
+    }));
+    if (!closed.hidden || closed.expanded !== "false" || closed.focused !== "share-map") {
+      throw new Error(`sharing could not be dismissed ${JSON.stringify(closed)}`);
+    }
   });
 
   await browser.close();

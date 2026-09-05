@@ -5,6 +5,7 @@
 import { C, GROUP_COLOR, SYSTEM_REDUCED_MOTION, esc } from "./config.js";
 import { captionStatus, playerURL } from "./media.js";
 import { FLAG_SOURCES, resourcesForYear } from "./historical-context.js";
+import { journeyFilter } from "./data.js";
 
 const RAIL_PAGE = 140;
 const icon = (name) => `<svg class="icon icon-${name}" aria-hidden="true" focusable="false">
@@ -122,13 +123,13 @@ function profilePicture(journey) {
 export function explore(store, state) {
   const groupChips = store.groups.map((g) => {
     const on = state.groupFilter.has(g.name);
-    const col = GROUP_COLOR[g.name] || C.accent;
-    return `<button class="gchip ${on ? "on" : ""}" data-group="${esc(g.name)}" style="--gc:${col}" aria-pressed="${on}">
-      <span class="gcheck">${icon("check")}</span><span>${esc(g.name)}</span>
-      <span class="gn">${g.count}</span></button>`;
+    return `<label class="gchip">
+      <input type="checkbox" data-group="${esc(g.name)}"${on ? " checked" : ""}>
+      <span>${esc(g.name)}</span><span class="gn">${g.count}</span></label>`;
   }).join("");
 
   const { html, shown, total } = railInner(store, state);
+  const filtered = state.query || state.originCountry || state.groupFilter.size !== store.groups.length;
   return `
   <div class="ov ov-explore ${state.selectedId ? "has-sel" : ""}">
     <aside class="rail scroll" aria-label="Browse the collection">
@@ -139,22 +140,37 @@ export function explore(store, state) {
           value="${esc(state.query || "")}" autocomplete="off" aria-label="Search people">
       </div>
       <details class="collection-filters"${state.groupFilter.size !== store.groups.length ? " open" : ""}>
-        <summary>Communities <span>${state.groupFilter.size === store.groups.length ? "All" : `${state.groupFilter.size} selected`}</span>${icon("chevron")}</summary>
-        <div class="gchips">${groupChips}</div>
+        <summary>Communities <span data-group-count>${state.groupFilter.size === store.groups.length ? "All" : `${state.groupFilter.size} selected`}</span>${icon("chevron")}</summary>
+        <div class="filter-actions">
+          <button class="link" data-act="all-groups">Select all</button>
+          <button class="link" data-act="no-groups">Clear selection</button>
+          <button class="link filter-done" data-act="close-filters">Done</button>
+        </div>
+        <fieldset class="gchips"><legend class="sr-only">Include communities</legend>${groupChips}</fieldset>
       </details>
-      <div class="rail-count micro-label" data-rail-count role="status">${shown} of ${total} shown</div>
+      <div class="origin-filter" data-origin-filter${state.originCountry ? "" : " hidden"}>
+        <span>Routes starting in <strong data-origin-name>${esc(state.originCountry || "")}</strong></span>
+        <button data-act="clear-origin" aria-label="Clear origin filter">${icon("close")}</button>
+        <button class="link" data-act="origin-overview">Back to route origins</button>
+      </div>
+      <div class="rail-summary">
+        <div class="rail-count micro-label" data-rail-count role="status">${shown} of ${total} shown</div>
+        <button class="link filter-reset" data-act="reset-search"${filtered ? "" : " hidden"}>Reset filters</button>
+      </div>
       <div class="rail-list" data-rail-list>${html}</div>
     </aside>
     <div class="panel-host" data-panel>${state.selectedId ? panel(store, state) : ""}</div>
     ${mapTools()}
+    <div class="explore-map-status">
+      <p class="explore-map-caption" data-explore-map-caption aria-live="polite">${exploreMapCaption(store, state)}</p>
+      ${boundaryNotice()}
+    </div>
     ${!state.selectedId ? `<p class="explore-hint">Choose a person to trace their recorded places.</p>` : ""}
   </div>`;
 }
 
 export function railInner(store, state) {
-  const q = (state.query || "").trim().toLowerCase();
-  const match = (j) => state.groupFilter.has(j.group) && (!q || haystack(j).includes(q));
-  const matched = store.journeys.filter(match);
+  const matched = store.journeys.filter(journeyFilter(state));
   const limit = state.railLimit || RAIL_PAGE;
   const slice = matched.slice(0, limit);
 
@@ -174,7 +190,7 @@ export function railInner(store, state) {
     html += items.map((j) => railCard(j, j.id === state.selectedId)).join("");
     html += `</div>`;
   }
-  if (!html) html = `<div class="rail-empty"><p>No matching accounts</p>
+  if (!html) html = `<div class="rail-empty"><p>${state.groupFilter.size ? "No matching accounts" : "No communities selected"}</p>
     <span>Try a surname or place, or reset the search and communities.</span>
     <button class="link" data-act="reset-search">Show the whole collection</button></div>`;
   else if (matched.length > slice.length)
@@ -216,10 +232,20 @@ function panel(store, state) {
   }).join("");
   const tags = (j.conflicts.concat(j.themes)).slice(0, 5).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
   const reviewed = j.reviewStatus === "reviewed";
+  const sections = [
+    ["profile-story", "Account"],
+    ...(j.media.images.length || j.media.imageReferences.length ? [["profile-photographs", "Photographs"]] : []),
+    ...(j.videoCount || j.media.videos.length ? [["profile-interviews", "Interview"]] : []),
+    ["profile-places", "Places"],
+  ];
   return `
     <aside class="panel scroll" aria-labelledby="profile-name">
-      <div class="panel-topline"><button class="link" data-act="clear">Back to the collection</button>
-        <button class="panel-close" data-act="clear" aria-label="Close profile">${icon("close")}</button></div>
+      <div class="profile-toolbar">
+        <div class="panel-topline"><button class="link" data-act="clear">Back to the collection</button>
+          <button class="panel-close" data-act="clear" aria-label="Close profile">${icon("close")}</button></div>
+        <nav class="profile-nav" aria-label="In this account">${sections.map(([id, label]) =>
+          `<button data-profile-section="${id}" aria-controls="${id}">${label}</button>`).join("")}</nav>
+      </div>
       <div class="profile-heading">
         ${profileMedal(j, col, true)}
         <div>
@@ -228,12 +254,14 @@ function panel(store, state) {
           <div class="panel-meta">${profileMeta(j)}</div>
         </div>
       </div>
+      <p class="profile-route-status">${esc(profileRouteStatus(j))}</p>
       <div class="profile-actions">
-        ${j.videoCount ? `<button class="interview-action" data-act="show-interviews">Watch the interview ${icon("play")}</button>` : ""}
-        <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Original interview ${icon("external-link")}</a>
+        ${j.videoCount ? `<button class="interview-action" data-act="show-interviews">View interview chapters ${icon("arrow-right")}</button>` : ""}
+        <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Read the original OHP page ${icon("external-link")}</a>
       </div>
-      ${recordingMeta(j)}
-      <p class="bio">${esc(j.bio || "The original OHP page contains this person's account.")}</p>
+      <section id="profile-story" tabindex="-1" aria-label="Account">
+        <p class="bio">${esc(j.bio || "The original OHP page contains this person's account.")}</p>
+      </section>
       ${profileGallery(j)}
       ${profileInterviews(j)}
       ${j.serviceYear ? `<details class="related-context"><summary>Historical context and maps ${icon("chevron")}</summary>
@@ -241,7 +269,7 @@ function panel(store, state) {
         ${contextResources(j.serviceYear)}</details>` : ""}
       ${j.routeWaypoints.length > 1 ? `<svg class="mini" viewBox="0 0 340 150" data-mini></svg>
       <div class="mini-cap">Connections between city and site references, not exact travel paths.</div>` : ""}
-      <section class="profile-places" aria-labelledby="recorded-places-title">
+      <section class="profile-places" id="profile-places" tabindex="-1" aria-labelledby="recorded-places-title">
         <h3 id="recorded-places-title">Recorded places</h3>
         <p class="section-note">${wp.length
           ? "The route uses person-linked city and site references. Broad areas and mentions needing review are labelled below. Select a place to inspect its map reference."
@@ -252,6 +280,28 @@ function panel(store, state) {
       <div class="tags">${tags}</div>
       ${reviewed ? `<div class="ver" style="color:${C.verified}"><span class="ver-dot"></span>Checked against the interview</div>` : ""}
     </aside>`;
+}
+
+function profileRouteStatus(journey) {
+  if (!journey.waypoints.length) return "No places have been mapped for this account.";
+  const references = new Set(journey.routeWaypoints.map((place) => place.canonical)).size;
+  if (!references) return "No route is drawn. These place mentions are broad areas or still need review.";
+  if (references === 1) return "Only one city or site reference is available, so no route is drawn.";
+  return `The line connects ${references} city and site references, not exact travel paths.`;
+}
+
+export function exploreMapCaption(store, state, historyReady = true) {
+  const place = store.byId.get(state.selectedId)?.waypoints[state.activePlaceIndex];
+  const year = place?.historyYear;
+  const dated = historyReady && year >= store.time.min && year <= store.time.max;
+  return `<strong>${dated ? `${year} borders` : "Current borders"}</strong>${place
+    ? `<span>${esc(place.canonical)}</span>` : ""}`;
+}
+
+function boundaryNotice() {
+  return `<div class="boundary-notice" data-boundary-notice role="status" hidden>
+    <p data-boundary-message></p><button class="link" data-act="retry-history" hidden>Try again</button>
+  </div>`;
 }
 
 function sourcePassage(value) {
@@ -306,7 +356,7 @@ function profileGallery(journey) {
     <figcaption>${esc(image.caption || `This photograph appears on ${journey.name}'s OHP page.`)}
       <span>${esc(image.credit)}</span></figcaption>
   </figure>`);
-  return `<section class="profile-gallery" aria-label="Photographs from the original account">
+  return `<section class="profile-gallery" id="profile-photographs" tabindex="-1" aria-label="Photographs from the original account">
     ${figures[0] || ""}
     ${figures.length > 1 ? `<details class="more-photographs">
       <summary>View ${figures.length - 1} more ${figures.length === 2 ? "photograph" : "photographs"} ${icon("chevron")}</summary>
@@ -334,9 +384,13 @@ function profileInterviews(journey) {
       ? `<button class="video-chapter" data-video="${esc(video.id)}">${title}</button>`
       : `<a class="video-chapter" href="${esc(journey.archiveUrl)}" target="_blank" rel="noopener">${title}</a>`}</li>`;
   });
-  return `<section class="profile-interviews" id="profile-interviews" aria-labelledby="interviews-title">
+  const inlineCount = journey.media.videos.filter((video) => playerURL(video)).length;
+  return `<section class="profile-interviews" id="profile-interviews" tabindex="-1" aria-labelledby="interviews-title">
     <h3 id="interviews-title" tabindex="-1">The interview</h3>
-    <p class="section-note">These chapters come from ${esc(journey.name)}'s OHP page. A video loads only when you choose a chapter.</p>
+    ${recordingMeta(journey)}
+    <p class="section-note">These chapters come from ${esc(journey.name)}'s OHP page. ${inlineCount
+      ? "Choose a play button to load a video. Chapters marked with an external-link icon open the original page instead."
+      : "Inline playback is unavailable for these chapters. The links open the original OHP page, where access may also be restricted."}</p>
     <div class="interview-player" data-player hidden>
       <div class="player-heading"><strong data-player-title></strong>
         <button data-act="close-video" aria-label="Close video">${icon("close")}</button></div>
@@ -377,8 +431,10 @@ export function patterns(store, state) {
     </div>`;
 
   if (layer === "origins") {
-    const list = [...store.originCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 9)
-      .map(([c, n]) => `<li><span class="oc-name">${esc(c)}</span><span class="oc-bar"><span style="width:${Math.round(n / topOrigin[1] * 100)}%"></span></span><span class="oc-n">${n}</span></li>`).join("");
+    const list = [...store.originCounts.entries()].sort((a, b) => b[1] - a[1])
+      .map(([c, n]) => `<li><button class="origin-choice" data-origin="${esc(c)}" aria-label="Explore ${n} accounts with routes starting in ${esc(c)}">
+        <span class="oc-name">${esc(c)}</span><span class="oc-bar" aria-hidden="true"><span style="width:${Math.round(n / topOrigin[1] * 100)}%"></span></span>
+        <span class="oc-n">${n}</span>${icon("arrow-right")}</button></li>`);
     return `
     <div class="ov ov-patterns is-origins">
       <div class="patterns-intro">
@@ -387,8 +443,12 @@ export function patterns(store, state) {
           ? `<span class="accent">${esc(topOrigin[0])}</span> has the largest count, with <b>${topOrigin[1]}</b> mapped starting places.`
           : "No mapped starting places are available."}</p>
         ${toggle}
-        <ul class="origin-list">${list}</ul>
-        <p class="cross-sub">This layer counts the first place in each mapped route, not confirmed birthplaces. Historical names are grouped under present-day countries.</p>
+        <p class="section-note origin-instruction">Choose a country to read the matching accounts.</p>
+        <ul class="origin-list">${list.slice(0, 9).join("")}</ul>
+        ${list.length > 9 ? `<details class="more-origins"><summary>View all ${list.length} countries ${icon("chevron")}</summary>
+          <ul class="origin-list">${list.slice(9).join("")}</ul></details>` : ""}
+        <p class="cross-sub">Counts use each account's first person-linked map reference, not necessarily a birthplace.
+          Only references that can be associated with a present-day country are counted; historical regions are not assigned to a modern country without support.</p>
       </div>
       ${mapTools()}
     </div>`;
@@ -400,13 +460,19 @@ export function patterns(store, state) {
       <h2>Territory and testimony</h2>
       <p class="history-scope">Explore dated borders and recorded accounts, ${store.time.min} to ${store.time.max}.</p>
       ${toggle}
+      <div class="history-search-box">
       <form class="history-search" data-history-search>
         <label class="sr-only" for="history-location">Find a country or an OHP place</label>
-        <input id="history-location" type="search" list="history-locations" placeholder="Find a country or recorded place" autocomplete="off" data-country-search>
+        <input id="history-location" type="search" list="history-locations" placeholder="Find a country or recorded place" autocomplete="off"
+          value="${esc(state.historyQuery || "")}" aria-describedby="history-search-status" data-country-search>
         <button type="submit" aria-label="Find location">${icon("search")}</button>
         <datalist id="history-locations"></datalist>
       </form>
-      <p class="history-search-status" data-search-status role="status"></p>
+      <div class="history-search-results" data-history-results${state.historyMatches.length ? "" : " hidden"}>
+        ${historySearchResults(state.historyMatches, state.scrubYear)}
+      </div>
+      </div>
+      <p class="history-search-status" id="history-search-status" data-search-status role="status">${esc(state.historySearchMessage || "")}</p>
       <div class="history-toolbar">
         <details class="history-settings">
           <summary>${icon("layers")} Map layers ${icon("chevron")}</summary>
@@ -426,11 +492,16 @@ export function patterns(store, state) {
             <button class="compact-layer-switch" data-layer="origins">Show mapped route origins</button>
           </div>
         </details>
-        <button class="history-share" data-act="share-map" aria-label="Copy map link" title="Copy map link">${icon("share")}</button>
+        <button class="history-share" data-act="share-map" aria-label="Copy map link" title="Copy map link"
+          aria-expanded="false" aria-controls="share-feedback">${icon("share")}</button>
         ${mapTools()}
       </div>
-      <p class="history-share-status" data-share-status role="status"></p>
-      <input class="share-address" data-share-address aria-label="Map link" readonly hidden>
+      <div class="share-feedback" id="share-feedback" role="region" aria-label="Share this map" hidden>
+        <p class="history-share-status" data-share-status role="status"></p>
+        <button class="share-close" data-act="close-share" aria-label="Close link sharing">${icon("close")}</button>
+        <input class="share-address" data-share-address aria-label="Map link" readonly hidden>
+      </div>
+      ${boundaryNotice()}
     </div>
     <aside class="history-dossier" aria-label="Historical context and recorded places">
       <details class="history-context-disclosure" data-history-context${(state.historyContextOpen ?? window.innerWidth > 820) ? " open" : ""}>
@@ -471,8 +542,33 @@ export function patternsEvents(store, state) {
       ${contextResources(state.scrubYear)}
       <p class="history-method">The atlas samples the middle of each year. Its polygons are generalized source records, not exact borders or daily front lines.
         Dashed outlines mark overlapping alternatives. Flags appear only where the dated design has been verified.</p>
-      <a class="catalogue-link" href="data/historical_boundary_quality.json" target="_blank" rel="noopener">Open the geometry audit ${icon("external-link")}</a>
+      ${geometryAudit(store)}
     </details>`;
+}
+
+export function historySearchResults(matches, year) {
+  if (!matches.length) return "";
+  return `<ul aria-label="Matching map locations">${matches.slice(0, 8).map((match, index) =>
+    `<li><button data-history-match="${index}"><span>${esc(match.name)}</span>
+      <small>${match.kind === "country" ? `Historical territory in ${year}` : "Place in an OHP account"}</small>${icon("arrow-right")}</button></li>`).join("")}</ul>
+    ${matches.length > 8 ? `<p>${matches.length - 8} more matches. Enter a more specific name to narrow the list.</p>` : ""}`;
+}
+
+function geometryAudit(store) {
+  const quality = store.historicalIndex.quality;
+  const current = quality && quality.input_sha256 === store.historicalIndex.geometry_sha256;
+  return `<details class="geometry-audit">
+    <summary>What the boundary audit checked ${icon("chevron")}</summary>
+    ${current ? `<dl>
+      <div><dt>Source outlines checked</dt><dd>${quality.features.toLocaleString("en-CA")}</dd></div>
+      <div><dt>Missing or empty shapes</dt><dd>${quality.null + quality.empty}</dd></div>
+      <div><dt>Invalid shapes</dt><dd>${quality.invalid}</dd></div>
+      <div><dt>Overlapping alternative pairs</dt><dd>${quality.relationships.filter((entry) => entry.kind === "alternative").length}</dd></div>
+    </dl><p>These checks examine shape validity, not historical accuracy.
+      Exact duplicates are hidden; unresolved alternative outlines have dashed borders.</p>`
+      : "<p>A matching technical audit is not available for this map release.</p>"}
+    <a class="catalogue-link" href="data/historical_boundary_quality.json" download>Download the technical audit (JSON) ${icon("external-link")}</a>
+  </details>`;
 }
 
 function countryInspector(country, year) {
@@ -552,7 +648,7 @@ export function about(store) {
           <p>The historical polygons come from a generalized OpenHistoricalMap world tile. They sample
           the middle of each year and can contain overlapping source records. Valid polygon geometry
           does not establish that every border or administration is historically correct.</p>
-          <p><a href="data/historical_boundary_quality.json" target="_blank" rel="noopener">Read the geometry and overlap audit</a>.</p>
+          ${geometryAudit(store)}
         </section>
         <section class="about-sources"><h2>Sources and credits</h2>
           <dl>
@@ -588,10 +684,6 @@ export function about(store) {
 function shortName(j) {
   const p = j.name.split(" ");
   return p.length > 1 ? `${p[0]} ${j.surname[0]}.` : j.name;
-}
-function haystack(j) {
-  return (j.name + " " + j.hometown + " " + j.group + " " + j.conflicts.join(" ") + " " +
-    j.themes.join(" ") + " " + j.waypoints.map((w) => w.canonical + " " + w.asWritten).join(" ")).toLowerCase();
 }
 function wpMeta(w) {
   const yr = w.year

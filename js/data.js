@@ -3,7 +3,7 @@
 // UI render: group (the OHP archive category), a one-line intro, conflict facet,
 // per-waypoint year/uncertainty, theme facets, origin-country counts (for the density
 // choropleth), and the shared persecution sites. As-written place names are preserved.
-import { ROLE_LABEL, GROUPS, parseYear, initials, slug, TIME } from "./config.js";
+import { ROLE_LABEL, GROUPS, parseYear, initials, slug, normalizeSearch, TIME } from "./config.js";
 import { normalizeProfileMedia } from "./media.js";
 
 const BASE = "data";
@@ -25,6 +25,16 @@ const SERVICE_WINDOWS = {
   "Second World War": { start: 1939, end: 1945 },
   "Korean War": { start: 1950, end: 1953 },
 };
+
+export function journeyFilter({ query, groupFilter, originCountry }) {
+  const term = normalizeSearch(query);
+  return (journey) => groupFilter.has(journey.group) &&
+    (!originCountry || journey.originCountry === originCountry) &&
+    (!term || normalizeSearch([
+      journey.name, journey.hometown, journey.group, ...journey.conflicts, ...journey.themes,
+      ...journey.waypoints.flatMap((place) => [place.canonical, place.asWritten]),
+    ].join(" ")).includes(term));
+}
 
 async function getJSON(name) {
   const res = await fetch(`${BASE}/${name}`, { cache: "no-cache" });

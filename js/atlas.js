@@ -10,7 +10,7 @@
 // The 2D map is the canonical product; the globe is a calm overview with a graceful
 // reduced-motion fallback. People are coloured quietly by archive group — equal, never
 // a hierarchy (doc 13 §4.3).
-import { C, GROUP_COLOR, motionEnabled } from "./config.js";
+import { C, GROUP_COLOR, motionEnabled, normalizeSearch } from "./config.js";
 import { flagFor } from "./historical-context.js";
 import { alignmentKey, datedTerritories } from "./historical-identity.js";
 
@@ -29,6 +29,7 @@ export function createAtlas(container) {
   let globeRoutePool = [], globeRouteBatch = [], globeRouteCursor = 0;
   let globeRouteChangedAt = 0, globePhase = 0;
   let historicalFeatures = null, historicalPromise = null;
+  let historicalStatus = "idle";
   let currentTerritoryPeriod = null;
   let currentBoundaryYear = null;
   let hoveredController = null, pinnedController = null;
@@ -113,11 +114,12 @@ export function createAtlas(container) {
     const divider = mapFrame[0] + (mapFrame[2] - mapFrame[0]) * historyDisplay.split / 100;
     comparisonRect.attr("x", transform.invertX(0)).attr("y", transform.invertY(0))
       .attr("width", divider / transform.k).attr("height", size.h / transform.k);
-    const clip = historyDisplay.compare ? "url(#history-comparison-clip)" : null;
+    const comparing = historyDisplay.compare && historicalStatus === "ready" && currentBoundaryYear != null;
+    const clip = comparing ? "url(#history-comparison-clip)" : null;
     historicalG.attr("clip-path", clip).style("opacity", historyDisplay.opacity);
     historicalLabelsG.attr("clip-path", clip);
     historicalFlagsG.attr("clip-path", clip);
-    container.dataset.comparing = String(historyDisplay.compare);
+    container.dataset.comparing = String(comparing);
     container.style.setProperty("--comparison-x", `${divider}px`);
     container.style.setProperty("--comparison-top", `${mapFrame[1]}px`);
     container.style.setProperty("--comparison-height", `${mapFrame[3] - mapFrame[1]}px`);
@@ -135,6 +137,12 @@ export function createAtlas(container) {
     applyHistoryDisplay();
   };
   api.historyLoaded = () => Boolean(historicalFeatures);
+  api.historyState = () => historicalStatus;
+  api.retryHistory = () => {
+    if (historicalStatus !== "error") return historicalPromise;
+    historicalStatus = "idle";
+    return ensureHistoricalBoundaries(true);
+  };
 
   function activeTerritories(year) {
     return datedTerritories(historicalFeatures || [], year);
@@ -143,9 +151,6 @@ export function createAtlas(container) {
     const quality = store?.historicalIndex?.quality;
     if (quality?.input_sha256 !== store?.historicalIndex?.geometry_sha256) return new Set();
     return new Set(quality.years.find((entry) => entry.year === year)?.alternative_record_ids || []);
-  }
-  function normalizeLocation(value) {
-    return String(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   }
   function administrationLabel(controller, features) {
     return controller === "Russia" && features.some((feature) => (
@@ -168,10 +173,11 @@ export function createAtlas(container) {
       }
     }
     const aliases = { uk: "united kingdom", usa: "united states", us: "united states", ussr: "soviet union" };
-    const term = aliases[normalizeLocation(query)] || normalizeLocation(query);
+    const term = aliases[normalizeSearch(query)] || normalizeSearch(query);
     return [...locations.values()]
-      .filter((entry) => !term || normalizeLocation(entry.name).includes(term) || normalizeLocation(entry.controller || "").includes(term) || normalizeLocation(entry.matchName || "").includes(term))
-      .sort((a, b) => Number(normalizeLocation(b.name) === term) - Number(normalizeLocation(a.name) === term) ||
+      .filter((entry) => !term || [entry.name, entry.controller, entry.matchName].some((name) => normalizeSearch(name).includes(term)))
+      .map((entry) => ({ ...entry, exact: Boolean(term) && [entry.name, entry.controller, entry.matchName].some((name) => normalizeSearch(name) === term) }))
+      .sort((a, b) => Number(b.exact) - Number(a.exact) ||
         Number(b.kind === "country") - Number(a.kind === "country") || a.name.localeCompare(b.name));
   };
   api.countryInfo = (name, year) => {
@@ -255,6 +261,7 @@ export function createAtlas(container) {
     if (view === "explore") {
       const sheet = bounds(".rail");
       const profile = bounds(".panel-host:has(.panel)");
+      const caption = bounds(".explore-map-status");
       if (mobile) {
         top = header + (profile ? 68 : 84);
         if (profile || sheet) bottom = (profile || sheet).top - 16;
@@ -262,6 +269,7 @@ export function createAtlas(container) {
         if (sheet) left = sheet.right + 24;
         if (profile) right = profile.left - 24;
       }
+      if (caption) top = Math.max(top, caption.bottom + 12);
     } else if (view === "patterns") {
       const origins = bounds(".patterns-intro");
       const heading = bounds(".patterns-map-head");
@@ -430,14 +438,19 @@ export function createAtlas(container) {
     sel.call(zoom.transform, t);
   }
   api.resetCamera = () => moveCamera(null, 1);
+  function personalMapPoints(journey) {
+    return journey.waypoints.filter((point) => point.px != null && (point.evidenceScope === "personal" || point.verified));
+  }
   function focusJourney(journey) {
-    const points = journey.waypoints.filter((point) => point.px != null);
+    const points = personalMapPoints(journey);
     if (!points.length) { api.resetCamera(); return; }
     const xs = points.map((point) => point.px), ys = points.map((point) => point.py);
     const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-    const scale = Math.min(4, Math.max(1, Math.min(
-      (mapFrame[2] - mapFrame[0] - 40) / Math.max(1, x1 - x0),
-      (mapFrame[3] - mapFrame[1] - 40) / Math.max(1, y1 - y0),
+    const precise = points.length > 1 && points.every((point) => ["city", "site"].includes(point.locationPrecision));
+    const padding = Math.min(40, (mapFrame[3] - mapFrame[1]) / 3);
+    const scale = Math.min(precise ? 14 : 4, Math.max(1, Math.min(
+      (mapFrame[2] - mapFrame[0] - padding) / Math.max(1, x1 - x0),
+      (mapFrame[3] - mapFrame[1] - padding) / Math.max(1, y1 - y0),
     )));
     moveCamera({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, scale);
   }
@@ -457,11 +470,13 @@ export function createAtlas(container) {
   function hideTip() { if (tipEl) tipEl.style.opacity = 0; }
 
   // ---- choropleth ------------------------------------------------------------
-  function paintChoropleth(on) {
+  function paintChoropleth(on, onOrigin) {
     if (!countrySel) return;
     countrySel.interrupt("country-fill")
       .on(".war", null)
+      .on(".origin", null)
       .style("pointer-events", null)
+      .style("cursor", null)
       .attr("data-war-side", null)
       .attr("stroke", C.landStroke)
       .attr("stroke-width", 0.5);
@@ -471,7 +486,17 @@ export function createAtlas(container) {
     countrySel.attr("fill", (d) => {
       const n = store.originCounts.get(d.properties.name) || 0;
       return n ? ramp(Math.pow(n / max, 0.5)) : C.densityNone;
-    });
+    })
+      .style("cursor", (d) => store.originCounts.has(d.properties.name) ? "pointer" : null)
+      .on("click.origin", (event, d) => {
+        if (store.originCounts.has(d.properties.name)) onOrigin(d.properties.name);
+      })
+      .on("mouseenter.origin", (event, d) => {
+        const count = store.originCounts.get(d.properties.name);
+        if (count) showTip(event, `${d.properties.name}: ${count} mapped starting references. Select to read the accounts.`);
+      })
+      .on("mousemove.origin", moveTip)
+      .on("mouseleave.origin", hideTip);
   }
 
   function paintWarContext(period) {
@@ -512,11 +537,13 @@ export function createAtlas(container) {
       .on("mouseleave.war", hideTip);
   }
 
-  function ensureHistoricalBoundaries() {
-    if (historicalFeatures || historicalPromise) return historicalPromise;
+  function ensureHistoricalBoundaries(retry = false) {
+    if (historicalFeatures || historicalStatus === "loading" || historicalStatus === "error") return historicalPromise;
+    historicalStatus = "loading";
     document.documentElement.dataset.historicalBoundaries = "loading";
+    api.onHistoryStatus?.();
     const revision = store?.historicalIndex?.geometry_revision || "legacy";
-    historicalPromise = fetch(`data/historical_boundaries.json?v=${encodeURIComponent(revision)}`, { cache: "force-cache" })
+    historicalPromise = fetch(`data/historical_boundaries.json?v=${encodeURIComponent(revision)}`, { cache: retry ? "reload" : "force-cache" })
       .then((response) => {
         if (!response.ok) throw new Error(`Historical boundaries failed to load: ${response.status}`);
         return response.json();
@@ -525,17 +552,26 @@ export function createAtlas(container) {
         if (!topojson?.feature || !topology.objects?.territories) {
           throw new Error("Historical boundary topology is invalid or TopoJSON is unavailable");
         }
-        historicalFeatures = topojson.feature(topology, topology.objects.territories).features;
+        const features = topojson.feature(topology, topology.objects.territories).features;
+        if (!Array.isArray(features) || !features.length) throw new Error("Historical boundaries contain no territory records");
+        return features;
+      })
+      .then((features) => {
+        historicalFeatures = features;
+        historicalStatus = "ready";
         document.documentElement.dataset.historicalBoundaries = "ready";
+        api.onHistoryStatus?.();
         if (api._last) api._last(true);
         if (api.onHistoryReady) api.onHistoryReady();
         return historicalFeatures;
-      })
-      .catch((error) => {
+      }, (error) => {
+        historicalStatus = "error";
         document.documentElement.dataset.historicalBoundaries = "error";
         console.error(error);
+        api.onHistoryStatus?.();
         return null;
-      });
+      })
+      .finally(() => { historicalPromise = null; });
     return historicalPromise;
   }
 
@@ -723,6 +759,7 @@ export function createAtlas(container) {
     if (!historicalFeatures) {
       historicalG.style("display", "none");
       historicalLabelsG.style("display", "none");
+      historicalFlagsG.style("display", "none");
       countriesG.style("display", null);
       ensureHistoricalBoundaries();
       return false;
@@ -788,7 +825,7 @@ export function createAtlas(container) {
     historicalFlagsG.style("display", "none");
     countriesG.style("display", null);
     document.documentElement.dataset.historicalBoundaries =
-      historicalFeatures ? "inactive" : (historicalPromise ? "loading" : "idle");
+      historicalFeatures ? "inactive" : historicalStatus;
   }
 
   function buildGlobeRoutePool() {
@@ -1004,10 +1041,10 @@ export function createAtlas(container) {
       : (hideHistoricalBoundaries(), false);
     if (v === "patterns" && ctx.patternsLayer === "origins") {
       hideHistoricalBoundaries();
-      paintChoropleth(true);
+      paintChoropleth(true, ctx.onOrigin);
     } else if (historicalReady) {
       paintChoropleth(false);
-    } else if (ctx.warPeriod) {
+    } else if (ctx.warPeriod && ctx.boundaryYear == null) {
       paintWarContext(ctx.warPeriod);
     } else {
       paintChoropleth(false);
@@ -1048,7 +1085,7 @@ export function createAtlas(container) {
         op: 0.9,
         animate: ctx.selectedId !== selectedJourney,
       });
-      sel.waypoints.filter((w) => w.px != null && (w.evidenceScope === "personal" || w.verified)).forEach((w) => {
+      personalMapPoints(sel).forEach((w) => {
         const broad = ["country", "region", "unknown"].includes(w.locationPrecision);
         dot(g, w.px, w.py, { r: broad ? 5 : 3.6, fill: broad ? C.paperSoft : col, stroke: broad ? col : "none", sw: broad ? 1 : 0 });
         if (w.liberation || w.newLife) dot(g, w.px, w.py, { r: 8, fill: "none", stroke: col, sw: 1.2, op: 0.35 });
@@ -1058,18 +1095,17 @@ export function createAtlas(container) {
         dot(g, active.px, active.py, { r: 9, fill: C.paperSoft, stroke: col, sw: 2 })
           .attr("class", "selected-place-ring");
       }
+      return;
     }
     for (const j of store.journeys) {
+      if (!visible(j)) continue;
       const home = j.routeStart;
       if (!home || home.px == null) continue;
-      const isSel = sel && j.id === sel.id;
       const col = GROUP_COLOR[j.group] || C.accent;
-      const dim = visible(j) ? 1 : 0.1;
       const c = dot(g, home.px, home.py, {
-        r: isSel ? 6 : 4, fill: isSel ? col : C.paperSoft, stroke: isSel ? C.accentDeep : col,
-        sw: isSel ? 2 : 1.4, op: dim,
+        r: 4, fill: C.paperSoft, stroke: col, sw: 1.4,
       });
-      c.style("cursor", "pointer").attr("pointer-events", "all")
+      c.attr("data-person", j.id).style("cursor", "pointer").attr("pointer-events", "all")
         .on("click", () => ctx.onSelect && ctx.onSelect(j.id))
         .on("mouseenter", (e) => showTip(e, `${j.name}, ${home.canonical}. ${home.locationPrecision || "Unknown"}-level map reference.`))
         .on("mousemove", (e) => moveTip(e)).on("mouseleave", hideTip);

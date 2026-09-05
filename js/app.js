@@ -1,6 +1,6 @@
 // app.js — orchestration. Owns the state machine, renders the persistent atlas
 // (atlas.js) + the per-view overlay (ui.js), and wires collection, media and history controls.
-import { loadData } from "./data.js";
+import { loadData, journeyFilter } from "./data.js";
 import { createAtlas } from "./atlas.js";
 import * as ui from "./ui.js";
 import * as motion from "./motion.js";
@@ -16,12 +16,17 @@ const state = {
   activePlaceIndex: null,
   query: "",
   groupFilter: new Set(),        // populated from the data (all on by default)
+  originCountry: null,
   railLimit: RAIL_PAGE,
   scrubYear: 1944,
   patternsLayer: "journeys",
   patternEventKey: null,
   historyCountry: null,
   historyInfo: null,
+  historyQuery: "",
+  historySearchMessage: "",
+  historyMatches: [],
+  historyPlace: null,
   historyFlags: true,
   historyLabels: true,
   historyRoutes: true,
@@ -57,7 +62,9 @@ async function main() {
   atlas.setStore(store);
   atlas.setTooltipEl(document.getElementById("tip"));
   atlas.onUserCameraChange = () => { state.pendingHistoryCamera = null; };
+  atlas.onHistoryStatus = updateBoundaryNotice;
   atlas.onHistoryReady = () => {
+    updateBoundaryNotice();
     if (state.view !== "patterns") return;
     populateHistoryLocations();
     updateHistoryInfo();
@@ -95,13 +102,7 @@ function dismissLoading(element) {
 }
 
 function matchPredicate() {
-  const q = (state.query || "").trim().toLowerCase();
-  return (j) => state.groupFilter.has(j.group) &&
-    (!q || hay(j).includes(q));
-}
-function hay(j) {
-  return (j.name + " " + j.hometown + " " + j.group + " " + j.conflicts.join(" ") + " " +
-    j.themes.join(" ") + " " + j.waypoints.map((w) => w.canonical).join(" ")).toLowerCase();
+  return journeyFilter(state);
 }
 
 function atlasCtx() {
@@ -131,6 +132,7 @@ function atlasCtx() {
     onSelect: (id) => selectSurvivor(id),
     onEvent: (key) => setPatternEvent(key),
     onController: (name) => selectCountry(name),
+    onOrigin: (name) => openOrigin(name),
     historyCountry: state.historyCountry,
     historyFlags: state.historyFlags,
     historyLabels: state.historyLabels,
@@ -166,6 +168,7 @@ function render(preserveBrowse = false) {
     document.querySelector("[data-rail-list]").scrollTop = browseScroll;
   }
   atlas.render(v, atlasCtx());
+  updateBoundaryNotice();
   restoreHistoryCamera();
   motion.animateOverlay(v, changes);
   rendered = {
@@ -195,11 +198,16 @@ function afterExplore() {
 // ---- actions -----------------------------------------------------------------
 function go(view) {
   if (!VIEWS.includes(view)) view = "landing";
+  if (view === "explore" && state.view === "explore" && state.selectedId) return clearSel();
   if (view === state.view) return;
   stopHistoryPlayback();
+  if (view === "explore") {
+    state.selectedId = null;
+    state.activePlaceIndex = null;
+  }
   state.view = view;
   const hash = view === "landing" ? "" : (
-    view === "patterns" ? historyHash() : `#/${view}`
+    view === "patterns" ? historyHash() : (view === "explore" ? exploreHash() : `#/${view}`)
   );
   setHash(hash);
   render();
@@ -213,30 +221,90 @@ function selectSurvivor(id) {
 function clearSel() {
   const id = state.selectedId;
   state.selectedId = null; state.activePlaceIndex = null;
-  setHash("#/explore"); render(true);
+  setHash(exploreHash()); render(true);
+  restoreCollectionFocus(id);
+}
+
+function restoreCollectionFocus(id) {
   const source = id && document.querySelector(`[data-survivor="${CSS.escape(id)}"]`);
   (source || document.getElementById("search"))?.focus({ preventScroll: true });
 }
 
-function toggleGroup(name) {
-  if (state.groupFilter.has(name)) {
-    if (state.groupFilter.size === store.groups.length) {
-      // first click on a chip when all are on → solo that group
-      state.groupFilter = new Set([name]);
-    } else state.groupFilter.delete(name);
-  } else state.groupFilter.add(name);
-  if (!state.groupFilter.size) store.groups.forEach((g) => state.groupFilter.add(g.name));
+function toggleGroup(name, checked) {
+  if (!store.groups.some((group) => group.name === name)) {
+    console.warn("The selected community is not in the collection.");
+    return;
+  }
+  if (checked) state.groupFilter.add(name);
+  else state.groupFilter.delete(name);
   state.railLimit = RAIL_PAGE;
-  render();
-  document.querySelector(`[data-group="${CSS.escape(name)}"]`)?.focus({ preventScroll: true });
+  refreshCollection();
+}
+
+function setGroups(all) {
+  state.groupFilter = new Set(all ? store.groups.map((group) => group.name) : []);
+  state.railLimit = RAIL_PAGE;
+  refreshCollection();
 }
 
 function resetSearch() {
   state.query = "";
+  state.originCountry = null;
   state.groupFilter = new Set(store.groups.map((group) => group.name));
   state.railLimit = RAIL_PAGE;
-  render();
+  document.querySelector(".collection-filters").open = false;
+  refreshCollection();
+  if (!state.selectedId) history.replaceState(null, "", exploreHash());
   document.getElementById("search").focus();
+}
+
+function refreshCollection() {
+  refreshRail(true);
+  const search = document.getElementById("search");
+  if (search.value !== state.query) search.value = state.query;
+  document.querySelectorAll("[data-group]").forEach((input) => {
+    input.checked = state.groupFilter.has(input.dataset.group);
+  });
+  document.querySelector("[data-group-count]").textContent = state.groupFilter.size === store.groups.length
+    ? "All" : `${state.groupFilter.size} selected`;
+  document.querySelector(".filter-reset").hidden = !state.query && !state.originCountry &&
+    state.groupFilter.size === store.groups.length;
+  document.querySelector("[data-origin-filter]").hidden = !state.originCountry;
+  document.querySelector("[data-origin-name]").textContent = state.originCountry || "";
+  atlas.render("explore", atlasCtx());
+  updateBoundaryNotice();
+}
+
+function exploreHash() {
+  const params = new URLSearchParams();
+  if (state.originCountry) params.set("origin", state.originCountry);
+  return `#/explore${params.size ? `?${params}` : ""}`;
+}
+
+function openOrigin(name) {
+  if (!store.originCounts.has(name)) {
+    console.warn("There are no mapped route origins for this country.");
+    return;
+  }
+  stopHistoryPlayback();
+  state.originCountry = name;
+  state.query = "";
+  state.groupFilter = new Set(store.groups.map((group) => group.name));
+  state.railLimit = RAIL_PAGE;
+  state.selectedId = null;
+  state.activePlaceIndex = null;
+  state.view = "explore";
+  setHash(exploreHash());
+  render();
+  document.getElementById("search").focus({ preventScroll: true });
+}
+
+function clearOrigin() {
+  state.originCountry = null;
+  state.railLimit = RAIL_PAGE;
+  refreshCollection();
+  if (!state.selectedId) history.replaceState(null, "", exploreHash());
+  document.getElementById("search").focus({ preventScroll: true });
 }
 
 function focusPlace(index) {
@@ -250,19 +318,26 @@ function focusPlace(index) {
     button.setAttribute("aria-pressed", String(Number(button.dataset.placeStep) === index));
   });
   atlas.render("explore", atlasCtx());
+  updateBoundaryNotice();
+}
+
+function scrollProfileTo(section, focusTarget = section) {
+  const panel = document.querySelector(".panel");
+  if (!section || !panel?.contains(section)) {
+    console.warn("This section is not available in the selected account.");
+    return;
+  }
+  const toolbar = panel.querySelector(".profile-toolbar");
+  panel.scrollTo({
+    top: section.getBoundingClientRect().top - panel.getBoundingClientRect().top +
+      panel.scrollTop - toolbar.offsetHeight - 12,
+    behavior: motionEnabled() ? "smooth" : "auto",
+  });
+  focusTarget.focus({ preventScroll: true });
 }
 
 function showInterviews() {
-  const section = document.getElementById("profile-interviews");
-  if (!section) {
-    console.warn("This account has no interview inventory.");
-    return;
-  }
-  document.querySelector(".panel").scrollTo({
-    top: section.offsetTop - 16,
-    behavior: motionEnabled() ? "smooth" : "auto",
-  });
-  document.getElementById("interviews-title").focus({ preventScroll: true });
+  scrollProfileTo(document.getElementById("profile-interviews"), document.getElementById("interviews-title"));
 }
 
 function playVideo(id) {
@@ -290,11 +365,7 @@ function playVideo(id) {
   document.querySelectorAll("[data-video]").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.video === id));
   });
-  document.querySelector(".panel").scrollTo({
-    top: player.offsetTop - 16,
-    behavior: motionEnabled() ? "smooth" : "auto",
-  });
-  title.focus({ preventScroll: true });
+  scrollProfileTo(player, title);
 }
 
 function closeVideo() {
@@ -308,15 +379,24 @@ function closeVideo() {
 
 function onSearch(value) {
   state.query = value; state.railLimit = RAIL_PAGE;
-  refreshRail();
-  atlas.render("explore", atlasCtx());
+  refreshCollection();
 }
-function showMore() { state.railLimit += RAIL_PAGE * 2; refreshRail(); }
-function refreshRail() {
+function showMore() {
+  const previous = new Set([...document.querySelectorAll(".rail-card")].map((card) => card.dataset.survivor));
+  state.railLimit += RAIL_PAGE * 2;
+  refreshRail();
+  const firstNew = [...document.querySelectorAll(".rail-card")].find((card) => !previous.has(card.dataset.survivor));
+  firstNew?.focus({ preventScroll: true });
+  firstNew?.scrollIntoView({ block: "nearest" });
+}
+function refreshRail(resetScroll = false) {
   const { html, shown, total } = ui.railInner(store, state);
   const list = document.querySelector("[data-rail-list]");
   const cnt = document.querySelector("[data-rail-count]");
-  if (list) list.innerHTML = html;
+  if (list) {
+    list.innerHTML = html;
+    if (resetScroll) list.scrollTop = 0;
+  }
   if (cnt) cnt.textContent = `${shown} of ${total} shown`;
 }
 
@@ -328,6 +408,7 @@ function setLayer(layer) {
     syncHistoryAddress();
     render();
     if (layer === "origins") atlas.resetCamera();
+    focusMainContent();
   }
 }
 function setScrub(year) {
@@ -338,11 +419,14 @@ function setScrub(year) {
   const camera = atlas.cameraPosition();
   state.scrubYear = Math.max(store.time.min, Math.min(store.time.max, year));
   state.patternEventKey = null;
+  state.historyMatches = [];
+  state.historySearchMessage = "";
   updateHistoryInfo();
   syncHistoryAddress();
   refreshPatternEvents();
   populateHistoryLocations();
   atlas.render("patterns", atlasCtx());
+  updateBoundaryNotice();
   if (camera) atlas.focusCoordinates(camera.lng, camera.lat, camera.zoom, false);
 }
 
@@ -403,11 +487,21 @@ function refreshPatternEvents() {
 }
 
 function updateHistoryInfo() {
+  const previous = state.historyInfo?.name || state.historyCountry;
   state.historyInfo = state.historyCountry ? atlas.countryInfo(state.historyCountry, state.scrubYear) : null;
-  if (state.historyInfo) state.historyCountry = state.historyInfo.controller;
+  if (state.historyInfo) {
+    state.historyCountry = state.historyInfo.controller;
+    state.historyQuery = state.historyInfo.name;
+    state.historySearchMessage = `Showing ${state.historyInfo.name} in ${state.scrubYear}.`;
+  }
   if (state.historyCountry && !state.historyInfo && atlas.historyLoaded()) {
     state.historyCountry = null;
+    state.historyQuery = "";
+    state.historySearchMessage = `${previous} has no mapped territory in ${state.scrubYear}. The country selection has been cleared.`;
+  } else if (state.historyPlace) {
+    state.historySearchMessage = `Centred on ${state.historyPlace}. The border year is ${state.scrubYear}.`;
   }
+  refreshHistorySearch();
 }
 
 function selectCountry(name) {
@@ -415,14 +509,17 @@ function selectCountry(name) {
   state.pendingHistoryCamera = null;
   const info = name ? atlas.countryInfo(name, state.scrubYear) : null;
   if (name && !info) {
-    const status = document.querySelector("[data-search-status]");
-    if (status) status.textContent = `That administration is not mapped in ${state.scrubYear}. Try another year.`;
+    state.historySearchMessage = `That administration is not mapped in ${state.scrubYear}. Try another year.`;
+    refreshHistorySearch();
     return;
   }
   state.historyCountry = info?.controller || null;
   state.historyInfo = info;
-  const searchStatus = document.querySelector("[data-search-status]");
-  if (searchStatus) searchStatus.textContent = info ? `Showing ${info.name} in ${state.scrubYear}.` : "";
+  state.historyPlace = null;
+  state.historyQuery = info?.name || "";
+  state.historyMatches = [];
+  state.historySearchMessage = info ? `Showing ${info.name} in ${state.scrubYear}.` : `Showing all mapped territories in ${state.scrubYear}.`;
+  refreshHistorySearch();
   state.historyContextOpen = true;
   const disclosure = document.querySelector("[data-history-context]");
   if (disclosure) disclosure.open = true;
@@ -448,34 +545,92 @@ function populateHistoryLocations() {
 
 function findHistoryLocation() {
   const input = document.querySelector("[data-country-search]");
-  const status = document.querySelector("[data-search-status]");
   const query = input.value.trim();
+  stopHistoryPlayback();
+  state.historyQuery = query;
+  state.historyMatches = [];
   if (!query) {
-    status.textContent = "Enter a country or a place named in an OHP account.";
+    state.historySearchMessage = "Enter a country or a place named in an OHP account.";
+    refreshHistorySearch();
     input.focus();
     return;
   }
   const matches = atlas.searchLocations(query, state.scrubYear);
   if (!matches.length) {
-    status.textContent = atlas.historyLoaded()
+    state.historySearchMessage = atlas.historyLoaded()
       ? `No mapped country or OHP place matched "${query}" in ${state.scrubYear}. Try another name or year.`
-      : "The dated territory records have not loaded. Try an OHP place or reload the page.";
+      : "The historical borders have not loaded. Try a recorded place, or use the map's retry button.";
+    refreshHistorySearch();
     atlas.resize();
     return;
   }
-  const match = matches[0];
-  status.textContent = match.kind === "country"
-    ? `Showing ${match.name} in ${state.scrubYear}.`
-    : `Centred on ${match.name}. The borders still show ${state.scrubYear}.`;
+  const exact = matches.find((match) => match.exact);
+  if (exact || matches.length === 1) return applyHistoryLocation(exact || matches[0]);
+  state.historyMatches = matches;
+  state.historySearchMessage = `${matches.length} locations match. Choose a territory or a recorded place.`;
+  refreshHistorySearch();
+  document.querySelector("[data-history-match]")?.focus({ preventScroll: true });
+}
+
+function applyHistoryLocation(match) {
+  state.pendingHistoryCamera = null;
+  state.historyQuery = match.name;
+  state.historyMatches = [];
   if (match.kind === "country") selectCountry(match.name);
   else {
+    state.historyPlace = match.name;
     state.historyCountry = null;
     state.historyInfo = null;
+    state.historySearchMessage = `Centred on ${match.name}. The border year is ${state.scrubYear}.`;
+    refreshHistorySearch();
     refreshPatternEvents();
     atlas.render("patterns", atlasCtx());
     atlas.focusCoordinates(match.lng, match.lat, 4);
+    document.querySelector("[data-country-search]").focus({ preventScroll: true });
   }
   syncHistoryAddress();
+}
+
+function refreshHistorySearch() {
+  const input = document.querySelector("[data-country-search]");
+  if (!input) return;
+  if (input.value !== state.historyQuery) input.value = state.historyQuery;
+  document.querySelector("[data-search-status]").textContent = state.historySearchMessage;
+  const results = document.querySelector("[data-history-results]");
+  results.innerHTML = ui.historySearchResults(state.historyMatches, state.scrubYear);
+  results.hidden = !state.historyMatches.length;
+}
+
+function onHistorySearch(value) {
+  stopHistoryPlayback();
+  state.historyQuery = value;
+  state.historyMatches = [];
+  if (!value.trim() && (state.historyCountry || state.historyPlace)) return selectCountry(null);
+  state.historySearchMessage = "";
+  refreshHistorySearch();
+}
+
+function updateBoundaryNotice() {
+  const notice = document.querySelector("[data-boundary-notice]");
+  if (!notice) return;
+  const year = atlasCtx().boundaryYear;
+  const loadState = atlas.historyState();
+  const visible = year != null && ["loading", "error"].includes(loadState);
+  const message = loadState === "error"
+    ? `The ${year} borders could not load. Showing today's basemap instead.`
+    : `Loading ${year} borders. Today's basemap is shown for now.`;
+  const visibilityChanged = notice.hidden === visible;
+  const messageChanged = notice.querySelector("p").textContent !== message;
+  notice.hidden = !visible;
+  notice.querySelector("p").textContent = message;
+  notice.querySelector("button").hidden = loadState !== "error";
+  const caption = document.querySelector("[data-explore-map-caption]");
+  const previousHeight = caption?.offsetHeight;
+  if (caption) caption.innerHTML = ui.exploreMapCaption(store, state, atlas.historyLoaded());
+  const comparisonChanged = updateCompareCaption();
+  if (visibilityChanged || (visible && messageChanged) || caption?.offsetHeight !== previousHeight || comparisonChanged) {
+    window.requestAnimationFrame(() => atlas.resize());
+  }
 }
 
 function historyHash(includeCamera = false) {
@@ -511,15 +666,22 @@ function syncHistoryAddress() {
 
 function updateHistoryDisplay() {
   const compare = document.querySelector("[data-compare-control]");
-  const caption = document.querySelector("[data-compare-caption]");
-  const frameChanged = caption && caption.hidden === state.historyCompare;
+  const frameChanged = updateCompareCaption();
   if (compare) compare.hidden = !state.historyCompare;
-  if (caption) caption.hidden = !state.historyCompare;
   atlas.setHistoryDisplay({
     compare: state.historyCompare, split: state.historySplit, opacity: state.historyOpacity,
   });
   if (frameChanged) atlas.resize();
   syncHistoryAddress();
+}
+
+function updateCompareCaption() {
+  const caption = document.querySelector("[data-compare-caption]");
+  if (!caption) return false;
+  const hidden = !state.historyCompare || !atlas.historyLoaded();
+  const changed = caption.hidden !== hidden;
+  caption.hidden = hidden;
+  return changed;
 }
 
 function stopHistoryPlayback() {
@@ -555,6 +717,10 @@ async function shareMap() {
   const address = `${location.origin}${location.pathname}${historyHash(true)}`;
   const status = document.querySelector("[data-share-status]");
   const fallback = document.querySelector("[data-share-address]");
+  document.getElementById("share-feedback").hidden = false;
+  document.querySelector("[data-act='share-map']").setAttribute("aria-expanded", "true");
+  status.textContent = "Copying the map link.";
+  fallback.hidden = true;
   fallback.value = address;
   if (!navigator.clipboard) {
     fallback.hidden = false;
@@ -564,6 +730,7 @@ async function shareMap() {
   }
   try {
     await navigator.clipboard.writeText(address);
+    fallback.hidden = true;
     status.textContent = "The map link has been copied.";
   } catch (error) {
     if (!(error instanceof DOMException)) throw error;
@@ -573,16 +740,44 @@ async function shareMap() {
   }
 }
 
+function closeShare(restoreFocus = true) {
+  document.getElementById("share-feedback").hidden = true;
+  document.querySelector("[data-share-address]").hidden = true;
+  const button = document.querySelector("[data-act='share-map']");
+  button.setAttribute("aria-expanded", "false");
+  if (restoreFocus) button.focus({ preventScroll: true });
+}
+
 // ---- event wiring ------------------------------------------------------------
 function wireGlobal() {
   document.getElementById("topbar").addEventListener("click", onActivate);
+  document.querySelector(".skip-link").addEventListener("click", (event) => {
+    event.preventDefault();
+    focusMainContent();
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (document.querySelector(".share-feedback:not([hidden])") &&
+        !event.target.closest(".share-feedback,[data-act='share-map']")) closeShare(false);
+    if (state.view === "patterns" && state.historyMatches.length && !event.target.closest(".history-search-box")) {
+      state.historyMatches = [];
+      state.historySearchMessage = "Search again to see matching locations.";
+      refreshHistorySearch();
+    }
+  });
   document.addEventListener("visibilitychange", () => { if (document.hidden) stopHistoryPlayback(); });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       const settings = document.querySelector(".history-settings[open]");
-      if (settings) {
+      if (state.view === "patterns" && state.historyMatches.length) {
+        state.historyMatches = [];
+        state.historySearchMessage = "Location suggestions closed.";
+        refreshHistorySearch();
+        document.querySelector("[data-country-search]").focus();
+      } else if (settings) {
         settings.open = false;
         settings.querySelector("summary").focus();
+      } else if (document.querySelector(".share-feedback:not([hidden])")) {
+        closeShare();
       } else if (state.historyPlaying) stopHistoryPlayback();
       else if (state.view === "patterns" && state.historyCountry) selectCountry(null);
       else if (state.view === "about") go("explore");
@@ -590,6 +785,19 @@ function wireGlobal() {
     }
   });
 }
+
+function focusMainContent() {
+  const selectors = state.view === "explore"
+    ? ["#profile-name", "#search"]
+    : state.view === "patterns"
+      ? [".patterns-intro h2", "[data-country-search]", "[data-history-context] > summary"]
+      : state.view === "about" ? [".about-header h1"] : [".landing-card h1"];
+  const target = selectors.map((selector) => document.querySelector(selector))
+    .find((element) => element?.getClientRects().length) || document.getElementById("overlay");
+  if (!target.matches("input,button,summary,[tabindex]")) target.tabIndex = -1;
+  target.focus({ preventScroll: true });
+}
+
 function wireOverlay() {
   const host = document.getElementById("overlay");
   host.onclick = onActivate;
@@ -616,6 +824,7 @@ function wireOverlay() {
   const historySearch = host.querySelector("[data-history-search]");
   if (historySearch) {
     historySearch.addEventListener("submit", (event) => { event.preventDefault(); findHistoryLocation(); });
+    historySearch.querySelector("input").addEventListener("input", (event) => onHistorySearch(event.target.value));
     populateHistoryLocations();
   }
   host.querySelector("[data-history-context]")?.addEventListener("toggle", (event) => {
@@ -644,14 +853,25 @@ function wireOverlay() {
   if (search) {
     search.addEventListener("input", () => onSearch(search.value));
   }
+  host.querySelector(".collection-filters")?.addEventListener("toggle", () => atlas.resize());
+  host.querySelectorAll("[data-group]").forEach((input) => {
+    input.addEventListener("change", () => toggleGroup(input.dataset.group, input.checked));
+  });
 }
 function onActivate(e) {
-  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-group],[data-layer],[data-event],[data-place-step],[data-video]");
-  if (!t) return;
+  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match]");
+  if (!t || !e.currentTarget.contains(t)) return;
   if (t.dataset.view) return go(t.dataset.view);
   if (t.dataset.layer) return setLayer(t.dataset.layer);
   if (t.dataset.survivor != null) return selectSurvivor(t.dataset.survivor);
-  if (t.dataset.group != null) return toggleGroup(t.dataset.group);
+  if (t.dataset.profileSection) return scrollProfileTo(document.getElementById(t.dataset.profileSection));
+  if (t.dataset.origin) return openOrigin(t.dataset.origin);
+  if (t.dataset.historyMatch != null) {
+    const match = state.historyMatches[Number(t.dataset.historyMatch)];
+    if (match) return applyHistoryLocation(match);
+    console.warn("This map search result is no longer available.");
+    return;
+  }
   if (t.dataset.event != null) return setPatternEvent(t.dataset.event);
   if (t.dataset.placeStep != null) return focusPlace(Number(t.dataset.placeStep));
   if (t.dataset.video != null) return playVideo(t.dataset.video);
@@ -662,6 +882,13 @@ function onActivate(e) {
     case "clear": return clearSel();
     case "more": return showMore();
     case "reset-search": return resetSearch();
+    case "all-groups": return setGroups(true);
+    case "no-groups": return setGroups(false);
+    case "close-filters":
+      document.querySelector(".collection-filters").open = false;
+      return document.querySelector(".collection-filters summary").focus();
+    case "clear-origin": return clearOrigin();
+    case "origin-overview": state.patternsLayer = "origins"; return go("patterns");
     case "show-interviews": return showInterviews();
     case "close-video": return closeVideo();
     case "zoom-in": state.pendingHistoryCamera = null; return atlas.zoomBy(1.5);
@@ -671,6 +898,7 @@ function onActivate(e) {
       state.pendingHistoryCamera = null;
       document.querySelectorAll("[data-place-step]").forEach((button) => button.setAttribute("aria-pressed", "false"));
       atlas.render(state.view, atlasCtx());
+      updateBoundaryNotice();
       return atlas.resetCamera();
     case "prev-year": return stepEventYear(-1);
     case "next-year": return stepEventYear(1);
@@ -679,6 +907,8 @@ function onActivate(e) {
     case "clear-country": return selectCountry(null);
     case "play-history": return toggleHistoryPlayback();
     case "share-map": return shareMap();
+    case "close-share": return closeShare();
+    case "retry-history": return atlas.retryHistory();
   }
 }
 
@@ -716,6 +946,11 @@ function route() {
     state.patternEventKey = null;
     state.patternsLayer = params.get("layer") === "origins" ? "origins" : "journeys";
     state.historyCountry = params.get("country") || null;
+    state.historyInfo = null;
+    state.historyQuery = state.historyCountry || "";
+    state.historySearchMessage = "";
+    state.historyMatches = [];
+    state.historyPlace = null;
     state.historyFlags = params.get("flags") !== "0";
     state.historyLabels = params.get("labels") !== "0";
     state.historyRoutes = params.get("routes") !== "0";
@@ -733,7 +968,18 @@ function route() {
     render();
     return;
   }
-  if (VIEWS.includes(kind)) { state.view = kind; render(); return; }
+  if (VIEWS.includes(kind)) {
+    const previous = state.selectedId;
+    if (kind === "explore") {
+      state.selectedId = null;
+      state.activePlaceIndex = null;
+      state.originCountry = params.get("origin") || null;
+    }
+    state.view = kind;
+    render(kind === "explore");
+    if (kind === "explore" && previous) restoreCollectionFocus(previous);
+    return;
+  }
   state.view = "landing"; render();
 }
 

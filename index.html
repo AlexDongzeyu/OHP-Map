@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
-  <a class="skip-link" href="#map">Skip to the map</a>
+  <a class="skip-link" href="#overlay">Skip to main content</a>
 
   <svg class="icon-sprite" aria-hidden="true">
     <symbol id="icon-arrow-right" viewBox="0 0 24 24">
@@ -65,7 +65,7 @@
   <div id="stage">
     <div id="portrait-field" aria-hidden="true"></div>
     <!-- persistent vector map -->
-    <main id="map" tabindex="-1" role="application" aria-label="Map of oral history journeys"></main>
+    <div id="map" tabindex="-1" role="region" aria-label="Map of oral history journeys"></div>
     <div id="tip" class="tip" aria-hidden="true"></div>
 
     <!-- loading / error -->
@@ -103,7 +103,7 @@
     </header>
 
     <!-- overlay (filled per view) -->
-    <div id="overlay"></div>
+    <main id="overlay" tabindex="-1"></main>
   </div>
 
   <div id="fatal" class="fatal" hidden role="alert">

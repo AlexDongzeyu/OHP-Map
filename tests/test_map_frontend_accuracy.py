@@ -52,3 +52,40 @@ console.log(JSON.stringify({
     assert data["wally"]["ottawa"]["dateAsWritten"] == "80s"
     assert data["billCanadaEvents"] == 0
     assert data["unassignedHistoricalRegions"]
+
+
+def test_collection_predicate_matches_source_names_accents_and_exact_origins():
+    script = r"""
+globalThis.window = {matchMedia: () => ({matches:false})};
+const {journeyFilter} = await import('./js/data.js');
+const groups = new Set(['Military Veterans', 'Community Members']);
+const base = {
+  name:'Leon', hometown:'Toronto', group:'Military Veterans',
+  conflicts:[], themes:[], originCountry:'Canada', waypoints:[],
+};
+const people = [
+  {...base, id:'origin', name:'Leon', originCountry:'Canada'},
+  {...base, id:'mention', name:'Other', originCountry:'France',
+    waypoints:[{canonical:'Toronto, Canada', asWritten:'Toronto'}]},
+  {...base, id:'spelling', name:'Léon', group:'Community Members',
+    waypoints:[{canonical:'Lviv, Ukraine', asWritten:'Lemberg'}]},
+];
+const filter = (state) => people.filter(journeyFilter({groupFilter:groups, ...state})).map(p=>p.id);
+console.log(JSON.stringify({
+  origin:filter({originCountry:'Canada'}),
+  accent:filter({query:'leon'}),
+  spelling:filter({query:'lemberg'}),
+  empty:filter({groupFilter:new Set()}),
+  combined:filter({originCountry:'Canada',query:'lemberg',groupFilter:new Set(['Community Members'])}),
+}));
+"""
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        cwd=ROOT, check=True, capture_output=True, text=True, encoding="utf-8",
+    )
+    data = json.loads(result.stdout)
+    assert data["origin"] == ["origin", "spelling"]
+    assert data["accent"] == ["origin", "spelling"]
+    assert data["spelling"] == ["spelling"]
+    assert data["empty"] == []
+    assert data["combined"] == ["spelling"]
