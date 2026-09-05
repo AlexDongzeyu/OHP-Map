@@ -105,11 +105,15 @@ function mosaicSide(person, className) {
 }
 
 function clearedPortrait(journey) {
-  if (!journey.portrait || journey.portraitFaces <= 0) return null;
+  if (!journey.portrait) return null;
   const rights = String(journey.portraitRights || "").toLowerCase();
   return /\b(cleared|licensed|public domain|permission granted)\b/.test(rights)
     ? journey.portrait
     : null;
+}
+
+function validatedPortrait(journey) {
+  return journey.portraitFaces > 0 ? clearedPortrait(journey) : null;
 }
 
 // ---- GUIDED -----------------------------------------------------------------
@@ -117,7 +121,7 @@ export function guided(store, state) {
   const j = store.byId.get(state.guidedId) || store.journeys[0];
   const first = j.name.split(" ")[0];
   const wp = j.waypoints;
-  const portrait = clearedPortrait(j);
+  const portrait = validatedPortrait(j);
   const chapters = wp.map((w, i) => {
     const context = store.warForJourney(j, w.year);
     const showContext = context && !["birthplace", "resettlement"].includes(w.roleKey);

@@ -244,7 +244,9 @@ const BASE = process.argv[2] || "http://localhost:8124";
     await page.waitForSelector(".rail .gchip", { timeout: 5000 });
     await page.waitForSelector(".rail .rail-ghead", { timeout: 5000 });
     const chips = await page.$$eval(".gchip", (e) => e.length);
+    const profilePictures = await page.$$eval(".rail-card .medal img", (images) => images.length);
     if (chips < 1) throw new Error("no group chips");
+    if (profilePictures < 130) throw new Error(`only ${profilePictures} profile pictures were restored`);
     const mapBounds = await page.$eval("#map", (map) => map.getBoundingClientRect().toJSON());
     await page.mouse.move(mapBounds.x + mapBounds.width / 2, mapBounds.y + mapBounds.height / 2);
     await page.mouse.wheel({ deltaY: -300 });
@@ -276,14 +278,14 @@ const BASE = process.argv[2] || "http://localhost:8124";
       opposition: document.querySelectorAll("#map [data-war-side='opposition']").length,
       bio: document.querySelector(".panel .bio")?.textContent.trim(),
       recording: document.querySelector(".panel .recording-meta")?.textContent.replace(/\s+/g, " ").trim(),
-      invalidPortrait: Boolean(document.querySelector(".panel .medal img")),
+      restoredPicture: Boolean(document.querySelector(".panel .medal img")),
     }));
     if (serviceMap.context !== "Second World War" || !serviceMap.coalition || !serviceMap.opposition ||
         serviceMap.bio.length < 200 || /…$/.test(serviceMap.bio) ||
         !/[.!?][”"')\]]?$/.test(serviceMap.bio) ||
         !/interview chapters?/.test(serviceMap.recording || "") ||
         !/no public captions/.test(serviceMap.recording || "") ||
-        serviceMap.invalidPortrait) {
+        !serviceMap.restoredPicture) {
       throw new Error(`veteran service context is incomplete ${JSON.stringify(serviceMap)}`);
     }
   });
