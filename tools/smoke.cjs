@@ -68,6 +68,7 @@ function assertCounterMotion(label, { targets, samples }) {
         title: cover.querySelector(".loading-title")?.textContent.trim(),
         status: cover.querySelector(".loading-status")?.textContent.trim(),
         globe: Boolean(cover.querySelector(".loading-globe")),
+        progressLine: Boolean(cover.querySelector(".loading-rule")),
         spinner: Boolean(cover.querySelector(".spinner")),
         background: getComputedStyle(cover).backgroundImage,
       };
@@ -75,7 +76,9 @@ function assertCounterMotion(label, { targets, samples }) {
     if (loading.title !== "Journeys" || loading.status !== "Opening the archive") {
       throw new Error("loading identity is incomplete");
     }
-    if (!loading.globe || loading.spinner) throw new Error("loading visual is not atlas-specific");
+    if (!loading.globe || loading.spinner || loading.progressLine) {
+      throw new Error("loading visual is not a quiet atlas identity");
+    }
     if (!/linear-gradient/.test(loading.background)) throw new Error("loading veil is missing its twilight surface");
   });
   await page.waitForSelector("#topbar:not([hidden])", { timeout: 15000 });

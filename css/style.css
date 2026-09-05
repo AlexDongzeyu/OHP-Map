@@ -174,31 +174,13 @@ body[data-view="landing"] #map .globe {
   letter-spacing:.25em;
   text-transform:uppercase;
 }
-.loading-rule {
-  position:relative;
-  width:min(290px, 70%);
-  height:1px;
-  display:block;
-  margin-top:var(--space-8);
-  overflow:visible;
-  background:rgba(231,237,242,.22);
-}
-.loading-rule i {
-  position:absolute;
-  top:-2px;
-  left:0;
-  width:5px;
-  height:5px;
-  border-radius:50%;
-  background:#9EB8CA;
-  box-shadow:0 0 14px rgba(158,184,202,.65);
-  animation:loadingJourney 2.4s var(--ease) infinite;
-}
 .loading-status {
-  margin:var(--space-3) 0 0;
-  color:rgba(231,237,242,.58);
-  font-size:12px;
-  letter-spacing:.06em;
+  margin:var(--space-8) 0 0;
+  color:rgba(231,237,242,.68);
+  font-size:11px;
+  font-weight:500;
+  letter-spacing:.08em;
+  animation:loadingBreath 1.8s ease-in-out infinite;
 }
 .loading-globe {
   position:absolute;
@@ -255,11 +237,8 @@ body[data-view="landing"] #map .globe {
   background:var(--paper);
   text-align:center;
 }
-@keyframes loadingJourney {
-  0% { left:0; opacity:.2; }
-  18% { opacity:1; }
-  78% { opacity:1; }
-  100% { left:100%; opacity:.2; }
+@keyframes loadingBreath {
+  50% { opacity:.58; }
 }
 @keyframes loadingPulse {
   50% { transform:scale(1.7); opacity:.55; }
