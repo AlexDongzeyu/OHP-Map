@@ -139,7 +139,7 @@ export function explore(store, state) {
         <input id="search" class="search-input" type="search" placeholder="Search names or places"
           value="${esc(state.query || "")}" autocomplete="off" aria-label="Search people">
       </div>
-      <details class="collection-filters"${state.groupFilter.size !== store.groups.length ? " open" : ""}>
+      <details class="collection-filters">
         <summary>Communities <span data-group-count>${state.groupFilter.size === store.groups.length ? "All" : `${state.groupFilter.size} selected`}</span>${icon("chevron")}</summary>
         <div class="filter-actions">
           <button class="link" data-act="all-groups">Select all</button>

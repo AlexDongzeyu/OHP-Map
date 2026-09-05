@@ -24,6 +24,7 @@ export function createAtlas(container) {
   let size = { w: 0, h: 0 }, currentK = 1;
   let mapFrame = null;
   let selectedJourney = null;
+  let selectedPatternEvent = null;
   let store = null, tipEl = null, zoom = null;
   let view = null, rotateRAF = null, rot = [-40, -32, 0];
   let globeRoutePool = [], globeRouteBatch = [], globeRouteCursor = 0;
@@ -1068,7 +1069,9 @@ export function createAtlas(container) {
       selectedJourney = ctx.selectedId;
     } else if (v === "patterns") {
       clearOverlay();
-      drawPatterns(ctx);
+      const eventKey = ctx.activePatternEvent?.key || null;
+      drawPatterns(ctx, changed || frameChanged || reframe || selectedPatternEvent !== eventKey);
+      selectedPatternEvent = eventKey;
       if (pinnedController && (controllerChanged || changed || frameChanged || reframe)) {
         focusController(pinnedController, ctx.scrubYear);
       } else if ((changed || frameChanged || reframe) && !ctx.activePatternEvent) api.resetCamera();
@@ -1135,7 +1138,7 @@ export function createAtlas(container) {
     }
   }
 
-  function drawPatterns(ctx) {
+  function drawPatterns(ctx, focusEvent) {
     const g = overlayG;
     if (ctx.patternsLayer === "origins") { drawOrigins(g); return; }
     const activeEvent = ctx.historyTestimony === false ? null : ctx.activePatternEvent;
@@ -1238,7 +1241,7 @@ export function createAtlas(container) {
         });
       }
     }
-    if (activePoint) moveCamera(activePoint, size.w <= 820 ? 1.1 : 1.18);
+    if (activePoint && focusEvent) moveCamera(activePoint, size.w <= 820 ? 1.1 : 1.18);
   }
 
   function drawOrigins(g) {

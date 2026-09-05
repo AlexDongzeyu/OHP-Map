@@ -87,7 +87,12 @@ async function main() {
     let t;
     new ResizeObserver(() => {
       clearTimeout(t);
-      t = setTimeout(() => { syncPresentation(); atlas.resize(); restoreHistoryCamera(); }, 120);
+      t = setTimeout(() => {
+        syncPresentation();
+        atlas.resize();
+        restoreHistoryCamera();
+        keepHistoryFocusVisible();
+      }, 120);
     })
       .observe(document.getElementById("map"));
   }
@@ -169,6 +174,7 @@ function render(preserveBrowse = false) {
     else b.removeAttribute("aria-current");
   });
   document.body.dataset.view = v;
+  updateDocumentTitle();
   mountOverlay();
   syncPresentation();
   if (list) {
@@ -253,6 +259,7 @@ function go(view) {
   if (view === "explore" && state.view === "explore" && state.selectedId) return clearSel();
   if (view === state.view) return;
   stopHistoryPlayback();
+  syncHistoryAddress(true);
   if (view === "explore") {
     state.selectedId = null;
     state.activePlaceIndex = null;
@@ -267,9 +274,16 @@ function go(view) {
 }
 function selectSurvivor(id) {
   stopHistoryPlayback();
+  syncHistoryAddress(true);
+  if (state.view !== "explore") {
+    state.query = "";
+    state.originCountry = null;
+    state.groupFilter = new Set(store.groups.map((group) => group.name));
+    state.railLimit = RAIL_PAGE;
+  }
   state.selectedId = id; state.activePlaceIndex = null;
   state.explorePresentation = "auto";
-  state.view = "explore"; setHash(`#/survivor/${id}`); render(true);
+  state.view = "explore"; setHash(accountHash(id)); render(true);
   document.getElementById("profile-name")?.focus({ preventScroll: true });
 }
 function clearSel() {
@@ -283,6 +297,7 @@ function clearSel() {
 function restoreCollectionFocus(id) {
   const source = id && document.querySelector(`[data-survivor="${CSS.escape(id)}"]`);
   (source || document.getElementById("search"))?.focus({ preventScroll: true });
+  source?.scrollIntoView({ block: "nearest" });
 }
 
 function toggleGroup(name, checked) {
@@ -328,12 +343,45 @@ function refreshCollection() {
   document.querySelector("[data-origin-name]").textContent = state.originCountry || "";
   atlas.render("explore", atlasCtx());
   updateBoundaryNotice();
+  syncCollectionAddress();
 }
 
-function exploreHash() {
+function collectionAddress(prefix) {
   const params = new URLSearchParams();
+  if (state.query.trim()) params.set("q", state.query.trim());
+  if (state.groupFilter.size !== store.groups.length) {
+    params.set("groups", store.groups.filter((group) => state.groupFilter.has(group.name))
+      .map((group) => slug(group.name)).join(","));
+  }
   if (state.originCountry) params.set("origin", state.originCountry);
-  return `#/explore${params.size ? `?${params}` : ""}`;
+  if (state.railLimit > RAIL_PAGE) params.set("limit", Math.min(state.railLimit, store.journeys.length));
+  const query = params.toString();
+  return `${prefix}${query ? `?${query}` : ""}`;
+}
+
+function exploreHash() { return collectionAddress("#/explore"); }
+function accountHash(id) { return collectionAddress(`#/survivor/${id}`); }
+
+function syncCollectionAddress() {
+  if (state.view === "explore") {
+    history.replaceState(null, "", state.selectedId ? accountHash(state.selectedId) : exploreHash());
+    updateDocumentTitle();
+  }
+}
+
+function restoreCollectionAddress(params) {
+  const groups = new Map(store.groups.map((group) => [slug(group.name), group.name]));
+  const requested = params.has("groups")
+    ? (params.get("groups") ? params.get("groups").split(",") : []) : [...groups.keys()];
+  const limit = params.has("limit") ? Number(params.get("limit")) : RAIL_PAGE;
+  if (requested.some((group) => !groups.has(group)) || !Number.isSafeInteger(limit) || limit < RAIL_PAGE) {
+    return false;
+  }
+  state.query = (params.get("q") || "").trim();
+  state.groupFilter = new Set(requested.map((group) => groups.get(group)));
+  state.originCountry = (params.get("origin") || "").trim() || null;
+  state.railLimit = Math.max(RAIL_PAGE, Math.min(limit, store.journeys.length));
+  return true;
 }
 
 function openOrigin(name) {
@@ -452,6 +500,7 @@ function showMore() {
   const previous = new Set([...document.querySelectorAll(".rail-card")].map((card) => card.dataset.survivor));
   state.railLimit += RAIL_PAGE * 2;
   refreshRail();
+  syncCollectionAddress();
   const firstNew = [...document.querySelectorAll(".rail-card")].find((card) => !previous.has(card.dataset.survivor));
   firstNew?.focus({ preventScroll: true });
   firstNew?.scrollIntoView({ block: "nearest" });
@@ -532,6 +581,17 @@ function focusHistoryContent(target, align = target) {
   }
   body.scrollTop += align.getBoundingClientRect().top - body.getBoundingClientRect().top - 12;
   target.focus({ preventScroll: true });
+}
+
+function keepHistoryFocusVisible() {
+  const body = document.querySelector("[data-pattern-events]");
+  const focused = document.activeElement;
+  if (!body?.contains(focused) || focused === body || !body.getClientRects().length) return;
+  const viewport = body.getBoundingClientRect();
+  const target = focused.getBoundingClientRect();
+  const height = Math.min(target.height, body.clientHeight - 24);
+  if (target.top < viewport.top + 12) body.scrollTop += target.top - viewport.top - 12;
+  else if (target.top + height > viewport.bottom - 12) body.scrollTop += target.top + height - viewport.bottom + 12;
 }
 
 function clearPatternEvent() {
@@ -633,6 +693,7 @@ function updateHistoryInfo() {
     state.historySearchMessage = `Centred on ${state.historyPlace}. The border year is ${state.scrubYear}.`;
   }
   refreshHistorySearch();
+  updateDocumentTitle();
 }
 
 function selectCountry(name, { openContext = true } = {}) {
@@ -710,6 +771,7 @@ function applyHistoryLocation(match) {
   state.historyMatches = [];
   if (match.kind === "country") selectCountry(match.name);
   else {
+    state.patternEventKey = null;
     state.historyPlace = match.name;
     state.historyCountry = null;
     state.historyInfo = null;
@@ -769,6 +831,9 @@ function historyHash(includeCamera = false) {
   const params = new URLSearchParams();
   if (state.patternsLayer === "origins") params.set("layer", "origins");
   if (state.historyCountry) params.set("country", state.historyCountry);
+  if (state.patternEventKey && state.historyTestimony && state.patternsLayer === "journeys") {
+    params.set("event", state.patternEventKey);
+  }
   for (const [key, field] of Object.entries({
     flags: "historyFlags", labels: "historyLabels", routes: "historyRoutes", testimony: "historyTestimony",
   })) if (!state[field]) params.set(key, "0");
@@ -792,8 +857,27 @@ function restoreHistoryCamera() {
   if (atlas.historyLoaded() || state.patternsLayer === "origins") state.pendingHistoryCamera = null;
 }
 
-function syncHistoryAddress() {
-  if (state.view === "patterns") history.replaceState(null, "", historyHash());
+function syncHistoryAddress(includeCamera = false) {
+  if (state.view === "patterns") {
+    history.replaceState(null, "", historyHash(includeCamera));
+    updateDocumentTitle();
+  }
+}
+
+function updateDocumentTitle() {
+  let label = "";
+  if (state.view === "explore") {
+    label = store.byId.get(state.selectedId)?.name ||
+      (state.query.trim() ? `Search: ${state.query.trim()}` : state.originCountry
+        ? `Routes starting in ${state.originCountry}` : state.groupFilter.size === 1
+          ? [...state.groupFilter][0] : "The collection");
+  } else if (state.view === "patterns") {
+    const event = eventsForYear().find((entry) => entry.key === state.patternEventKey);
+    label = state.patternsLayer === "origins" ? "Route origins"
+      : `${event?.place || state.historyInfo?.name || state.historyPlace || "Historical atlas"}, ${state.scrubYear}`;
+  } else if (state.view === "about") label = "About the map";
+  else if (state.view === "not-found") label = state.missingKind === "account" ? "Account not found" : "Link not found";
+  document.title = `${label ? `${label} | ` : ""}Journeys | Crestwood Oral History Project`;
 }
 
 function updateHistoryDisplay() {
@@ -857,7 +941,7 @@ async function shareMap() {
   if (!navigator.clipboard) {
     fallback.hidden = false;
     fallback.select();
-    status.textContent = "Copy this link to share the selected year and map layers.";
+    status.textContent = "Copy this link to share the current map view.";
     return;
   }
   try {
@@ -1070,11 +1154,15 @@ function showMissing(kind) {
 function route() {
   if (programmatic) { programmatic = false; return; }
   stopHistoryPlayback();
-  const [hash, query = ""] = (location.hash || "").split("?");
+  const fragment = location.hash || "";
+  const separator = fragment.indexOf("?");
+  const hash = separator < 0 ? fragment : fragment.slice(0, separator);
+  const query = separator < 0 ? "" : fragment.slice(separator + 1);
   const params = new URLSearchParams(query);
   const [, kind, value] = hash.split("/");
   if (kind === "guided" || hash === "#map" || hash === "#overlay") {
-    history.replaceState(null, "", "#/explore");
+    if (!restoreCollectionAddress(params)) return showMissing("filter");
+    history.replaceState(null, "", exploreHash());
     state.view = "explore";
     state.selectedId = null;
     state.activePlaceIndex = null;
@@ -1083,11 +1171,12 @@ function route() {
     return;
   }
   if (kind === "survivor" && value && store.byId.has(value)) {
+    if (!restoreCollectionAddress(params)) return showMissing("filter");
     state.selectedId = store.byId.get(value).id;
     state.activePlaceIndex = null;
     state.explorePresentation = "auto";
     state.view = "explore";
-    if (state.selectedId !== value) history.replaceState(null, "", `#/survivor/${state.selectedId}`);
+    if (state.selectedId !== value) history.replaceState(null, "", accountHash(state.selectedId));
     render();
     return;
   }
@@ -1095,14 +1184,21 @@ function route() {
   if (kind === "place" && value) {
     const found = store.journeys.find((j) => j.waypoints.some((w) => slug(w.canonical) === value));
     if (!found) return showMissing("place");
+    if (!restoreCollectionAddress(params)) return showMissing("filter");
     state.view = "explore"; state.selectedId = found.id;
     state.activePlaceIndex = null; state.explorePresentation = "auto";
     render(); return;
   }
   if (kind === "place") return showMissing("place");
   if (kind === "patterns" && value && /^\d{4}$/.test(value)) {
-    state.scrubYear = Math.max(store.time.min, Math.min(store.time.max, Number(value)));
-    state.patternEventKey = null;
+    const year = Math.max(store.time.min, Math.min(store.time.max, Number(value)));
+    const event = params.has("event") ? store.events.find((entry) => entry.key === params.get("event") && entry.year === year) : null;
+    if (params.has("event") && (!event || params.get("layer") === "origins" ||
+        params.get("testimony") === "0" || params.get("country"))) return showMissing("place");
+    state.scrubYear = year;
+    state.patternEventKey = event?.key || null;
+    state.historyPlacesOpen = false;
+    if (event) state.historyContextOpen = true;
     state.patternsLayer = params.get("layer") === "origins" ? "origins" : "journeys";
     state.historyCountry = params.get("country") || null;
     state.historyInfo = null;
@@ -1125,15 +1221,19 @@ function route() {
     updateHistoryInfo();
     state.view = "patterns";
     render();
+    if (event) {
+      const title = document.getElementById("testimony-place-title");
+      focusHistoryContent(title, title.closest(".testimony-moment"));
+    }
     return;
   }
   if (VIEWS.includes(kind)) {
     if (kind === "patterns" && value) return showMissing("page");
     const previous = state.selectedId;
     if (kind === "explore") {
+      if (!restoreCollectionAddress(params)) return showMissing("filter");
       state.selectedId = null;
       state.activePlaceIndex = null;
-      state.originCountry = params.get("origin") || null;
       state.explorePresentation = "auto";
     }
     state.view = kind;

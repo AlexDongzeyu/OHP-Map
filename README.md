@@ -74,6 +74,14 @@ an account's undated or other-year references remain in Explore, not on that yea
 Account-map markers also open their matching source entries. Broken account and place
 links show an explanation and recovery actions rather than silently returning home.
 
+Collection addresses retain the search, selected communities, origin filter, and loaded
+result count. Account links opened from that collection retain the same browsing context
+after a reload. Historical map links retain the selected dated place as well as the
+year and layers, so sharing a view or returning from an account restores its context.
+Unsupported community filters and dated-place/year combinations receive an explicit
+link-recovery view instead of silently changing the selection.
+Browser tab and bookmark titles identify the account, search, or historical place/year.
+
 ---
 
 ## Quick start (offline, ~2 minutes)

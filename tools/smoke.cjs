@@ -1687,6 +1687,188 @@ function assertCounterMotion(label, { targets, samples }) {
     }
   });
 
+  await check("collection searches and communities survive reloads and account links", async () => {
+    for (const viewport of [{ width: 1366, height: 850 }, { width: 390, height: 844 }]) {
+      await page.setViewport(viewport);
+      await page.goto(BASE + `/?collection-address=${viewport.width}#/explore`, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await page.click(".collection-filters > summary");
+      await page.click("[data-act='no-groups']");
+      await page.click("[data-group='Military Veterans']");
+      await page.click(".collection-filters > summary");
+      await page.type("#search", "Wally Adam");
+      const address = await page.evaluate(() => location.hash);
+      const params = new URLSearchParams(address.split("?")[1]);
+      if (params.get("q") !== "Wally Adam" || params.get("groups") !== "military-veterans") {
+        throw new Error(`the collection address omits its filters ${address}`);
+      }
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      const restored = await page.evaluate(() => ({
+        query: document.querySelector("#search").value,
+        groups: [...document.querySelectorAll("[data-group]:checked")].map((input) => input.dataset.group),
+        count: document.querySelector("[data-rail-count]").textContent,
+        filtersOpen: document.querySelector(".collection-filters").open,
+        title: document.title,
+      }));
+      if (restored.query !== "Wally Adam" || restored.groups.join() !== "Military Veterans" ||
+          restored.count !== "1 of 1 shown" || restored.filtersOpen || !restored.title.includes("Wally Adam")) {
+        throw new Error(`reload lost the collection context ${JSON.stringify(restored)}`);
+      }
+      await page.click(".rail-card");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      if (!await page.$eval("#profile-name", (heading) => document.title.includes(heading.textContent))) {
+        throw new Error("the account's tab title is not identifiable");
+      }
+      await page.click(".panel-close");
+      if (await page.$eval("[data-rail-count]", (count) => count.textContent) !== "1 of 1 shown") {
+        throw new Error("the account link lost its collection context after reload");
+      }
+    }
+  });
+  await check("empty community selections and loaded result counts are bookmarkable", async () => {
+    await page.setViewport({ width: 1366, height: 850 });
+    await page.goto(BASE + "/?result-address=1#/explore?groups=", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    if (await page.$(".rail-card") || await page.$$eval("[data-group]:checked", (inputs) => inputs.length)) {
+      throw new Error("an explicit empty community selection became all communities");
+    }
+    await page.click(".filter-reset");
+    await page.click("[data-act='more']");
+    const more = await page.evaluate(() => ({
+      hash: location.hash, cards: document.querySelectorAll(".rail-card").length,
+      next: document.activeElement.dataset.survivor,
+    }));
+    if (!more.next || more.cards !== 420 || new URLSearchParams(more.hash.split("?")[1]).get("limit") !== "420") {
+      throw new Error(`loading more results did not update the bookmark ${JSON.stringify(more)}`);
+    }
+    await page.keyboard.press("Enter");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    await page.click(".panel-close");
+    const returned = await page.evaluate(() => {
+      const list = document.querySelector("[data-rail-list]").getBoundingClientRect();
+      const card = document.activeElement.getBoundingClientRect();
+      return {
+        cards: document.querySelectorAll(".rail-card").length,
+        id: document.activeElement.dataset.survivor,
+        visible: card.top >= list.top - 1 && card.bottom <= list.bottom + 1,
+      };
+    });
+    if (returned.cards !== 420 || returned.id !== more.next || !returned.visible) {
+      throw new Error(`the bookmarked account lost its loaded browse position ${JSON.stringify(returned)}`);
+    }
+  });
+  await check("selected historical places survive back navigation, sharing and layer changes", async () => {
+    await page.setViewport({ width: 1366, height: 850 });
+    await page.goto(BASE + "/?selected-history=1#/patterns/1944", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    await page.waitForFunction(() => document.documentElement.dataset.historicalBoundaries === "ready");
+    await page.$eval(".pattern-event-marker", (marker) => marker.focus());
+    await page.keyboard.press("Enter");
+    await wait(1000);
+    await page.click("[data-act='zoom-in']");
+    await wait(450);
+    const before = await page.evaluate(() => ({
+      key: new URLSearchParams(location.hash.split("?")[1]).get("event"),
+      place: document.getElementById("testimony-place-title").textContent,
+      scale: Number(document.querySelector(".camera").getAttribute("transform").match(/scale\(([^)]+)\)/)[1]),
+    }));
+    if (!before.key) throw new Error("the selected dated place is absent from the address");
+    await page.click(".history-settings > summary");
+    await page.click("[data-history-setting='labels']");
+    await page.keyboard.press("Escape");
+    await wait(450);
+    const scale = await page.$eval(".camera", (camera) => Number(camera.getAttribute("transform").match(/scale\(([^)]+)\)/)[1]));
+    if (Math.abs(scale - before.scale) > .01) throw new Error("changing a layer reset the selected-place camera");
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async (link) => { window.__selectedHistoryLink = link; } },
+      });
+    });
+    await page.click("[data-act='share-map']");
+    const link = await page.evaluate(() => window.__selectedHistoryLink);
+    if (new URLSearchParams(new URL(link).hash.split("?")[1]).get("event") !== before.key) {
+      throw new Error("the copied map omits the selected dated place");
+    }
+    await page.click("[data-act='close-share']");
+    await page.click(".testimony-moment .event-person");
+    await page.goBack();
+    await page.waitForSelector("#testimony-place-title");
+    await wait(1000);
+    const back = await page.evaluate(() => ({
+      place: document.getElementById("testimony-place-title").textContent,
+      focused: document.activeElement.id,
+      scale: Number(document.querySelector(".camera").getAttribute("transform").match(/scale\(([^)]+)\)/)[1]),
+    }));
+    if (back.place !== before.place || back.focused !== "testimony-place-title" || Math.abs(back.scale - before.scale) > .01) {
+      throw new Error(`Back lost the historical context ${JSON.stringify(back)}`);
+    }
+    await page.setViewport({ width: 390, height: 844 });
+    await page.goto(link, { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    await page.waitForFunction(() => document.documentElement.dataset.historicalBoundaries === "ready");
+    await wait(1100);
+    const shared = await page.evaluate(() => ({
+      place: document.getElementById("testimony-place-title")?.textContent,
+      open: document.querySelector("[data-history-context]").open,
+      focused: document.activeElement.id,
+      title: document.title,
+      labels: document.querySelector("[data-history-setting='labels']").checked,
+      scale: Number(document.querySelector(".camera").getAttribute("transform").match(/scale\(([^)]+)\)/)[1]),
+    }));
+    if (shared.place !== before.place || !shared.open || shared.focused !== "testimony-place-title" ||
+        shared.labels || !shared.title.includes(before.place) || !shared.title.includes("1944") ||
+        Math.abs(shared.scale - before.scale) > .01) {
+      throw new Error(`the shared dated place did not restore ${JSON.stringify(shared)}`);
+    }
+    await page.setViewport({ width: 1366, height: 850 });
+    await wait(350);
+    await page.setViewport({ width: 390, height: 844 });
+    await wait(1100);
+    const focusedTitleVisible = await page.evaluate(() => {
+      const title = document.getElementById("testimony-place-title").getBoundingClientRect();
+      const body = document.querySelector("[data-pattern-events]").getBoundingClientRect();
+      return title.top >= body.top && title.bottom <= body.bottom;
+    });
+    if (!focusedTitleVisible) throw new Error("resizing hid the selected place behind the context heading");
+  });
+  await check("a new recorded-place search clears the previous dated selection", async () => {
+    await page.click("[data-country-search]");
+    await page.type("[data-country-search]", "Toronto, Canada");
+    await page.click("[data-history-search] button");
+    const searched = await page.evaluate(() => ({
+      event: new URLSearchParams(location.hash.split("?")[1]).get("event"),
+      selected: Boolean(document.getElementById("testimony-place-title")),
+      title: document.title,
+    }));
+    if (searched.event || searched.selected || !searched.title.includes("Toronto, Canada")) {
+      throw new Error(`a new map search retained unrelated testimony ${JSON.stringify(searched)}`);
+    }
+  });
+  await check("invalid saved filters and mismatched dated places do not silently change context", async () => {
+    for (const hash of [
+      "#/explore?groups=unrecognized-community",
+      "#/survivor/adam-wally?limit=not-a-number",
+      "#/patterns/1945?event=1944%7Ctransit%7CEngland",
+      "#/patterns/1944?event=missing-place",
+      "#/patterns/1944?event=1944%7Ctransit%7CEngland&testimony=0",
+    ]) {
+      await page.goto(BASE + "/?invalid-view=1" + hash, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      if (!await page.$("#missing-title")) throw new Error(`an invalid address silently changed state: ${hash}`);
+    }
+    const query = "Name? A&B";
+    const params = new URLSearchParams({ q: query, groups: "military-veterans" });
+    await page.goto(BASE + `/?encoded-query=1#/explore?${params}`, { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    if (await page.$eval("#search", (search) => search.value) !== query) {
+      throw new Error("the saved query lost its punctuation");
+    }
+  });
+
   await browser.close();
   if (errors.length) {
     console.log("\n=== ERRORS (" + errors.length + ") ===");
