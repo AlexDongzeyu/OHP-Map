@@ -10,7 +10,8 @@ function assertCounterMotion(label, { targets, samples }) {
   }
   for (let index = 0; index < targets.length; index++) {
     const values = samples.map((sample) => sample[index]);
-    if (values[0] !== 0 ||
+    if (!Number.isFinite(targets[index]) || values.some((value) => !Number.isFinite(value)) ||
+        values[0] !== 0 ||
         values[values.length - 1] !== targets[index] ||
         values.some((value, sampleIndex) => sampleIndex && value < values[sampleIndex - 1])) {
       throw new Error(`${label} counter ${index} is not monotonic ${JSON.stringify(values)}`);
@@ -35,7 +36,7 @@ function assertCounterMotion(label, { targets, samples }) {
     request.continue();
   });
   page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text()); });
-  page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
+  page.on("pageerror", (e) => errors.push("pageerror: " + (e.stack || e.message)));
   page.on("requestfailed", (r) => { if (!/favicon/.test(r.url())) errors.push("requestfailed: " + r.url()); });
 
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -96,14 +97,18 @@ function assertCounterMotion(label, { targets, samples }) {
         .map((element) => Number(element.dataset.counter)),
       legend: Boolean(document.querySelector(".legend-mini")),
       labelContrast: (() => {
-        const channels = (color) => (color.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
         const luminance = (rgb) => rgb
           .map((channel) => channel / 255)
           .map((channel) => channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4)
           .reduce((total, channel, index) => total + channel * [.2126, .7152, .0722][index], 0);
-        const surface = luminance([62, 79, 93]);
-        return [".register-head", ".register-item > span"].map((selector) => {
-          const foreground = luminance(channels(getComputedStyle(document.querySelector(selector)).color));
+        const backdrop = [62, 79, 93];
+        const surface = luminance(backdrop);
+        return [...document.querySelectorAll(".register-head, .register-item > span")].map((element) => {
+          const rgba = getComputedStyle(element).color.match(/[\d.]+/g).map(Number);
+          const alpha = rgba[3] ?? 1;
+          const foreground = luminance(rgba.slice(0, 3).map((channel, index) => (
+            channel * alpha + backdrop[index] * (1 - alpha)
+          )));
           return (Math.max(foreground, surface) + .05) / (Math.min(foreground, surface) + .05);
         });
       })(),
@@ -185,7 +190,7 @@ function assertCounterMotion(label, { targets, samples }) {
     if (motion.globeRoutes < 5 || motion.globeTravelers < 5) throw new Error("landing globe journeys are missing");
     const expectedGlobeY = motion.headerHeight +
       (motion.viewportHeight - motion.headerHeight) / 2;
-    if (Math.abs(motion.globeCenterX - motion.viewportWidth * .58) > 2 ||
+    if (Math.abs(motion.globeCenterX - motion.viewportWidth * .72) > 2 ||
         Math.abs(motion.globeCenterY - expectedGlobeY) > 2) {
       throw new Error("landing globe is not positioned correctly");
     }
@@ -202,7 +207,7 @@ function assertCounterMotion(label, { targets, samples }) {
     const travelerX = await page.$eval(".globe-traveler", (traveler) => Number(traveler.getAttribute("cx")));
     const graticule = await page.$eval(".globe-graticule", (grid) => grid.getAttribute("d"));
     if (cadence.changed !== cadence.total) throw new Error(`${cadence.total - cadence.changed} mosaic tiles did not change`);
-    if (cadence.intervals.some((seconds) => seconds < 4.8 || seconds > 8.01)) {
+    if (cadence.intervals.some((seconds) => seconds < 8 || seconds > 13.61)) {
       throw new Error("mosaic repeat interval is outside the expected range");
     }
     if (travelerX === motion.firstTravelerX) throw new Error("globe traveler did not move");
@@ -226,7 +231,8 @@ function assertCounterMotion(label, { targets, samples }) {
       capture();
       const targets = [...document.querySelectorAll("[data-counter]")]
         .map((counter) => Number(counter.dataset.counter));
-      for (let frame = 0; frame < 130; frame++) {
+      const deadline = performance.now() + 2100;
+      while (performance.now() < deadline) {
         await new Promise((resolve) => requestAnimationFrame(resolve));
         capture();
       }
@@ -234,6 +240,11 @@ function assertCounterMotion(label, { targets, samples }) {
       return { targets, samples };
     });
     assertCounterMotion("landing re-entry", reentryCounterMotion);
+    await page.click("[data-act='home']");
+    const repeatedHome = await page.$$eval("[data-counter]", (elements) => (
+      elements.every((element) => Number(element.textContent.replace(/,/g, "")) === Number(element.dataset.counter))
+    ));
+    if (!repeatedHome) throw new Error("clicking Home while at Home reset the register");
   });
   await check("follow -> guided narrative + flat map", async () => {
     await page.click(".landing-card [data-act='follow']");
@@ -300,6 +311,22 @@ function assertCounterMotion(label, { targets, samples }) {
         guidedRoute.joins.some((join) => join !== "round")) {
       throw new Error(`unstable route state ${JSON.stringify(guidedRoute)}`);
     }
+    await page.click("[data-act='prev-chapter']");
+    await page.waitForFunction(
+      (index) => document.querySelector("[data-chapter].is-active")?.dataset.chapter === String(index),
+      { timeout: 5000 }, target - 1,
+    );
+    await wait(950);
+    const reading = await page.evaluate(() => {
+      const narrative = document.querySelector("[data-narr]").getBoundingClientRect();
+      const marker = document.querySelector(".guided-ring");
+      const point = new DOMPoint(Number(marker.getAttribute("cx")), Number(marker.getAttribute("cy")))
+        .matrixTransform(marker.getScreenCTM());
+      return { pointX: point.x, pointY: point.y, sheetRight: narrative.right, count: document.querySelector("[data-guided-count]").textContent };
+    });
+    if (reading.pointX < reading.sheetRight + 12 || !reading.count.startsWith(`Place ${target} of`)) {
+      throw new Error(`guided navigation or map framing failed ${JSON.stringify(reading)}`);
+    }
   });
   await check("explore: group chips + grouped rail", async () => {
     await page.click(".nav-tab[data-view='explore']");
@@ -320,11 +347,64 @@ function assertCounterMotion(label, { targets, samples }) {
       throw new Error(`camera transition overrode user zoom (${userTransform} -> ${settledTransform})`);
     }
   });
+  await check("collection filters, browse position and keyboard return", async () => {
+    await page.click(".collection-filters summary");
+    await page.click("[data-group='Military Veterans']");
+    const filtered = await page.evaluate(() => ({
+      selected: [...document.querySelectorAll(".gchip[aria-pressed='true']")].map((button) => button.dataset.group),
+      groups: [...document.querySelectorAll(".rail-ghead")].map((element) => element.textContent.trim()),
+    }));
+    if (filtered.selected.length !== 1 || filtered.selected[0] !== "Military Veterans" ||
+        filtered.groups.length !== 1 || !filtered.groups[0].startsWith("Military Veterans")) {
+      throw new Error(`community filter failed ${JSON.stringify(filtered)}`);
+    }
+    await page.click("[data-group='Military Veterans']");
+    await page.$eval(".collection-filters", (details) => { details.open = true; });
+    const source = await page.$eval("[data-rail-list]", (list) => {
+      list.scrollTop = list.scrollHeight;
+      const bounds = list.getBoundingClientRect();
+      const card = [...list.querySelectorAll(".rail-card")].find((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.top >= bounds.top + 10 && rect.bottom < bounds.bottom - 10;
+      });
+      return { id: card.dataset.survivor, top: list.scrollTop };
+    });
+    await page.click(`[data-survivor='${source.id}']`);
+    await page.waitForSelector(".panel");
+    if (await page.$eval("#profile-name", (heading) => heading !== document.activeElement)) {
+      throw new Error("profile heading did not receive keyboard focus");
+    }
+    await page.keyboard.press("Escape");
+    const returned = await page.evaluate(() => ({
+      panel: Boolean(document.querySelector(".panel")),
+      top: document.querySelector("[data-rail-list]").scrollTop,
+      focused: document.activeElement.dataset.survivor,
+      filtersOpen: document.querySelector(".collection-filters").open,
+    }));
+    if (returned.panel || !returned.filtersOpen || Math.abs(returned.top - source.top) > 1 || returned.focused !== source.id) {
+      throw new Error(`closing a profile lost the browse position ${JSON.stringify(returned)}`);
+    }
+    await page.$eval(".collection-filters", (details) => { details.open = false; });
+    await page.$eval("[data-rail-list]", (list) => { list.scrollTop = 0; });
+  });
   await check("search filters the rail", async () => {
     await page.type("#search", "auschwitz");
     await wait(350);
     const cnt = await page.$eval("[data-rail-count]", (el) => el.textContent);
     if (!/of \d+ shown/.test(cnt)) throw new Error("count='" + cnt + "'");
+    await page.$eval("#search", (input) => {
+      input.value = "no-such-archive-record-9381";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.click("[data-act='reset-search']");
+    const reset = await page.evaluate(() => ({
+      query: document.querySelector("#search").value,
+      focused: document.activeElement.id,
+      people: document.querySelectorAll(".rail-card").length,
+    }));
+    if (reset.query || reset.focused !== "search" || reset.people !== 140) {
+      throw new Error(`empty search recovery failed ${JSON.stringify(reset)}`);
+    }
   });
   await check("select a person shows panel", async () => {
     await page.$eval("#search", (el) => { el.value = "Norman Baker"; el.dispatchEvent(new Event("input", { bubbles: true })); });
@@ -350,6 +430,20 @@ function assertCounterMotion(label, { targets, samples }) {
         !serviceMap.restoredPicture) {
       throw new Error(`veteran service context is incomplete ${JSON.stringify(serviceMap)}`);
     }
+    await page.click(".guided-pill");
+    await page.waitForSelector("[data-narr]");
+    if (await page.$(".guided-portrait")) {
+      throw new Error("an unvalidated gallery image was enlarged in Guided");
+    }
+    await page.click(".nav-tab[data-view='explore']");
+    await page.setViewport({ width: 1200, height: 800 });
+    await wait(1300);
+    const reframed = await page.$eval("#map .camera", (camera) => Number(
+      camera.getAttribute("transform").match(/scale\(([^)]+)\)/)[1],
+    ));
+    if (reframed <= 1.01) throw new Error("resizing lost the selected account's map framing");
+    await page.setViewport({ width: 1366, height: 850 });
+    await wait(1300);
   });
   await check("unavailable Vimeo coverage is not reported as absent", async () => {
     await page.$eval("#search", (input) => {
@@ -395,18 +489,19 @@ function assertCounterMotion(label, { targets, samples }) {
       throw new Error(`mini route is segmented ${JSON.stringify(miniRoutes)}`);
     }
     await page.$eval(".guided-pill", (button) => button.click());
-    await page.waitForSelector(".chapter-first .guided-portrait img", { timeout: 5000 });
+    await page.waitForSelector(".narr-head .guided-portrait img", { timeout: 5000 });
     const guidedPortrait = await page.evaluate(() => {
       const head = document.querySelector(".narr-head").getBoundingClientRect();
       const portrait = document.querySelector(".guided-portrait");
       const box = portrait.getBoundingClientRect();
       return {
         alt: portrait.querySelector("img")?.alt,
-        gap: box.top - head.bottom,
+        withinHeading: box.top >= head.top && box.bottom <= head.bottom,
+        radius: parseFloat(getComputedStyle(portrait).borderRadius),
       };
     });
-    if (guidedPortrait.alt !== "Wally Adam" || guidedPortrait.gap > 80) {
-      throw new Error(`guided portrait bridge is incorrect ${JSON.stringify(guidedPortrait)}`);
+    if (guidedPortrait.alt !== "Wally Adam" || !guidedPortrait.withinHeading || guidedPortrait.radius > 4) {
+      throw new Error(`guided archive photograph is incorrect ${JSON.stringify(guidedPortrait)}`);
     }
     await page.click(".nav-tab[data-view='explore']");
     await page.waitForSelector(".rail .rail-card", { timeout: 5000 });
@@ -418,7 +513,7 @@ function assertCounterMotion(label, { targets, samples }) {
     }
   });
   await check("free zoom changes camera transform", async () => {
-    await page.click(".panel-close").catch(() => {});
+    if (await page.$(".panel-close")) await page.click(".panel-close");
     await wait(200);
     const before = await page.$eval("#map .camera", (g) => g.getAttribute("transform") || "");
     await page.mouse.move(760, 430);
@@ -426,6 +521,16 @@ function assertCounterMotion(label, { targets, samples }) {
     await wait(400);
     const after = await page.$eval("#map .camera", (g) => g.getAttribute("transform") || "");
     if (before === after) throw new Error("zoom did not change camera transform");
+    await page.click("[data-act='zoom-in']");
+    await wait(400);
+    const zoomed = await page.$eval("#map .camera", (g) => g.getAttribute("transform"));
+    if (zoomed === after) throw new Error("zoom-in control did not change the camera");
+    await page.click("[data-act='zoom-out']");
+    await wait(400);
+    await page.click("[data-act='reset-map']");
+    await wait(1000);
+    const fitted = await page.$eval("#map .camera", (g) => g.getAttribute("transform"));
+    if (fitted !== "translate(0,0) scale(1)") throw new Error(`fit map failed ${fitted}`);
   });
   await check("patterns: historical events + timeline + density", async () => {
     await page.click(".nav-tab[data-view='patterns']");
@@ -442,7 +547,8 @@ function assertCounterMotion(label, { targets, samples }) {
     if (yr !== "1944") throw new Error("year=" + yr);
     const eventState = await page.evaluate(() => ({
       markers: document.querySelectorAll(".pattern-event-marker").length,
-      activeMarkers: document.querySelectorAll(".pattern-event-marker[fill='#294B69']").length,
+      activeMarkers: [...document.querySelectorAll(".pattern-event-marker")]
+        .filter((marker) => marker.getAttribute("fill") === getComputedStyle(document.documentElement).getPropertyValue("--accent-deep").trim()).length,
       phase: document.querySelector(".war-brief-content > strong")?.textContent,
       territories: document.querySelectorAll(".historical-territory").length,
       canada: document.querySelector("[data-controller='Canada']")?.getAttribute("data-war-side"),
@@ -557,6 +663,14 @@ function assertCounterMotion(label, { targets, samples }) {
   await check("about renders", async () => {
     await page.click(".nav-plain[data-view='about']");
     await page.waitForSelector(".about-wrap .about-grid", { timeout: 5000 });
+    const about = await page.evaluate(() => ({
+      sources: document.querySelectorAll(".about-sources dd").length,
+      communities: document.querySelectorAll(".collection-ledger dd").length,
+      current: document.querySelector("[aria-current='page']")?.dataset.view,
+    }));
+    if (about.sources !== 5 || about.communities !== 5 || about.current !== "about") {
+      throw new Error(`archive source ledger is incomplete ${JSON.stringify(about)}`);
+    }
   });
   await check("patterns deep link opens at the 1944 war map", async () => {
     await page.goto(BASE + "/?deep-link=patterns#/patterns/1944", { waitUntil: "domcontentloaded", timeout: 40000 });
@@ -602,7 +716,7 @@ function assertCounterMotion(label, { targets, samples }) {
     if (box.bottom > 845) throw new Error("explore sheet overflows the viewport");
   });
   await check("mobile person detail is a closable bottom sheet", async () => {
-    await page.$eval(".rail-card", (el) => el.click());
+    await page.click(".rail-card");
     await page.waitForSelector(".panel .journey", { timeout: 5000 });
     await wait(750);
     const detail = await page.$eval(".panel", (el) => {
@@ -616,6 +730,8 @@ function assertCounterMotion(label, { targets, samples }) {
     if (detail.top < 120) throw new Error("person sheet hides the entire map");
     if (detail.bottom > 845) throw new Error("person sheet overflows the viewport");
     if (!detail.hasCloseIcon) throw new Error("person sheet close action is not an SVG icon");
+    await page.click(".panel-close");
+    if (await page.$(".panel")) throw new Error("mobile profile did not close with a pointer");
   });
   await check("mobile patterns separates insight and timeline", async () => {
     await page.click(".nav-tab[data-view='patterns']");
@@ -661,8 +777,60 @@ function assertCounterMotion(label, { targets, samples }) {
     }
     await page.setViewport({ width: 390, height: 844 });
   });
-  await check("landing motion always starts without a control", async () => {
+  await check("small phones and tablets keep routes and controls usable", async () => {
+    for (const viewport of [
+      { width: 320, height: 568 },
+      { width: 768, height: 1024 },
+      { width: 1024, height: 768 },
+    ]) {
+      await page.setViewport(viewport);
+      await page.goto(BASE + `/?layout=${viewport.width}#/explore`, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await wait(500);
+      await page.click(".rail-card");
+      await page.waitForSelector(".panel");
+      await wait(1000);
+      const profile = await page.evaluate(() => {
+        const panel = document.querySelector(".panel").getBoundingClientRect();
+        const path = document.querySelector(".explore-route");
+        const matrix = path.getScreenCTM();
+        const endpoints = [0, path.getTotalLength()].map((length) => (
+          path.getPointAtLength(length).matrixTransform(matrix).y
+        ));
+        return { top: panel.top, endpoints, overflow: document.documentElement.scrollWidth > innerWidth };
+      });
+      if (profile.overflow ||
+          (viewport.width <= 820 && profile.endpoints.some((y) => y >= profile.top - 4 || y <= 100))) {
+        throw new Error(`profile map is obscured at ${viewport.width}px ${JSON.stringify(profile)}`);
+      }
+      await page.click(".guided-pill");
+      await page.waitForSelector(".guided-ring");
+      await wait(1000);
+      const guided = await page.evaluate(() => {
+        const sheet = document.querySelector(".narr").getBoundingClientRect();
+        const ring = document.querySelector(".guided-ring");
+        const point = new DOMPoint(Number(ring.getAttribute("cx")), Number(ring.getAttribute("cy")))
+          .matrixTransform(ring.getScreenCTM());
+        const next = document.querySelector("[data-act='next-chapter']").getBoundingClientRect();
+        const hit = document.elementFromPoint(next.x + next.width / 2, next.y + next.height / 2);
+        return { x: point.x, y: point.y, top: sheet.top, right: sheet.right, nextClickable: hit?.closest("button")?.dataset.act === "next-chapter" };
+      });
+      if (!guided.nextClickable || (viewport.width <= 820 ? guided.y >= guided.top - 8 : guided.x <= guided.right + 8)) {
+        throw new Error(`guided map or controls are obscured at ${viewport.width}px ${JSON.stringify(guided)}`);
+      }
+      await page.click(".nav-tab[data-view='patterns']");
+      await page.waitForSelector(".scrubber");
+      await wait(500);
+      const controls = await page.$$eval(".map-tools button, .war-stepper button", (buttons) => buttons.every((button) => {
+        const rect = button.getBoundingClientRect();
+        return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest("button") === button;
+      }));
+      if (!controls) throw new Error(`map controls are covered at ${viewport.width}px`);
+    }
+  });
+  await check("reduced motion keeps a readable, still archive", async () => {
     const reduced = await browser.newPage();
+    reduced.on("pageerror", (error) => errors.push("reduced motion: " + (error.stack || error.message)));
     await reduced.setViewport({ width: 390, height: 844 });
     await reduced.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
     await reduced.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 40000 });
@@ -690,7 +858,7 @@ function assertCounterMotion(label, { targets, samples }) {
       globe: Number(document.querySelector(".globe-traveler")?.getAttribute("cx")) !== before.traveler,
     }), result);
     await reduced.close();
-    if (result.mode !== "gsap" || result.mosaic !== "animated") throw new Error("landing motion did not start");
+    if (result.mode !== "reduced" || result.mosaic !== "static") throw new Error("reduced motion was not respected");
     if (result.control) throw new Error("motion control should not render");
     if (result.opacity !== 1 || result.visibility !== "visible") {
       throw new Error("landing content is not immediately visible");
@@ -698,7 +866,58 @@ function assertCounterMotion(label, { targets, samples }) {
     if (result.counters.some((counter) => counter.text !== counter.target)) {
       throw new Error(`reduced-motion counters are not final ${JSON.stringify(result.counters)}`);
     }
-    if (!moved.belt || !moved.globe) throw new Error("ambient landing motion is not active");
+    if (moved.belt || moved.globe) throw new Error("ambient motion continued under reduced motion");
+  });
+  await check("the archive remains usable without GSAP", async () => {
+    const staticPage = await browser.newPage();
+    staticPage.on("pageerror", (error) => errors.push("static mode: " + (error.stack || error.message)));
+    await staticPage.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+    await staticPage.setRequestInterception(true);
+    staticPage.on("request", (request) => {
+      if (request.url().includes("/vendor/gsap/")) {
+        request.respond({ status: 200, contentType: "application/javascript", body: "" });
+      } else request.continue();
+    });
+    await staticPage.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await staticPage.waitForSelector(".archive-register", { timeout: 15000 });
+    const fallback = await staticPage.evaluate(() => ({
+      mode: document.documentElement.dataset.motion,
+      counters: [...document.querySelectorAll("[data-counter]")].map((counter) => ({
+        value: Number(counter.textContent.replace(/,/g, "")),
+        target: Number(counter.dataset.counter),
+      })),
+    }));
+    await staticPage.click(".nav-tab[data-view='explore']");
+    await staticPage.waitForSelector(".rail-card");
+    await staticPage.click(".rail-card");
+    await staticPage.waitForSelector(".panel");
+    await staticPage.close();
+    if (fallback.mode !== "static" || fallback.counters.length !== 4 ||
+        fallback.counters.some((counter) => counter.value !== counter.target)) {
+      throw new Error(`static counter fallback failed ${JSON.stringify(fallback)}`);
+    }
+  });
+  await check("loading failures offer a working retry", async () => {
+    const recovery = await browser.newPage();
+    recovery.on("pageerror", (error) => errors.push("recovery: " + (error.stack || error.message)));
+    await recovery.setViewport({ width: 390, height: 844 });
+    await recovery.setRequestInterception(true);
+    let failedAsset = null;
+    recovery.on("request", (request) => {
+      if (failedAsset && request.url().includes(`/data/${failedAsset}`)) {
+        request.respond({ status: 503, contentType: "application/json", body: "{}" });
+      } else request.continue();
+    });
+    for (const [asset, cover] of [["survivors.geojson", "#fatal"], ["atlas-world.json", "#error"]]) {
+      failedAsset = asset;
+      await recovery.goto(BASE + `/?recovery=${asset}`, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await recovery.waitForSelector(`${cover}:not([hidden]) .btn`, { timeout: 15000 });
+      failedAsset = null;
+      await recovery.click(`${cover} .btn`);
+      await recovery.waitForSelector(".archive-register", { timeout: 15000 });
+      if (await recovery.$(`${cover}:not([hidden])`)) throw new Error(`${asset} retry left the failure visible`);
+    }
+    await recovery.close();
   });
 
   await browser.close();

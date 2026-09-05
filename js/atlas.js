@@ -10,7 +10,7 @@
 // The 2D map is the canonical product; the globe is a calm overview with a graceful
 // reduced-motion fallback. People are coloured quietly by archive group — equal, never
 // a hierarchy (doc 13 §4.3).
-import { C, GROUP_COLOR, motionEnabled, SYSTEM_REDUCED_MOTION } from "./config.js";
+import { C, GROUP_COLOR, motionEnabled } from "./config.js";
 
 const d3 = window.d3;
 const topojson = window.topojson;
@@ -20,6 +20,8 @@ export function createAtlas(container) {
   let svg, globeG, camera, countriesG, historicalG, historicalLabelsG, overlayG, countrySel = null;
   let projection, path, gProjection, gPath;
   let size = { w: 0, h: 0 }, currentK = 1;
+  let mapFrame = null;
+  let selectedJourney = null;
   let store = null, tipEl = null, zoom = null;
   let view = null, rotateRAF = null, rot = [-40, -32, 0];
   let globeRoutePool = [], globeRouteBatch = [], globeRouteCursor = 0;
@@ -81,14 +83,61 @@ export function createAtlas(container) {
     });
   }
 
-  // World projection fitted to the populated band (North America → Korea).
+  function availableMapFrame() {
+    const { w, h } = size;
+    const mobile = w <= 820;
+    const header = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--header-height")) || 72;
+    let left = 20, right = w - 20, top = header + 20, bottom = h - 24;
+    const bounds = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element || (mobile && selector === ".rail" && element.closest(".has-sel"))) return null;
+      let x = 0, y = 0;
+      for (let parent = element; parent && parent !== container.parentElement; parent = parent.offsetParent) {
+        x += parent.offsetLeft;
+        y += parent.offsetTop;
+      }
+      return { left: x, top: y, right: x + element.offsetWidth, bottom: y + element.offsetHeight };
+    };
+    if (view === "guided" || view === "explore") {
+      const sheet = bounds(view === "guided" ? ".narr" : ".rail");
+      const profile = view === "explore" ? bounds(".panel-host:has(.panel)") : null;
+      if (mobile) {
+        top = header + (view === "explore" ? (profile ? 68 : 84) : 16);
+        if (profile || sheet) bottom = (profile || sheet).top - 16;
+      } else {
+        if (sheet) left = sheet.right + 24;
+        if (profile) right = profile.left - 24;
+      }
+    } else if (view === "patterns") {
+      const origins = bounds(".patterns-intro");
+      const heading = bounds(".patterns-map-head");
+      const dossier = bounds(".history-dossier");
+      const timeline = bounds(".scrubber");
+      if (origins) {
+        if (mobile) { bottom = origins.top - 16; top = header + 68; }
+        else left = origins.right + 24;
+      } else {
+        if (heading) top = heading.bottom + 16;
+        if (timeline) bottom = timeline.top - 20;
+        if (dossier) {
+          if (mobile) bottom = dossier.top - 16;
+          else right = dossier.left - 24;
+        }
+      }
+    }
+    top = Math.min(top, bottom - 48);
+    return [left, top, Math.max(left + 80, right), bottom];
+  }
+
+  // Fit the world to the exposed map, not the area covered by a reading panel.
   function layout(redraw) {
     if (!container) return;
     const w = container.clientWidth, h = container.clientHeight;
     if (!w || !h) return;
     size = { w, h };
-    projection = d3.geoEqualEarth().fitExtent([[24, 24], [w - 24, h - 24]],
-      { type: "MultiPoint", coordinates: [[-128, 56], [-118, 40], [142, 36], [128, 38], [-78, 36], [22, 60], [16, 36]] });
+    mapFrame = availableMapFrame();
+    projection = d3.geoEqualEarth().fitExtent([[mapFrame[0], mapFrame[1]], [mapFrame[2], mapFrame[3]]],
+      { type: "Sphere" });
     path = d3.geoPath(projection);
 
     const land = countriesG.selectAll("path").data(world.features);
@@ -100,19 +149,23 @@ export function createAtlas(container) {
 
     layoutGlobe();
     if (store) projectAll();
-    if (redraw && api._last) api._last();
+    if (redraw && api._last) {
+      svg.interrupt("camera").call(zoom.transform, d3.zoomIdentity);
+      api._last(true);
+    }
   }
   api.resize = () => layout(true);
 
   function layoutGlobe() {
     const { w, h } = size;
-    const r = Math.min(w, h) * 0.44;
+    const mobile = w <= 820;
+    const r = Math.min(w, h) * (mobile ? 0.34 : 0.36);
     const headerHeight = parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue("--header-height"),
     ) || 68;
-    const contentCenterY = headerHeight + (h - headerHeight) / 2;
+    const contentCenterY = headerHeight + (h - headerHeight) * (mobile ? .2 : .5);
     gProjection = d3.geoOrthographic().scale(r)
-      .translate([w * 0.58, contentCenterY]).rotate(rot).clipAngle(90);
+      .translate([w * (mobile ? .7 : .72), contentCenterY]).rotate(rot).clipAngle(90);
     gPath = d3.geoPath(gProjection);
   }
 
@@ -228,19 +281,42 @@ export function createAtlas(container) {
     g.append("text").attr("x", x).attr("data-y0", y).attr("data-dy", dy).attr("y", y - dy / currentK)
       .attr("text-anchor", "middle").attr("data-fs", fs).attr("font-size", `${fs / currentK}px`)
       .attr("font-family", "'Public Sans',sans-serif").attr("font-weight", o.weight || 600)
-      .attr("letter-spacing", o.ls || "0").attr("fill", o.fill || C.anchorInk).text(text);
+      .attr("letter-spacing", o.ls || "0").attr("fill", o.fill || C.anchorInk)
+      .attr("paint-order", o.halo ? "stroke" : null)
+      .attr("stroke", o.halo ? C.paperSoft : null)
+      .attr("stroke-width", o.halo ? 3 : null)
+      .attr("stroke-linejoin", o.halo ? "round" : null)
+      .attr("vector-effect", "non-scaling-stroke").text(text);
   }
 
   function moveCamera(target, k) {
-    const { w, h } = size;
+    const centerX = (mapFrame[0] + mapFrame[2]) / 2;
+    const centerY = (mapFrame[1] + mapFrame[3]) / 2;
     const t = target
-      ? d3.zoomIdentity.translate(w / 2 - k * target.x, h / 2 - k * target.y).scale(k)
+      ? d3.zoomIdentity.translate(centerX - k * target.x, centerY - k * target.y).scale(k)
       : d3.zoomIdentity;
     svg.interrupt("camera");
     const sel = motionEnabled() ? svg.transition("camera").duration(850).ease(d3.easeCubicInOut) : svg;
     sel.call(zoom.transform, t);
   }
   api.resetCamera = () => moveCamera(null, 1);
+  function focusJourney(journey) {
+    const points = journey.waypoints.filter((point) => point.px != null);
+    if (!points.length) { api.resetCamera(); return; }
+    const xs = points.map((point) => point.px), ys = points.map((point) => point.py);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const scale = Math.min(4, Math.max(1, Math.min(
+      (mapFrame[2] - mapFrame[0] - 40) / Math.max(1, x1 - x0),
+      (mapFrame[3] - mapFrame[1] - 40) / Math.max(1, y1 - y0),
+    )));
+    moveCamera({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, scale);
+  }
+  api.zoomBy = (factor) => {
+    svg.interrupt("camera");
+    const center = [(mapFrame[0] + mapFrame[2]) / 2, (mapFrame[1] + mapFrame[3]) / 2];
+    const selection = motionEnabled() ? svg.transition("camera").duration(280).ease(d3.easeCubicOut) : svg;
+    selection.call(zoom.scaleBy, factor, center);
+  };
 
   function showTip(e, text) { if (!tipEl) return; tipEl.textContent = text; tipEl.style.opacity = 1; moveTip(e); }
   function moveTip(e) {
@@ -402,7 +478,7 @@ export function createAtlas(container) {
       const area = Number(feature.properties.area_km2) || d3.geoArea(feature);
       if (!byName.has(name) || area > byName.get(name).area) byName.set(name, { feature, area });
     }
-    const limit = size.w <= 820 ? 0 : 11;
+    const limit = size.w <= 820 ? 0 : 8;
     const labels = [...byName.values()]
       .filter((entry) => entry.area > 120000)
       .sort((a, b) => b.area - a.area)
@@ -416,13 +492,13 @@ export function createAtlas(container) {
       (enter) => enter.append("text")
         .attr("text-anchor", "middle")
         .attr("paint-order", "stroke")
-        .attr("stroke", "rgba(241,243,245,.92)")
+        .attr("stroke", C.paperSoft)
         .attr("stroke-width", 3)
         .attr("stroke-linejoin", "round")
         .attr("fill", C.anchorInk)
         .attr("font-family", "'Public Sans',sans-serif")
-        .attr("font-weight", 600)
-        .attr("letter-spacing", ".05em"),
+        .attr("font-weight", 500)
+        .attr("letter-spacing", ".015em"),
       (update) => update,
       (exit) => exit.remove(),
     )
@@ -434,7 +510,7 @@ export function createAtlas(container) {
         const name = entry.feature.properties.name
           .replace(/^Dominion of /i, "")
           .replace(/^United Kingdom of Great Britain and Ireland$/i, "United Kingdom");
-        return (name.length > 26 ? name.slice(0, 24) : name).toUpperCase();
+        return name;
       });
   }
 
@@ -661,23 +737,26 @@ export function createAtlas(container) {
         .attr("cx", projected[0]).attr("cy", projected[1]);
     });
     const sel = dots.selectAll("circle").data(store ? store.journeys : [], (j) => j.id);
-    sel.enter().append("circle").attr("r", 1.6).merge(sel).each(function (j) {
+    sel.enter().append("circle").attr("r", 1.2).merge(sel).each(function (j) {
       const home = j.waypoints[0];
       if (!home) { d3.select(this).attr("display", "none"); return; }
       const vis = d3.geoDistance([home.lng, home.lat], center) < Math.PI / 2;
       if (!vis) { d3.select(this).attr("display", "none"); return; }
       const p = gProjection([home.lng, home.lat]);
       d3.select(this).attr("display", null).attr("cx", p[0]).attr("cy", p[1])
-        .attr("fill", GROUP_COLOR[j.group] || C.accent).attr("opacity", 0.5);
+        .attr("fill", GROUP_COLOR[j.group] || C.accent).attr("opacity", 0.28);
     });
     sel.exit().remove();
   }
   function startRotate() {
     stopRotate();
     if (!motionEnabled()) { redrawGlobe(); return; }
+    let previous = performance.now();
     const step = (now) => {
-      rot[0] += SYSTEM_REDUCED_MOTION ? 0.12 : 0.14;
-      globePhase = (globePhase + 0.0011) % 1;
+      const elapsed = Math.max(0, Math.min(64, now - previous));
+      previous = now;
+      rot[0] += elapsed * .004;
+      globePhase = (globePhase + elapsed * .00005) % 1;
       redrawGlobe(now);
       rotateRAF = requestAnimationFrame(step);
     };
@@ -686,10 +765,15 @@ export function createAtlas(container) {
   function stopRotate() { if (rotateRAF) cancelAnimationFrame(rotateRAF); rotateRAF = null; }
 
   // ---- per-view rendering ----------------------------------------------------
-  api.render = function (v, ctx) {
-    api._last = () => api.render(v, ctx);
+  api.render = function (v, ctx, reframe = false) {
+    api._last = (forceFrame = false) => api.render(v, ctx, forceFrame);
     if (!overlayG) return;
     const changed = v !== view; view = v;
+    const frame = availableMapFrame();
+    const frameChanged = !mapFrame || frame.some((value, index) => value !== mapFrame[index]);
+    if (frameChanged) layout();
+    // A shared or hidden browser tab can begin with no measurable map area.
+    if (!projection) return;
     svg.select(".atlas-bg").attr("fill-opacity", v === "landing" ? 0.12 : 1);
     if (v === "landing") { svg.style("pointer-events", "none"); showGlobe(true); return; }
     showGlobe(false);
@@ -709,16 +793,21 @@ export function createAtlas(container) {
       paintChoropleth(false);
     }
     if (v === "guided") {
-      if (changed) clearOverlay();
-      drawGuided(ctx);
+      if (changed || frameChanged || reframe) clearOverlay();
+      drawGuided(frameChanged || reframe ? { ...ctx, prevIndex: null } : ctx);
     } else if (v === "explore") {
       clearOverlay();
       drawExplore(ctx);
-      if (changed) api.resetCamera();
+      if (changed || frameChanged || reframe || selectedJourney !== ctx.selectedId) {
+        const journey = store.byId.get(ctx.selectedId);
+        if (journey) focusJourney(journey);
+        else api.resetCamera();
+      }
+      selectedJourney = ctx.selectedId;
     } else if (v === "patterns") {
       clearOverlay();
       drawPatterns(ctx);
-      if (changed && !ctx.activePatternEvent) api.resetCamera();
+      if ((changed || frameChanged || reframe) && !ctx.activePatternEvent) api.resetCamera();
     }
   };
 
@@ -954,12 +1043,15 @@ export function createAtlas(container) {
       if (!placed.has(j.originCountry)) placed.set(j.originCountry, { x: 0, y: 0, n: 0 });
       const e = placed.get(j.originCountry); e.x += home.px; e.y += home.py; e.n++;
     }
-    for (const [country, e] of placed) {
+    const labels = [];
+    for (const [country, e] of [...placed].sort((a, b) => b[1].n - a[1].n)) {
       const n = store.originCounts.get(country) || e.n;
       if (n < 3) continue;
       const cx = e.x / e.n, cy = e.y / e.n;
-      dot(g, cx, cy, { r: 3, fill: C.accentDeep, op: 0.85 });
-      label(g, cx, cy, `${n}`, { fs: 12, dy: 10, weight: 600, fill: C.accentDeep });
+      if (labels.some((point) => Math.abs(cx - point.x) < 32 && Math.abs(cy - point.y) < 22)) continue;
+      labels.push({ x: cx, y: cy });
+      dot(g, cx, cy, { r: 2.5, fill: C.accentDeep, op: 0.85 });
+      label(g, cx, cy, `${n}`, { fs: 12, dy: 10, weight: 600, fill: C.accentDeep, halo: true });
     }
   }
 

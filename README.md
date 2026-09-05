@@ -157,23 +157,29 @@ map.
 **Deep links:** `#/guided`, `#/explore`, `#/patterns`, `#/about`, `#/survivor/<id>`,
 `#/place/<slug>`.
 
-**Visual craft (docs 10–12):** an "Alpine archive" direction pairs cool twilight neutrals,
-Public Sans interface typography, and restrained Spectral story moments with one horizon-blue
-accent. The interface relies on spacing and type rather than decorative rules, and
-consistent inline SVG icons replace text glyphs. On small screens, map-aware bottom sheets
-keep geography visible behind Guided, Explore, and person details. Motion remains slow and
-non-blocking; reduced-motion environments receive immediate content and gentler ambient
-speeds. Patterns opens at 1944 as a testimony-grounded history explorer: year navigation,
-belligerent and occupation context, veteran service traces, event cards, portraits, testimony
-counts, and map markers stay synchronized.
+**Visual craft:** the archive reading-room design pairs mineral paper, dark blue-green
+binding ink, Spectral names and reading text, and Public Sans controls. Real photographs
+provide the archival character without sepia filters, imitation stamps, or repeated glass
+cards. Landing is an album cover; Explore is a photographic collection index; Guided is a
+reading column; Patterns is a historical atlas; About includes a collection ledger and
+source list. Fonts and GSAP remain self-hosted.
 
-The landing includes six full-viewport portrait belts moving at distinct speeds behind the
-content and rotating globe. Every tile independently changes every 4.8–8 seconds without
-blocking interaction; the globe cycles through five real journeys at a time with moving
-traveler marks, so routes remain legible. All ambient motion pauses when hidden and stays
-slower for reduced-motion visitors. The mosaic includes only rights-cleared, face-validated
-OHP portraits; pages without a usable gallery image remain available elsewhere with their
-initials fallback but never enter the landing wall.
+Explore has expandable community filters, a recoverable empty-search state, and profile
+actions beside the account's identity. Closing a profile restores the collection's scroll
+position and keyboard focus. Guided supports both scrolling and previous/next place
+buttons. The map fits the exposed area beside desktop panels or above mobile sheets;
+visible zoom and fit controls supplement mouse and touch navigation. Patterns opens at
+1944 and keeps the year, historical territories, war context, and testimony synchronized.
+Birthplace labels prioritize legibility rather than overlapping every country count.
+
+The landing retains six slow portrait belts, softened behind the globe and away from the
+reading area. Each tile changes every 8–13.6 seconds; the globe follows five real journeys
+at a time. GSAP coordinates short, non-blocking entrances and the Archive Register count-up.
+Reduced-motion visitors receive final counter values and still photographs and globe.
+Without GSAP, the interface and its final counter values remain available. The decorative
+mosaic and enlarged Guided photographs use only rights-cleared, face-validated OHP assets.
+Compact collection/profile photographs also retain rights-cleared detector false negatives;
+records without an image keep their initials.
 
 **Portrait provenance:** the project owner identified themselves as the photograph author
 and granted reuse permission on 2026-09-02. `data/portraits/manifest.json` records that

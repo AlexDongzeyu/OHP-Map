@@ -32,6 +32,21 @@
       <circle cx="11" cy="11" r="6" />
       <path d="m16 16 4 4" />
     </symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24">
+      <path d="m5 12 4 4L19 6" />
+    </symbol>
+    <symbol id="icon-chevron" viewBox="0 0 24 24">
+      <path d="m6 9 6 6 6-6" />
+    </symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24">
+      <path d="M5 12h14M12 5v14" />
+    </symbol>
+    <symbol id="icon-minus" viewBox="0 0 24 24">
+      <path d="M5 12h14" />
+    </symbol>
+    <symbol id="icon-fit" viewBox="0 0 24 24">
+      <path d="M9 4H4v5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+    </symbol>
   </svg>
 
   <div id="stage">
@@ -53,8 +68,9 @@
     </div>
     <div id="error" class="cover" hidden>
       <div class="cover-inner">
-        <p class="serif lg">The map could not load.</p>
-        <p class="muted">Reload the page when you have an internet connection.</p>
+        <p class="serif lg">The map could not load</p>
+        <p class="muted">Check your internet connection, then try again.</p>
+        <a class="btn btn-primary" href="">Try again</a>
       </div>
     </div>
 
@@ -64,10 +80,10 @@
         <span class="brand-title">Journeys</span>
         <span class="brand-kicker">Crestwood OHP</span>
       </button>
-      <nav class="nav" role="tablist" aria-label="View modes">
-        <button class="nav-tab" role="tab" data-view="guided" title="Follow one recorded route">Guided</button>
-        <button class="nav-tab" role="tab" data-view="explore" title="Search people and places, or filter by community">Explore</button>
-        <button class="nav-tab" role="tab" data-view="patterns" title="Compare routes, birthplaces, and historical borders">Patterns</button>
+      <nav class="nav" aria-label="Map views">
+        <button class="nav-tab" data-view="guided" title="Follow one recorded route">Guided</button>
+        <button class="nav-tab" data-view="explore" title="Search people and places, or filter by community">Explore</button>
+        <button class="nav-tab" data-view="patterns" title="Compare routes, birthplaces, and historical borders">Patterns</button>
       </nav>
       <div class="topbar-right">
         <button class="nav-plain" data-view="about">About</button>
@@ -78,7 +94,13 @@
     <div id="overlay"></div>
   </div>
 
-  <p id="fatal" class="fatal" hidden role="alert"></p>
+  <div id="fatal" class="fatal" hidden role="alert">
+    <div class="cover-inner">
+      <p class="serif lg">The accounts could not load</p>
+      <p class="muted">The archive is unavailable right now. Check your connection, then try again.</p>
+      <a class="btn btn-primary" href="">Try again</a>
+    </div>
+  </div>
 
   <script src="vendor/gsap/gsap.min.js"></script>
   <script src="vendor/d3/d3.min.js"></script>

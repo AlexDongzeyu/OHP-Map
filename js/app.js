@@ -36,7 +36,6 @@ async function main() {
   try { store = await loadData(); }
   catch (err) {
     loadingEl.hidden = true; fatalEl.hidden = false;
-    fatalEl.textContent = "The journeys did not load. Refresh the page and try again.";
     console.error(err); return;
   }
 
@@ -120,7 +119,7 @@ function atlasCtx() {
   };
 }
 
-function render() {
+function render(preserveBrowse = false) {
   const v = state.view;
   const changes = {
     viewChanged: rendered.view !== v,
@@ -128,14 +127,24 @@ function render() {
     layerChanged: rendered.patternsLayer !== state.patternsLayer,
     storyChanged: rendered.guidedId !== state.guidedId,
   };
-  document.querySelectorAll(".nav-tab").forEach((b) => {
+  const list = preserveBrowse ? document.querySelector("[data-rail-list]") : null;
+  const browseScroll = list?.scrollTop || 0;
+  const filtersOpen = preserveBrowse && document.querySelector(".collection-filters")?.open;
+  document.querySelectorAll("#topbar [data-view]").forEach((b) => {
     const on = b.dataset.view === v;
     b.classList.toggle("on", on);
-    b.setAttribute("aria-selected", String(on));
+    if (on) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
   });
   document.body.dataset.view = v;
-  atlas.render(v, atlasCtx());
+  teardownGuidedScroll();
   mountOverlay();
+  if (list) {
+    document.querySelector(".collection-filters").open = filtersOpen;
+    document.querySelector("[data-rail-list]").scrollTop = browseScroll;
+  }
+  atlas.render(v, atlasCtx());
+  if (v === "guided") setupGuidedScroll();
   motion.animateOverlay(v, changes);
   rendered = {
     view: v,
@@ -149,7 +158,7 @@ function mountOverlay() {
   const host = document.getElementById("overlay");
   const v = state.view;
   if (v === "landing") host.innerHTML = ui.landing(store);
-  else if (v === "guided") { host.innerHTML = ui.guided(store, state); setupGuidedScroll(); }
+  else if (v === "guided") host.innerHTML = ui.guided(store, state);
   else if (v === "explore") { host.innerHTML = ui.explore(store, state); afterExplore(); }
   else if (v === "patterns") host.innerHTML = ui.patterns(store, state);
   else if (v === "about") host.innerHTML = ui.about(store);
@@ -166,6 +175,7 @@ function afterExplore() {
 // ---- actions -----------------------------------------------------------------
 function go(view) {
   if (!VIEWS.includes(view)) view = "landing";
+  if (view === state.view) return;
   state.view = view;
   if (view === "guided" && !state.guidedId) state.guidedId = store.defaultGuidedId;
   const hash = view === "landing" ? "" : (
@@ -181,9 +191,15 @@ function startGuided(id) {
   if (narr) narr.scrollTo({ top: 0, behavior: motionEnabled() ? "smooth" : "auto" });
 }
 function selectSurvivor(id) {
-  state.selectedId = id; state.view = "explore"; setHash(`#/survivor/${id}`); render();
+  state.selectedId = id; state.view = "explore"; setHash(`#/survivor/${id}`); render(true);
+  document.getElementById("profile-name")?.focus({ preventScroll: true });
 }
-function clearSel() { state.selectedId = null; setHash("#/explore"); render(); }
+function clearSel() {
+  const id = state.selectedId;
+  state.selectedId = null; setHash("#/explore"); render(true);
+  const source = id && document.querySelector(`[data-survivor="${CSS.escape(id)}"]`);
+  (source || document.getElementById("search"))?.focus({ preventScroll: true });
+}
 
 function toggleGroup(name) {
   if (state.groupFilter.has(name)) {
@@ -195,6 +211,15 @@ function toggleGroup(name) {
   if (!state.groupFilter.size) store.groups.forEach((g) => state.groupFilter.add(g.name));
   state.railLimit = RAIL_PAGE;
   render();
+  document.querySelector(`[data-group="${CSS.escape(name)}"]`)?.focus({ preventScroll: true });
+}
+
+function resetSearch() {
+  state.query = "";
+  state.groupFilter = new Set(store.groups.map((group) => group.name));
+  state.railLimit = RAIL_PAGE;
+  render();
+  document.getElementById("search").focus();
 }
 
 function onSearch(value) {
@@ -298,9 +323,34 @@ function setupGuidedScroll() {
       secs.forEach((s) => s.classList.toggle("is-active", parseInt(s.dataset.chapter, 10) === best));
       motion.animateChapter(secs[best]);
     }
+    updateGuidedPosition();
   };
   root.addEventListener("scroll", scrollHandler, { passive: true });
   scrollHandler();
+}
+function updateGuidedPosition() {
+  const journey = store.byId.get(state.guidedId);
+  if (!journey) return;
+  const total = journey.waypoints.length;
+  const index = Math.min(state.guidedIndex, Math.max(0, total - 1));
+  const count = document.querySelector("[data-guided-count]");
+  const place = document.querySelector("[data-guided-place]");
+  const countText = `Place ${total ? index + 1 : 0} of ${total}`;
+  const placeText = journey.waypoints[index]?.canonical || "No recorded places";
+  if (count.textContent !== countText) count.textContent = countText;
+  if (place.textContent !== placeText) place.textContent = placeText;
+  document.querySelector("[data-act='prev-chapter']").disabled = index === 0;
+  document.querySelector("[data-act='next-chapter']").disabled = index >= total - 1;
+}
+function stepChapter(direction) {
+  const root = document.querySelector("[data-narr]");
+  const chapters = root.querySelectorAll("[data-chapter]");
+  const index = Math.max(0, Math.min(chapters.length - 1, state.guidedIndex + direction));
+  const chapter = chapters[index];
+  if (!chapter) return;
+  const top = root.scrollTop + chapter.getBoundingClientRect().top - root.getBoundingClientRect().top -
+    (root.clientHeight - chapter.offsetHeight) / 2;
+  root.scrollTo({ top, behavior: motionEnabled() ? "smooth" : "auto" });
 }
 function teardownGuidedScroll() {
   const root = document.querySelector("[data-narr]");
@@ -314,7 +364,7 @@ function wireGlobal() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (state.view === "about") go("explore");
-      else if (state.selectedId) clearSel();
+      else if (state.view === "explore" && state.selectedId) clearSel();
     }
   });
 }
@@ -329,7 +379,6 @@ function wireOverlay() {
   const search = host.querySelector("#search");
   if (search) {
     search.addEventListener("input", () => onSearch(search.value));
-    if (state.query) { search.focus(); search.setSelectionRange(state.query.length, state.query.length); }
   }
 }
 function onActivate(e) {
@@ -348,6 +397,12 @@ function onActivate(e) {
     case "home": return go("landing");
     case "clear": return clearSel();
     case "more": return showMore();
+    case "reset-search": return resetSearch();
+    case "prev-chapter": return stepChapter(-1);
+    case "next-chapter": return stepChapter(1);
+    case "zoom-in": return atlas.zoomBy(1.5);
+    case "zoom-out": return atlas.zoomBy(1 / 1.5);
+    case "reset-map": return atlas.resetCamera();
     case "prev-year": return stepEventYear(-1);
     case "next-year": return stepEventYear(1);
     case "prev-event": return stepPatternEvent(-1);

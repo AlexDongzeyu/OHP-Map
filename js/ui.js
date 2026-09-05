@@ -4,7 +4,6 @@
 // categories (doc 13 §4.2), no "featured" hierarchy (§4.3), each with a brief intro (§4.4).
 import { C, GROUP_COLOR, SYSTEM_REDUCED_MOTION, esc } from "./config.js";
 
-const roman = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 const RAIL_PAGE = 140;
 const icon = (name) => `<svg class="icon icon-${name}" aria-hidden="true" focusable="false">
   <use href="#icon-${name}"></use>
@@ -17,14 +16,14 @@ export function landing(store) {
   return `
   <div class="ov ov-landing">
     <div class="landing-card">
-      <h1 class="display">Journeys</h1>
       <p class="kicker">Crestwood Oral History Project</p>
-      <p class="lede">Crestwood students have recorded interviews with Holocaust survivors,
-        veterans, and community members. This map brings together the places they named:
-        hometowns, camps, battlefields, and the places where they later lived.</p>
+      <h1 class="display">Journeys</h1>
+      <p class="landing-subtitle">An atlas of recorded lives</p>
+      <p class="lede">Explore the places remembered by Holocaust survivors, veterans,
+        and community members in interviews with Crestwood students.</p>
       <div class="cta-row">
         <button class="btn btn-primary" data-act="follow">Begin with one story ${icon("arrow-right")}</button>
-        <button class="btn btn-ghost" data-act="explore">Explore the map</button>
+        <button class="btn btn-ghost" data-act="explore">Browse the collection</button>
       </div>
       <section class="archive-register" aria-label="Archive totals">
         <div class="register-head">
@@ -124,15 +123,13 @@ export function guided(store, state) {
   const first = j.name.split(" ")[0];
   const wp = j.waypoints;
   const portrait = validatedPortrait(j);
+  const activeIndex = Math.min(state.guidedIndex || 0, Math.max(0, wp.length - 1));
   const chapters = wp.map((w, i) => {
     const context = store.warForJourney(j, w.year);
     const showContext = context && !["birthplace", "resettlement"].includes(w.roleKey);
     return `
-    <section class="chapter ${i === 0 ? "chapter-first" : ""}" data-chapter="${i}">
-      ${i === 0 && portrait ? `<figure class="guided-portrait">
-        <img src="${esc(portrait)}" alt="${esc(j.name)}" loading="eager" decoding="async">
-      </figure>` : ""}
-      <div class="ch-head"><span class="ch-num">${roman[i] || i + 1}</span>
+    <section class="chapter ${i === 0 ? "chapter-first" : ""} ${i === activeIndex ? "is-active" : ""}" data-chapter="${i}">
+      <div class="ch-head"><span class="ch-num">${i + 1} / ${wp.length}</span>
         <span class="ch-role">${esc(w.role)}</span></div>
       <h3 class="ch-title">${esc(w.canonical)}</h3>
       <div class="ch-sub">${esc(metaLine(w))}</div>
@@ -142,14 +139,23 @@ export function guided(store, state) {
   }).join("");
   return `
   <div class="ov ov-guided">
-    <div class="narr scroll" data-narr>
+    <div class="narr scroll" data-narr tabindex="0" aria-label="Read ${esc(j.name)}'s journey">
       <div class="narr-head">
-        <h2 class="serif-xl">${esc(j.name)}</h2>
-        <p class="kicker">${esc(j.group)} / Guided route</p>
-        <p class="narr-meta">${profileMeta(j)}</p>
+        <p class="micro-label">A guided account</p>
+        <div class="story-heading">
+          ${portrait ? `<figure class="guided-portrait">
+            <img src="${esc(portrait)}" alt="${esc(j.name)}" loading="eager" decoding="async">
+          </figure>` : ""}
+          <div>
+            <h2 class="serif-xl">${esc(j.name)}</h2>
+            <p class="kicker">${esc(j.group)}</p>
+            <p class="narr-meta">${profileMeta(j)}</p>
+          </div>
+        </div>
         ${recordingMeta(j)}
-        ${serviceContext(store, j)}
         <p class="bio">${esc(j.bio)}</p>
+        ${serviceContext(store, j)}
+        <p class="reading-note">Scroll through the account to follow its places on the map.</p>
       </div>
       ${chapters}
       <section class="chapter closing">
@@ -160,6 +166,14 @@ export function guided(store, state) {
           Open ${esc(first)}'s OHP page ${icon("external-link")}</a>
       </section>
     </div>
+    <nav class="narr-nav" aria-label="Journey places">
+      <div class="narr-position" aria-live="polite" aria-atomic="true">
+        <span data-guided-count>Place ${wp.length ? activeIndex + 1 : 0} of ${wp.length}</span>
+        <strong data-guided-place>${esc(wp[activeIndex]?.canonical || "No recorded places")}</strong>
+      </div>
+      <button data-act="prev-chapter" aria-label="Previous place"${activeIndex === 0 ? " disabled" : ""}>${icon("arrow-right")}</button>
+      <button data-act="next-chapter" aria-label="Next place"${activeIndex >= wp.length - 1 ? " disabled" : ""}>${icon("arrow-right")}</button>
+    </nav>
   </div>`;
 }
 
@@ -168,26 +182,31 @@ export function explore(store, state) {
   const groupChips = store.groups.map((g) => {
     const on = state.groupFilter.has(g.name);
     const col = GROUP_COLOR[g.name] || C.accent;
-    return `<button class="gchip ${on ? "on" : ""}" data-group="${esc(g.name)}" style="--gc:${col}">
-      <span class="gdot"></span>${esc(g.name)} <span class="gn">${g.count}</span></button>`;
+    return `<button class="gchip ${on ? "on" : ""}" data-group="${esc(g.name)}" style="--gc:${col}" aria-pressed="${on}">
+      <span class="gcheck">${icon("check")}</span><span>${esc(g.name)}</span>
+      <span class="gn">${g.count}</span></button>`;
   }).join("");
 
   const { html, shown, total } = railInner(store, state);
   return `
   <div class="ov ov-explore ${state.selectedId ? "has-sel" : ""}">
-    <aside class="rail scroll">
+    <aside class="rail scroll" aria-label="Browse the collection">
+      <div class="rail-heading"><h2>The collection</h2><span>${store.journeys.length.toLocaleString("en-CA")} people</span></div>
       <div class="rail-search">
         ${icon("search")}
-        <input id="search" class="search-input" type="search" placeholder="Search names, places, or keywords"
+        <input id="search" class="search-input" type="search" placeholder="Search names or places"
           value="${esc(state.query || "")}" autocomplete="off" aria-label="Search people">
       </div>
-      <p class="rail-lead micro-label">Browse the communities used in the OHP archive.</p>
-      <div class="gchips">${groupChips}</div>
-      <div class="rail-count micro-label" data-rail-count>${shown} of ${total} shown</div>
+      <details class="collection-filters"${state.groupFilter.size !== store.groups.length ? " open" : ""}>
+        <summary>Communities <span>${state.groupFilter.size === store.groups.length ? "All" : `${state.groupFilter.size} selected`}</span>${icon("chevron")}</summary>
+        <div class="gchips">${groupChips}</div>
+      </details>
+      <div class="rail-count micro-label" data-rail-count role="status">${shown} of ${total} shown</div>
       <div class="rail-list" data-rail-list>${html}</div>
     </aside>
     <div class="panel-host" data-panel>${state.selectedId ? panel(store, state) : ""}</div>
-    ${!state.selectedId ? `<p class="explore-hint">Open a name or map point to see its recorded route.<br>Drag to pan. Scroll to zoom.</p>` : ""}
+    ${mapTools()}
+    ${!state.selectedId ? `<p class="explore-hint">Choose a person to trace their recorded places.</p>` : ""}
   </div>`;
 }
 
@@ -214,7 +233,9 @@ export function railInner(store, state) {
     html += items.map((j) => railCard(j, j.id === state.selectedId)).join("");
     html += `</div>`;
   }
-  if (!html) html = `<p class="rail-empty">No one matches that search.</p>`;
+  if (!html) html = `<div class="rail-empty"><p>No matching accounts</p>
+    <span>Try a surname or place, or reset the search and communities.</span>
+    <button class="link" data-act="reset-search">Show the whole collection</button></div>`;
   else if (matched.length > slice.length)
     html += `<button class="rail-more" data-act="more">Show more (${matched.length - slice.length} more)</button>`;
   return { html, shown: slice.length, total: matched.length };
@@ -222,11 +243,11 @@ export function railInner(store, state) {
 
 function railCard(j, isSel) {
   const col = GROUP_COLOR[j.group] || C.accent;
-  return `<button class="rail-card ${isSel ? "sel" : ""}" data-survivor="${esc(j.id)}">
+  return `<button class="rail-card ${isSel ? "sel" : ""}" data-survivor="${esc(j.id)}" aria-pressed="${isSel}">
     ${profileMedal(j, col)}
     <span class="rail-text">
       <span class="rail-name">${esc(j.name)}</span>
-      <span class="rail-intro">${esc(j.intro || (j.born ? "Born " + j.born : j.group))}</span>
+      <span class="rail-intro">${profileMeta(j) || esc(j.group)}</span>
     </span></button>`;
 }
 
@@ -243,25 +264,39 @@ function panel(store, state) {
   const tags = (j.conflicts.concat(j.themes)).slice(0, 5).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
   const reviewed = j.reviewStatus === "reviewed";
   return `
-    <aside class="panel scroll">
-      <button class="panel-close" data-act="clear" aria-label="Close">${icon("close")}</button>
-      ${profileMedal(j, col, true)}
-      <div class="panel-group" style="--gc:${col}">${esc(j.group)}</div>
-      <h2 class="serif-lg">${esc(j.name)}</h2>
-      <div class="panel-meta">${profileMeta(j)}</div>
-      <p class="panel-intro">${esc(j.intro)}</p>
+    <aside class="panel scroll" aria-labelledby="profile-name">
+      <div class="panel-topline"><span class="micro-label">From the collection</span>
+        <button class="panel-close" data-act="clear" aria-label="Close profile">${icon("close")}</button></div>
+      <div class="profile-heading">
+        ${profileMedal(j, col, true)}
+        <div>
+          <div class="panel-group" style="--gc:${col}">${esc(j.group)}</div>
+          <h2 class="serif-lg" id="profile-name" tabindex="-1">${esc(j.name)}</h2>
+          <div class="panel-meta">${profileMeta(j)}</div>
+        </div>
+      </div>
+      <div class="profile-actions">
+        ${wp.length > 1 ? `<button class="guided-pill" data-guided="${esc(j.id)}">Follow this account ${icon("arrow-right")}</button>` : ""}
+        <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Original interview ${icon("external-link")}</a>
+      </div>
       ${recordingMeta(j)}
-      ${serviceContext(store, j)}
       <p class="bio">${esc(j.bio)}</p>
+      ${serviceContext(store, j)}
       ${wp.length > 1 ? `<svg class="mini" viewBox="0 0 340 150" data-mini></svg>
       <div class="mini-cap">Places named in the OHP profile.</div>` : ""}
-      <div class="micro-label">The journey</div>
+      <div class="micro-label">Recorded places</div>
       <ol class="journey">${steps}</ol>
       <div class="tags">${tags}</div>
       ${reviewed ? `<div class="ver" style="color:${C.verified}"><span class="ver-dot"></span>Checked against the interview</div>` : ""}
-      ${wp.length > 1 ? `<button class="guided-pill" data-guided="${esc(j.id)}">Follow this route in Guided ${icon("arrow-right")}</button>` : ""}
-      <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Open the OHP page ${icon("external-link")}</a>
     </aside>`;
+}
+
+function mapTools() {
+  return `<div class="map-tools" role="group" aria-label="Map controls">
+    <button data-act="zoom-in" aria-label="Zoom in" title="Zoom in">${icon("plus")}</button>
+    <button data-act="zoom-out" aria-label="Zoom out" title="Zoom out">${icon("minus")}</button>
+    <button data-act="reset-map" aria-label="Fit map to view" title="Fit map to view">${icon("fit")}</button>
+  </div>`;
 }
 
 function profileMedal(journey, color, large = false) {
@@ -277,19 +312,19 @@ export function patterns(store, state) {
   const layer = state.patternsLayer || "journeys";
   const topOrigin = [...store.originCounts.entries()].sort((a, b) => b[1] - a[1])[0];
   const toggle = `
-    <div class="layer-toggle" role="tablist" aria-label="Pattern layer">
-      <button class="seg ${layer === "journeys" ? "on" : ""}" data-layer="journeys">History and routes</button>
-      <button class="seg ${layer === "origins" ? "on" : ""}" data-layer="origins">Birthplaces</button>
+    <div class="layer-toggle" role="group" aria-label="Pattern layer">
+      <button class="seg ${layer === "journeys" ? "on" : ""}" aria-pressed="${layer === "journeys"}" data-layer="journeys">History and routes</button>
+      <button class="seg ${layer === "origins" ? "on" : ""}" aria-pressed="${layer === "origins"}" data-layer="origins">Birthplaces</button>
     </div>`;
 
   if (layer === "origins") {
     const list = [...store.originCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 9)
       .map(([c, n]) => `<li><span class="oc-name">${esc(c)}</span><span class="oc-bar"><span style="width:${Math.round(n / topOrigin[1] * 100)}%"></span></span><span class="oc-n">${n}</span></li>`).join("");
     return `
-    <div class="ov ov-patterns">
+    <div class="ov ov-patterns is-origins">
       <div class="patterns-intro">
-        <h2 class="serif-xl">Birthplaces by present-day country</h2>
         <p class="kicker">Archive birthplaces</p>
+        <h2 class="serif-xl">Where the accounts begin</h2>
         <p class="lede sm">${topOrigin
           ? `<span class="accent">${esc(topOrigin[0])}</span> has the largest count, with <b>${topOrigin[1]}</b> recorded birthplaces.`
           : "No birthplace data is available."}</p>
@@ -297,6 +332,7 @@ export function patterns(store, state) {
         <ul class="origin-list">${list}</ul>
         <p class="cross-sub">Historical place names are grouped under present-day countries.</p>
       </div>
+      ${mapTools()}
     </div>`;
   }
 
@@ -304,12 +340,12 @@ export function patterns(store, state) {
   <div class="ov ov-patterns">
     <div class="patterns-map-head">
       <div>
-        <p class="micro-label">Historical atlas, 1914 to 2026</p>
+        <p class="micro-label">Historical atlas / 1914 to 2026</p>
         <h2>Territory and testimony</h2>
       </div>
       ${toggle}
     </div>
-    <aside class="history-dossier" data-pattern-events>${patternsEvents(store, state)}</aside>
+    <aside class="history-dossier" data-pattern-events tabindex="0" aria-label="Historical context and recorded places">${patternsEvents(store, state)}</aside>
     <div class="scrubber">
       <div class="scrub-head"><span class="micro-label">Historical timeline</span>
         <span class="scrub-year" data-year>${state.scrubYear}</span></div>
@@ -317,6 +353,7 @@ export function patterns(store, state) {
       ${boundaryDensity(store, state.scrubYear)}
       <div class="scrub-ticks"><span>${store.time.min}</span><span>1945</span><span>1989</span><span>${store.time.max}</span></div>
     </div>
+    ${mapTools()}
   </div>`;
 }
 
@@ -332,31 +369,46 @@ export function patternsEvents(store, state) {
 
 // ---- ABOUT ------------------------------------------------------------------
 export function about(store) {
-  const groupLines = store.groups.map((g) => `${g.count} ${g.name.toLowerCase()}`).join(", ");
+  const collection = store.groups.map((g) => `<div><dt>${esc(g.name)}</dt><dd>${g.count.toLocaleString("en-CA")}</dd></div>`).join("");
   return `
   <div class="ov ov-about scroll">
     <div class="about-wrap">
-      <h1 class="display sm">About the map</h1>
-      <p class="kicker">Crestwood Oral History Project</p>
-      <p class="lede">Crestwood students have recorded interviews with Holocaust survivors,
+      <header class="about-header">
+        <p class="kicker">Crestwood Oral History Project</p>
+        <h1 class="display sm">About the map</h1>
+        <p class="lede">Crestwood students have recorded interviews with Holocaust survivors,
         veterans, and community members for years. This map organizes the places named in
         those interviews so visitors can follow one route or compare many accounts.</p>
-      <div class="about-grid">
-        <div><h2>People in the map</h2><p>The map uses the OHP archive's own groups:
-          ${esc(groupLines)}. Each profile follows the same layout.</p></div>
-        <div><h2>How routes are built</h2><p>Each route uses places named on a public OHP
+      </header>
+      <div class="about-body">
+        <aside class="collection-ledger">
+          <h2>The collection</h2>
+          <p>${store.journeys.length.toLocaleString("en-CA")} people, grouped as they are in the OHP archive.</p>
+          <dl>${collection}</dl>
+          <a class="archive-link" href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">Visit the original archive ${icon("external-link")}</a>
+        </aside>
+        <div class="about-grid">
+        <section><h2>Reading a recorded life</h2><p>Guided follows one person's places in sequence.
+          Explore lets you search the collection. Patterns puts dated accounts alongside
+          changing territories from 1914 to 2026.</p></section>
+        <section><h2>From testimony to map</h2><p>Each route uses places named on a public OHP
           page. Historical names are matched to current locations, so &quot;Lemberg&quot;
-          resolves to Lviv. Dates determine the order when the source provides them.</p></div>
-        <div><h2>Approximate dates</h2><p>Many interviews give approximate dates. The map
-          labels them as approximate rather than assigning a precise day or month.</p></div>
-        <div><h2>Current review status</h2><p>The map has ${store.journeys.length} profiles
-          built from public OHP summaries. Automated place matching has not been checked for
-          every profile, so each card links back to its OHP page.</p></div>
-        <div><h2>Sources</h2><p>Interviews and profile text: Crestwood Oral History Project
-          (<a href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">ohp.crestwood.on.ca</a>).
-          War participants: Correlates of War Project, Inter-State War Data v4.0. Historical
-          borders: OpenHistoricalMap (CC0). Basemap: Natural Earth via world-atlas. Code:
-          <a href="https://github.com/AlexDongzeyu/OHP-Map" target="_blank" rel="noopener">AlexDongzeyu/OHP-Map</a>.</p></div>
+          resolves to Lviv. Dates determine the order when the source provides them.</p>
+          <p>Routes connect recorded places; they do not reconstruct the exact roads a person
+          travelled. Approximate dates remain labelled as approximate.</p></section>
+        <section><h2>Read alongside the original</h2><p>Profiles are built from public OHP
+          summaries. Automated place matching has not been checked for every profile.
+          Each account links to its original interview so you can read and listen in context.</p></section>
+        <section class="about-sources"><h2>Sources and credits</h2>
+          <dl>
+            <div><dt>Interviews and photographs</dt><dd><a href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">Crestwood Oral History Project</a></dd></div>
+            <div><dt>Historical territories</dt><dd>OpenHistoricalMap (CC0)</dd></div>
+            <div><dt>War participants</dt><dd>Correlates of War, Inter-State War Data v4.0</dd></div>
+            <div><dt>Basemap</dt><dd>Natural Earth via world-atlas</dd></div>
+            <div><dt>Website code</dt><dd><a href="https://github.com/AlexDongzeyu/OHP-Map" target="_blank" rel="noopener">AlexDongzeyu/OHP-Map</a></dd></div>
+          </dl>
+        </section>
+        </div>
       </div>
       <div class="cta-row">
         <button class="btn btn-primary" data-act="follow">Begin with one story ${icon("arrow-right")}</button>

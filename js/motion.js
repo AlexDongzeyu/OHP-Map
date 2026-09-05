@@ -4,6 +4,7 @@ const gsap = window.gsap;
 let warned = false;
 let mosaicStates = [];
 let beltTweens = [];
+let landingTimeline = null;
 
 function canAnimate() {
   if (!motionEnabled()) return false;
@@ -21,7 +22,7 @@ function reveal(targets, from, options = {}) {
   if (!elements.length) return null;
   gsap.killTweensOf(elements);
   return gsap.fromTo(elements, from, {
-    duration: .62,
+    duration: .45,
     ease: "power3.out",
     clearProps: "opacity,visibility,transform,clipPath",
     ...options,
@@ -47,47 +48,40 @@ export function animateShell() {
 }
 
 export function animateOverlay(view, changes) {
+  if (landingTimeline) { landingTimeline.kill(); landingTimeline = null; }
   if (!canAnimate()) {
     document.documentElement.dataset.mosaicMotion = view === "landing" ? "static" : "inactive";
     return;
   }
   const mobile = window.matchMedia("(max-width: 820px)").matches;
 
-  if (view === "landing" && changes.viewChanged) {
+  if (view === "landing") {
+    const counters = [...document.querySelectorAll("[data-counter]")];
+    if (!changes.viewChanged) {
+      for (const element of counters) element.textContent = Number(element.dataset.counter).toLocaleString("en-CA");
+      return;
+    }
     startMosaic();
     if (SYSTEM_REDUCED_MOTION) return;
-    prepareCounters();
-    const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
-    timeline
+    for (const element of counters) element.textContent = "0";
+    landingTimeline = gsap.timeline({ defaults: { ease: "power3.out" } });
+    landingTimeline
       .fromTo(".landing-card > *", {
         autoAlpha: 0,
-        y: 14,
+        y: 10,
       }, {
         autoAlpha: 1,
         y: 0,
-        duration: .66,
-        stagger: .055,
+        duration: .5,
+        stagger: .04,
         clearProps: "opacity,visibility,transform",
-      })
-      .add(() => animateCounters(), "-=.3");
-    return;
-  }
-
-  function prepareCounters() {
-    for (const element of document.querySelectorAll("[data-counter]")) {
-      gsap.killTweensOf(element);
-      element.textContent = "0";
-    }
-  }
-
-  function animateCounters() {
-    if (SYSTEM_REDUCED_MOTION) return;
-    for (const element of document.querySelectorAll("[data-counter]")) {
+      });
+    for (const element of counters) {
       const target = Number(element.dataset.counter);
       const state = { value: 0 };
-      gsap.to(state, {
+      landingTimeline.to(state, {
         value: target,
-        duration: 1.25,
+        duration: 1.2,
         ease: "power3.out",
         snap: { value: 1 },
         onUpdate: () => {
@@ -96,25 +90,25 @@ export function animateOverlay(view, changes) {
         onComplete: () => {
           element.textContent = target.toLocaleString("en-CA");
         },
-      });
+      }, .2);
     }
+    return;
   }
 
   stopMosaic();
 
   if (view === "guided" && (changes.viewChanged || changes.storyChanged)) {
-    reveal(".narr", mobile ? { autoAlpha: 0, y: 24 } : { autoAlpha: 0, x: -24 });
-    reveal(".narr-head > *", { autoAlpha: 0, y: 10 }, { delay: .08, stagger: .045 });
-    reveal(".chapter.is-active > *", { autoAlpha: 0, y: 10 }, { delay: .18, stagger: .04 });
+    reveal(".narr", mobile ? { autoAlpha: 0, y: 16 } : { autoAlpha: 0, x: -16 });
+    reveal(".narr-nav", { autoAlpha: 0 }, { duration: .3 });
     return;
   }
 
   if (view === "explore") {
     if (changes.viewChanged) {
-      reveal(".rail", mobile ? { autoAlpha: 0, y: 24 } : { autoAlpha: 0, x: -20 });
+      reveal(".rail", mobile ? { autoAlpha: 0, y: 16 } : { autoAlpha: 0, x: -12 });
     }
     if (changes.selectionChanged && document.querySelector(".panel")) {
-      reveal(".panel", mobile ? { autoAlpha: 0, y: 28 } : { autoAlpha: 0, x: 24 });
+      reveal(".panel", mobile ? { opacity: 0, y: 16 } : { opacity: 0, x: 16 });
     }
     return;
   }
@@ -133,11 +127,11 @@ export function animateOverlay(view, changes) {
   }
 
   if (view === "about" && changes.viewChanged) {
-    reveal(".about-wrap > h1, .about-wrap > .kicker, .about-wrap > .lede, .about-grid > *, .about-wrap > .cta-row", {
+    reveal(".about-header > *, .collection-ledger, .about-grid > *, .about-wrap > .cta-row", {
       autoAlpha: 0,
-      y: 16,
+      y: 10,
     }, {
-      stagger: .055,
+      stagger: .04,
     });
   }
 }
@@ -145,11 +139,11 @@ export function animateOverlay(view, changes) {
 export function animateChapter(section) {
   if (!canAnimate() || !section) return;
   reveal(section.querySelectorAll(".ch-head, .ch-title, .ch-sub, blockquote"), {
-    opacity: .25,
-    y: 10,
+    opacity: .75,
+    y: 6,
   }, {
-    duration: .45,
-    stagger: .045,
+    duration: .35,
+    stagger: .025,
   });
 }
 
@@ -170,8 +164,7 @@ function startMosaic() {
   if (!tiles.length) return;
   document.documentElement.dataset.mosaicMotion = "animated";
   beltTweens = gsap.utils.toArray(".mosaic-track").map((track, index) => {
-    const duration = ([76, 92, 82, 98, 86, 104][index] || 90) *
-      (SYSTEM_REDUCED_MOTION ? 1.15 : 1);
+    const duration = [120, 144, 132, 160, 148, 174][index] || 144;
     return index % 2
       ? gsap.fromTo(track, { xPercent: -50 }, { xPercent: 0, duration, ease: "none", repeat: -1 })
       : gsap.to(track, { xPercent: -50, duration, ease: "none", repeat: -1 });
@@ -200,14 +193,14 @@ function stopMosaic() {
   document.documentElement.dataset.mosaicMotion = document.body.dataset.view === "landing"
     ? "static"
     : "inactive";
+  document.documentElement.dataset.mosaicBelts = "still";
 }
 
 function scheduleTile(state, initial = false) {
   if (!state || state.people.length < 2) return;
   const seconds = initial
     ? 2.6 + (state.tileIndex % 12) * .22
-    : (4.8 + ((state.tileIndex + state.index * 3) % 9) * .4) *
-      (SYSTEM_REDUCED_MOTION ? 1.08 : 1);
+    : 8 + ((state.tileIndex + state.index * 3) % 9) * .7;
   for (const tile of state.elements) tile.dataset.cycleSeconds = seconds.toFixed(2);
   state.call = gsap.delayedCall(seconds, () => {
     if (document.hidden || document.body.dataset.view !== "landing") {
@@ -232,16 +225,13 @@ function swapTile(state) {
     setMosaicPerson(incoming, state.people[state.index]);
     gsap.to(visible, {
       autoAlpha: 0,
-      scale: .97,
       duration: .75,
       ease: "power2.inOut",
     });
     gsap.fromTo(incoming, {
       autoAlpha: 0,
-      scale: 1.025,
     }, {
       autoAlpha: 1,
-      scale: 1,
       duration: .9,
       ease: "power2.inOut",
     });
