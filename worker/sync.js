@@ -22,6 +22,8 @@ export const CONTENT_REVISION = "source-grounded-journeys-v6";
 export const JOURNEY_REVISION = "source-evidence-v1";
 export const HISTORY_MIN_YEAR = 1914;
 export const HISTORY_MAX_YEAR = 2026;
+const PUBLIC_FORMAT = 1;
+export const PUBLIC_DATA_KEY = `survivors.public-v${PUBLIC_FORMAT}.${CONTENT_REVISION}.${GAZETTEER_REVISION}.${HISTORY_MIN_YEAR}-${HISTORY_MAX_YEAR}.geojson`;
 const SEEN_KEY = "ohp-seen-slugs.json";
 const FAILURE_KEY = "ohp-fetch-failures.json";
 const CURSOR_KEY = "ohp-refresh-cursor";
@@ -185,7 +187,7 @@ export async function syncSurvivors(env) {
     };
 
     await Promise.all([
-      env.OHP_DATA.put(DATA_KEY, JSON.stringify(doc)),
+      publishCurrentData(env, doc),
       env.OHP_DATA.put(SEEN_KEY, JSON.stringify([...seen].sort())),
       env.OHP_DATA.put(FAILURE_KEY, JSON.stringify(failures)),
       env.OHP_DATA.put(CURSOR_KEY, String(nextCursor)),
@@ -276,8 +278,38 @@ export async function ensureCurrentData(env, cached) {
   if (features.some((feature, index) => feature !== current.features[index])) {
     current = { ...current, features };
   }
-  if (current !== cached) await env.OHP_DATA.put(DATA_KEY, JSON.stringify(current));
+  if (current !== cached) await publishCurrentData(env, current);
   return current;
+}
+
+export function isCurrentPublication(metadata) {
+  return metadata?.format === PUBLIC_FORMAT &&
+    metadata.gazetteer_revision === GAZETTEER_REVISION &&
+    metadata.content_revision === CONTENT_REVISION &&
+    metadata.time_min === HISTORY_MIN_YEAR &&
+    metadata.time_max === HISTORY_MAX_YEAR &&
+    typeof metadata.version === "string" && /^[0-9a-f-]{36}$/i.test(metadata.version);
+}
+
+export function publicationMetadata(doc) {
+  const metadata = {
+    format: PUBLIC_FORMAT,
+    gazetteer_revision: doc.metadata?.gazetteer_revision,
+    content_revision: doc.metadata?.content_revision,
+    time_min: doc.metadata?.time_min,
+    time_max: doc.metadata?.time_max,
+    version: crypto.randomUUID(),
+  };
+  if (!Array.isArray(doc.features) || !isCurrentPublication(metadata)) {
+    throw new Error("Cannot publish an archive snapshot with outdated or invalid metadata");
+  }
+  return metadata;
+}
+
+export async function publishCurrentData(env, doc) {
+  const metadata = publicationMetadata(doc);
+  const body = JSON.stringify(doc);
+  await env.OHP_DATA.put(DATA_KEY, body, { metadata });
 }
 
 function migrateCachedData(cached, seed) {

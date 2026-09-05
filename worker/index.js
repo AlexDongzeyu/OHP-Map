@@ -9,51 +9,65 @@
 // "Auto-updating" here means auto-detected and auto-staged, never auto-published as
 // fact: new entries arrive pending until a human verifies them (doc 09 Step 2.5).
 import {
-  CONTENT_REVISION,
   DATA_KEY,
-  GAZETTEER_REVISION,
-  HISTORY_MAX_YEAR,
-  HISTORY_MIN_YEAR,
+  PUBLIC_DATA_KEY,
   STATUS_KEY,
-  ensureCurrentData,
-  syncSurvivors,
+  isCurrentPublication,
 } from "./sync.js";
+export { ArchiveSync } from "./archive-sync.js";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
 };
 
+async function queueRefresh(env, bootstrap = false) {
+  const runner = env.ARCHIVE_SYNC.get(env.ARCHIVE_SYNC.idFromName("archive"));
+  const response = await runner.fetch(`https://archive-sync.internal/${bootstrap ? "bootstrap" : "run"}`, { method: "POST" });
+  if (!response.ok) throw new Error(`Could not queue archive refresh: ${response.status}`);
+}
+
 export default {
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(syncSurvivors(env));
+    ctx.waitUntil(queueRefresh(env));
   },
 
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Serve the dataset from the warm KV cache when one is configured and populated.
+    // Validation and migration happen when publishing, not while serving the large body.
     if (url.pathname === "/data/survivors.geojson" && env.OHP_DATA) {
-      const cached = await env.OHP_DATA.get(DATA_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        const current = (
-          parsed.metadata?.gazetteer_revision === GAZETTEER_REVISION &&
-          parsed.metadata?.content_revision === CONTENT_REVISION &&
-          parsed.metadata?.time_min === HISTORY_MIN_YEAR &&
-          parsed.metadata?.time_max === HISTORY_MAX_YEAR
-        )
-          ? cached
-          : JSON.stringify(await ensureCurrentData(env, parsed));
-        return new Response(current, {
-          headers: {
+      if (!["GET", "HEAD"].includes(request.method)) {
+        return new Response("Use GET or HEAD.\n", { status: 405, headers: { allow: "GET, HEAD" } });
+      }
+      for (const key of [DATA_KEY, PUBLIC_DATA_KEY]) {
+        const snapshot = await env.OHP_DATA.getWithMetadata(key, { type: "stream" });
+        if (snapshot.value && isCurrentPublication(snapshot.metadata)) {
+          if (key === PUBLIC_DATA_KEY && env.ARCHIVE_SYNC) ctx.waitUntil(queueRefresh(env, true));
+          const etag = `"${snapshot.metadata.version}"`;
+          const headers = {
             "content-type": "application/json; charset=utf-8",
             "cache-control": "public, max-age=300",
             "x-ohp-source": "kv",
-          },
-        });
+            "x-ohp-publication": key === DATA_KEY ? "live" : "validated-snapshot",
+            etag,
+          };
+          const cached = request.headers.get("if-none-match")?.split(",").some((value) =>
+            value.trim() === etag || value.trim() === `W/${etag}` || value.trim() === "*");
+          if (cached || request.method === "HEAD") {
+            await snapshot.value.cancel();
+            return new Response(null, { status: cached ? 304 : 200, headers });
+          }
+          return new Response(snapshot.value, { headers });
+        }
+        if (snapshot.value) await snapshot.value.cancel();
       }
-      // Cold cache → fall through to the committed file via ASSETS.
+      console.warn("A validated live snapshot is not available; serving the bundled archive.");
+      if (env.ARCHIVE_SYNC) ctx.waitUntil(queueRefresh(env, true));
+      const bundled = await env.ASSETS.fetch(request);
+      const headers = new Headers(bundled.headers);
+      headers.set("x-ohp-source", "bundled");
+      return new Response(bundled.body, { status: bundled.status, statusText: bundled.statusText, headers });
     }
 
     if (url.pathname === "/__sync/status") {
@@ -75,7 +89,7 @@ export default {
       if (request.headers.get("authorization") !== `Bearer ${env.SYNC_TOKEN}`) {
         return new Response("Unauthorized.\n", { status: 401 });
       }
-      ctx.waitUntil(syncSurvivors(env));
+      ctx.waitUntil(queueRefresh(env));
       return new Response("sync started\n", { status: 202 });
     }
 

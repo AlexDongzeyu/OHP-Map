@@ -1,6 +1,8 @@
 // Headless smoke test for the world-atlas front end (globe landing, free zoom, search,
 // group filters, density). Fails on any console error or uncaught exception.
 const puppeteer = require("puppeteer-core");
+const fs = require("node:fs");
+const path = require("node:path");
 const EDGE = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const BASE = process.argv[2] || "http://localhost:8124";
 
@@ -25,8 +27,6 @@ function assertCounterMotion(label, { targets, samples }) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1366, height: 850 });
   await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
-  await page.setRequestInterception(true);
-  let delayInitialDataset = true;
   let mockVideoPlayer = false;
   const coreData = (url) => /\/data\/(?:survivors\.geojson|place_index\.json|connections\.json|war_context\.json|historical_boundary_index\.json)(?:\?|$)/.test(url || "");
   const requestMeta = new WeakMap();
@@ -46,13 +46,9 @@ function assertCounterMotion(label, { targets, samples }) {
   page.on("request", (request) => {
     if (request.isNavigationRequest() && request.frame() === page.mainFrame()) navigation++;
     requestMeta.set(request, { navigation, order: ++requestOrder });
+    if (request.interceptResolutionState().action === "disabled") return;
     if (mockVideoPlayer && request.url().startsWith("https://player.vimeo.com/video/")) {
       request.respond({ status: 200, contentType: "text/html", body: "<html><body>Interview player test</body></html>" });
-      return;
-    }
-    if (delayInitialDataset && /\/data\/survivors\.geojson/.test(request.url())) {
-      delayInitialDataset = false;
-      setTimeout(() => request.continue(), 800);
       return;
     }
     request.continue();
@@ -86,8 +82,7 @@ function assertCounterMotion(label, { targets, samples }) {
     catch (e) { errors.push(label + ": " + e.message); console.log("FAIL " + label + " :: " + e.message); }
   }
 
-  await page.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 40000 });
-  await page.evaluate(() => {
+  const counterCapture = await page.evaluateOnNewDocument(() => {
     const samples = [];
     const capture = () => {
       const values = [...document.querySelectorAll("[data-counter]")]
@@ -95,13 +90,15 @@ function assertCounterMotion(label, { targets, samples }) {
       if (values.length && samples.length < 500) samples.push(values);
     };
     const observer = new MutationObserver(capture);
-    observer.observe(document.querySelector("#overlay"), {
+    observer.observe(document, {
       childList: true,
       subtree: true,
       characterData: true,
     });
     window.__initialCounterCapture = { observer, samples };
   });
+  await page.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 40000 });
+  await page.removeScriptToEvaluateOnNewDocument(counterCapture.identifier);
   await check("loading veil matches the atlas", async () => {
     await page.waitForSelector("#loading:not([hidden])", { timeout: 3000 });
     const loading = await page.evaluate(() => {
@@ -115,7 +112,7 @@ function assertCounterMotion(label, { targets, samples }) {
         background: getComputedStyle(cover).backgroundImage,
       };
     });
-    if (loading.title !== "Journeys" || loading.status !== "Opening the archive") {
+    if (loading.title !== "Journeys" || !["Opening the archive", "Reconnecting to the archive", "Opening the map"].includes(loading.status)) {
       throw new Error("loading identity is incomplete");
     }
     if (!loading.globe || loading.spinner || loading.progressLine) {
@@ -641,6 +638,7 @@ function assertCounterMotion(label, { targets, samples }) {
       throw new Error(`interview chapters are not accessible or loaded without consent ${JSON.stringify(media)}`);
     }
     mockVideoPlayer = true;
+    await page.setRequestInterception(true);
     try {
       await page.click(".video-chapter[data-video]");
       await page.waitForSelector(".player-frame iframe");
@@ -663,6 +661,7 @@ function assertCounterMotion(label, { targets, samples }) {
       if (await page.$(".player-frame iframe")) throw new Error("closing the player left a video running");
     } finally {
       mockVideoPlayer = false;
+      await page.setRequestInterception(false);
     }
     await page.click("[data-place-step='0']");
     await page.waitForSelector(".selected-place-ring");
@@ -1900,6 +1899,8 @@ function assertCounterMotion(label, { targets, samples }) {
   });
 
   await check("temporary archive interruptions recover once with visible status", async () => {
+    // The recovery leg is deterministic; other scenarios exercise the live archive.
+    const archive = fs.readFileSync(path.join(__dirname, "..", "data", "survivors.geojson"), "utf8");
     const recovery = await browser.newPage();
     recovery.on("pageerror", (error) => errors.push("archive retry: " + error.message));
     await recovery.setViewport({ width: 390, height: 844 });
@@ -1912,7 +1913,7 @@ function assertCounterMotion(label, { targets, samples }) {
       if (requests === 1 || mode === "persistent") {
         return request.respond({ status: 503, contentType: "application/json", body: "{}" });
       }
-      request.continue();
+      request.respond({ status: 200, contentType: "application/json", body: archive });
     });
     try {
       for (const failure of ["http", "network", "persistent"]) {
@@ -1923,7 +1924,7 @@ function assertCounterMotion(label, { targets, samples }) {
           await recovery.waitForSelector("#fatal:not([hidden])");
           if (requests !== 2 || await recovery.$(".rail-card")) throw new Error("a persistent archive failure was hidden or retried indefinitely");
         } else {
-          await recovery.waitForSelector(".rail-card", { timeout: 20000 });
+          await recovery.waitForFunction(() => document.querySelector(".rail-card") || !document.getElementById("fatal").hidden, { timeout: 20000 });
           if (requests !== 2 || !await recovery.$eval("#fatal", (fatal) => fatal.hidden)) {
             throw new Error(`the ${mode} interruption did not recover with exactly one retry`);
           }

@@ -88,6 +88,20 @@ invalid JSON, or a non-transient response still reaches the normal recovery scre
 Short `Retry-After` delays are respected; longer outages are surfaced rather than
 keeping the visitor in an indefinite retry loop.
 
+The Worker streams a validated KV publication instead of parsing the full archive
+on each HTTP request. The hourly sync attaches revision metadata atomically to its
+normal data write, without duplicating the dataset on every refresh. A separately
+validated, versioned snapshot bridges older caches that do not yet have this metadata.
+Conditional requests use an ETag so unchanged archives need not be downloaded again.
+If no matching publication exists, the Worker identifies its bundled-archive fallback
+through the response header and logs the condition. Dataset migrations remain in the
+publishing workflow, outside the request CPU budget.
+The cron queues a single SQLite-backed Durable Object alarm for the existing refresh
+job. This keeps scraping, JSON processing and migration out of the Free plan's 10 ms
+Worker/Cron budget; Durable Objects provide a 30-second CPU budget without a plan
+upgrade. Queue deduplication prevents overlapping refreshes. A compatibility snapshot
+can request one background preparation after deployment without delaying page loading.
+
 ---
 
 ## Quick start (offline, ~2 minutes)

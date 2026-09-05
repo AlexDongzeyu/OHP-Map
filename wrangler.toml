@@ -33,3 +33,11 @@ crons = ["7 * * * *"]
 [[kv_namespaces]]
 binding = "OHP_DATA"
 id = "071340c283684dcd9d7dd97bc1e05248"
+
+[[durable_objects.bindings]]
+name = "ARCHIVE_SYNC"
+class_name = "ArchiveSync"
+
+[[migrations]]
+tag = "archive-sync-v1"
+new_sqlite_classes = ["ArchiveSync"]
