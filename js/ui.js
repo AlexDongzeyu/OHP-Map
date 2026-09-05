@@ -2,7 +2,7 @@
 // markup over the persistent atlas. Markup here; styling in css; map engine in atlas.js;
 // orchestration in app.js. Everyone is presented equally — grouped by the archive's own
 // categories (doc 13 §4.2), no "featured" hierarchy (§4.3), each with a brief intro (§4.4).
-import { C, GROUP_COLOR, esc } from "./config.js";
+import { C, GROUP_COLOR, SYSTEM_REDUCED_MOTION, esc } from "./config.js";
 
 const roman = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 const RAIL_PAGE = 140;
@@ -43,8 +43,10 @@ export function landing(store) {
 }
 
 function counter(value, label) {
+  const initialValue = !SYSTEM_REDUCED_MOTION &&
+    document.documentElement.dataset.motion === "gsap" ? 0 : value;
   return `<div class="register-item" aria-label="${value} ${label}">
-    <b class="register-number" data-counter="${value}" aria-hidden="true">${value.toLocaleString("en-CA")}</b>
+    <b class="register-number" data-counter="${value}" aria-hidden="true">${initialValue.toLocaleString("en-CA")}</b>
     <span aria-hidden="true">${label}</span>
   </div>`;
 }

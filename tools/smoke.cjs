@@ -4,6 +4,20 @@ const puppeteer = require("puppeteer-core");
 const EDGE = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const BASE = process.argv[2] || "http://localhost:8124";
 
+function assertCounterMotion(label, { targets, samples }) {
+  if (targets.length !== 4 || !samples.length) {
+    throw new Error(`${label} counter samples are incomplete`);
+  }
+  for (let index = 0; index < targets.length; index++) {
+    const values = samples.map((sample) => sample[index]);
+    if (values[0] !== 0 ||
+        values[values.length - 1] !== targets[index] ||
+        values.some((value, sampleIndex) => sampleIndex && value < values[sampleIndex - 1])) {
+      throw new Error(`${label} counter ${index} is not monotonic ${JSON.stringify(values)}`);
+    }
+  }
+}
+
 (async () => {
   const errors = [];
   const browser = await puppeteer.launch({ executablePath: EDGE, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
@@ -31,6 +45,21 @@ const BASE = process.argv[2] || "http://localhost:8124";
   }
 
   await page.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 40000 });
+  await page.evaluate(() => {
+    const samples = [];
+    const capture = () => {
+      const values = [...document.querySelectorAll("[data-counter]")]
+        .map((counter) => Number(counter.textContent.replace(/,/g, "")));
+      if (values.length && samples.length < 500) samples.push(values);
+    };
+    const observer = new MutationObserver(capture);
+    observer.observe(document.querySelector("#overlay"), {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    window.__initialCounterCapture = { observer, samples };
+  });
   await check("loading veil matches the atlas", async () => {
     await page.waitForSelector("#loading:not([hidden])", { timeout: 3000 });
     const loading = await page.evaluate(() => {
@@ -63,11 +92,26 @@ const BASE = process.argv[2] || "http://localhost:8124";
       values: [...document.querySelectorAll(".archive-register [data-counter]")]
         .map((element) => Number(element.dataset.counter)),
       legend: Boolean(document.querySelector(".legend-mini")),
+      labelContrast: (() => {
+        const channels = (color) => (color.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+        const luminance = (rgb) => rgb
+          .map((channel) => channel / 255)
+          .map((channel) => channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4)
+          .reduce((total, channel, index) => total + channel * [.2126, .7152, .0722][index], 0);
+        const surface = luminance([62, 79, 93]);
+        return [".register-head", ".register-item > span"].map((selector) => {
+          const foreground = luminance(channels(getComputedStyle(document.querySelector(selector)).color));
+          return (Math.max(foreground, surface) + .05) / (Math.min(foreground, surface) + .05);
+        });
+      })(),
     }));
     if (register.items !== 4 || register.values.some((value) => !Number.isFinite(value))) {
       throw new Error(`archive register is incomplete ${JSON.stringify(register)}`);
     }
     if (register.legend) throw new Error("bottom-right landing legend should not render");
+    if (register.labelContrast.some((ratio) => ratio < 4.5)) {
+      throw new Error(`archive register labels lack contrast ${JSON.stringify(register.labelContrast)}`);
+    }
     await wait(1400);
     const settledCounters = await page.$$eval("[data-counter]", (elements) => (
       elements.map((element) => ({
@@ -78,6 +122,16 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (settledCounters.some((counter) => counter.text !== counter.target)) {
       throw new Error(`archive counters did not settle ${JSON.stringify(settledCounters)}`);
     }
+    const initialCounterMotion = await page.evaluate(() => {
+      const capture = window.__initialCounterCapture;
+      capture.observer.disconnect();
+      return {
+        samples: capture.samples,
+        targets: [...document.querySelectorAll("[data-counter]")]
+          .map((counter) => Number(counter.dataset.counter)),
+      };
+    });
+    assertCounterMotion("initial landing", initialCounterMotion);
     const icon = await page.$(".landing-card [data-act='follow'] .icon");
     if (!icon) throw new Error("primary action is missing its SVG icon");
     const motion = await page.evaluate(() => ({
@@ -152,26 +206,31 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (graticule === motion.graticule) throw new Error("Earth graticule did not rotate");
     await page.click(".nav-tab[data-view='explore']");
     await wait(100);
-    const counterMotion = await page.evaluate(async () => {
-      document.querySelector("[data-act='home']").click();
-      const targets = [];
+    const reentryCounterMotion = await page.evaluate(async () => {
       const samples = [];
-      for (let frame = 0; frame < 115; frame++) {
+      const capture = () => {
+        const values = [...document.querySelectorAll("[data-counter]")]
+          .map((counter) => Number(counter.textContent.replace(/,/g, "")));
+        if (values.length) samples.push(values);
+      };
+      const observer = new MutationObserver(capture);
+      observer.observe(document.querySelector("#overlay"), {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+      document.querySelector("[data-act='home']").click();
+      capture();
+      const targets = [...document.querySelectorAll("[data-counter]")]
+        .map((counter) => Number(counter.dataset.counter));
+      for (let frame = 0; frame < 130; frame++) {
         await new Promise((resolve) => requestAnimationFrame(resolve));
-        const counters = [...document.querySelectorAll("[data-counter]")];
-        if (!targets.length) targets.push(...counters.map((counter) => Number(counter.dataset.counter)));
-        samples.push(counters.map((counter) => Number(counter.textContent.replace(/,/g, ""))));
+        capture();
       }
+      observer.disconnect();
       return { targets, samples };
     });
-    for (let index = 0; index < counterMotion.targets.length; index++) {
-      const values = counterMotion.samples.map((sample) => sample[index]);
-      if (values[0] >= counterMotion.targets[index] ||
-          values[values.length - 1] !== counterMotion.targets[index] ||
-          values.some((value, sampleIndex) => sampleIndex && value < values[sampleIndex - 1])) {
-        throw new Error(`counter ${index} is not monotonic ${JSON.stringify(values)}`);
-      }
-    }
+    assertCounterMotion("landing re-entry", reentryCounterMotion);
   });
   await check("follow -> guided narrative + flat map", async () => {
     await page.click(".landing-card [data-act='follow']");
@@ -616,6 +675,10 @@ const BASE = process.argv[2] || "http://localhost:8124";
         belt: getComputedStyle(document.querySelector(".mosaic-track")).transform,
         traveler: Number(document.querySelector(".globe-traveler")?.getAttribute("cx")),
         control: Boolean(document.querySelector("#motion-toggle")),
+        counters: [...document.querySelectorAll("[data-counter]")].map((counter) => ({
+          text: Number(counter.textContent.replace(/,/g, "")),
+          target: Number(counter.dataset.counter),
+        })),
       };
     });
     await wait(1200);
@@ -628,6 +691,9 @@ const BASE = process.argv[2] || "http://localhost:8124";
     if (result.control) throw new Error("motion control should not render");
     if (result.opacity !== 1 || result.visibility !== "visible") {
       throw new Error("landing content is not immediately visible");
+    }
+    if (result.counters.some((counter) => counter.text !== counter.target)) {
+      throw new Error(`reduced-motion counters are not final ${JSON.stringify(result.counters)}`);
     }
     if (!moved.belt || !moved.globe) throw new Error("ambient landing motion is not active");
   });
