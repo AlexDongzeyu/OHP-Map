@@ -82,6 +82,12 @@ Unsupported community filters and dated-place/year combinations receive an expli
 link-recovery view instead of silently changing the selection.
 Browser tab and bookmark titles identify the account, search, or historical place/year.
 
+Initial data requests retry once after a transport interruption or a temporary
+502/503/504 response. The loading screen announces reconnection; a second failure,
+invalid JSON, or a non-transient response still reaches the normal recovery screen.
+Short `Retry-After` delays are respected; longer outages are surfaced rather than
+keeping the visitor in an indefinite retry loop.
+
 ---
 
 ## Quick start (offline, ~2 minutes)

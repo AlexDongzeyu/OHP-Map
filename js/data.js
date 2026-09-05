@@ -36,10 +36,30 @@ export function journeyFilter({ query, groupFilter, originCountry }) {
     ].join(" ")).includes(term));
 }
 
-async function getJSON(name) {
-  const res = await fetch(`${BASE}/${name}`, { cache: "no-cache" });
-  if (!res.ok) throw new Error(`Failed to load ${name}: ${res.status}`);
-  return res.json();
+async function getJSON(name, onRetry, mayRetry = true) {
+  let response;
+  try {
+    response = await fetch(`${BASE}/${name}`, { cache: "no-cache" });
+    if (response.ok) return await response.json();
+  } catch (error) {
+    if (!(error instanceof TypeError) || !mayRetry) throw error;
+    return retryJSON(name, onRetry, 600);
+  }
+  const error = new Error(`Failed to load ${name}: ${response.status}`);
+  if (!mayRetry || ![502, 503, 504].includes(response.status)) throw error;
+  const retryAfter = response.headers.get("retry-after");
+  const requestedDelay = retryAfter && (/^\d+$/.test(retryAfter)
+    ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now());
+  const delay = Number.isFinite(requestedDelay) ? Math.max(600, requestedDelay) : 600;
+  if (delay > 3000) throw error;
+  return retryJSON(name, onRetry, delay);
+}
+
+async function retryJSON(name, onRetry, delay) {
+  console.warn(`Temporary archive request failure; retrying ${name}.`);
+  onRetry?.(name);
+  await new Promise((resolve) => setTimeout(resolve, delay));
+  return getJSON(name, onRetry, false);
 }
 
 function countryOf(canonical, precision) {
@@ -238,13 +258,13 @@ function toJourney(props) {
   return j;
 }
 
-export async function loadData() {
+export async function loadData({ onRetry } = {}) {
   const [geojson, placeIndex, connections, warContext, historicalIndex] = await Promise.all([
-    getJSON("survivors.geojson"),
-    getJSON("place_index.json"),
-    getJSON("connections.json"),
-    getJSON("war_context.json"),
-    getJSON("historical_boundary_index.json"),
+    getJSON("survivors.geojson", onRetry),
+    getJSON("place_index.json", onRetry),
+    getJSON("connections.json", onRetry),
+    getJSON("war_context.json", onRetry),
+    getJSON("historical_boundary_index.json", onRetry),
   ]);
 
   const journeys = geojson.features.map((f) => toJourney(f.properties));

@@ -53,11 +53,16 @@ async function main() {
   const errorEl = document.getElementById("error");
   const fatalEl = document.getElementById("fatal");
 
-  try { store = await loadData(); }
+  try {
+    store = await loadData({ onRetry: () => {
+      loadingEl.querySelector(".loading-status").textContent = "Reconnecting to the archive";
+    } });
+  }
   catch (err) {
     loadingEl.hidden = true; fatalEl.hidden = false;
     console.error(err); return;
   }
+  loadingEl.querySelector(".loading-status").textContent = "Opening the map";
 
   state.patternEventKey = null;
   store.groups.forEach((g) => state.groupFilter.add(g.name));

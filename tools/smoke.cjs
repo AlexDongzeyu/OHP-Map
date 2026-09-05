@@ -28,7 +28,24 @@ function assertCounterMotion(label, { targets, samples }) {
   await page.setRequestInterception(true);
   let delayInitialDataset = true;
   let mockVideoPlayer = false;
+  const coreData = (url) => /\/data\/(?:survivors\.geojson|place_index\.json|connections\.json|war_context\.json|historical_boundary_index\.json)(?:\?|$)/.test(url || "");
+  const requestMeta = new WeakMap();
+  const dataTransfers = new Map();
+  let navigation = 0, requestOrder = 0;
+  function trackData(request, failure = null) {
+    const meta = requestMeta.get(request);
+    if (!meta) { errors.push(`untracked data request: ${request.url()}`); return; }
+    const key = `${meta.navigation}:${request.url()}`;
+    if (!dataTransfers.has(key)) dataTransfers.set(key, { url: request.url(), failed: -1, completed: -1, reasons: [] });
+    const transfer = dataTransfers.get(key);
+    if (failure) {
+      transfer.failed = Math.max(transfer.failed, meta.order);
+      transfer.reasons.push(failure);
+    } else transfer.completed = Math.max(transfer.completed, meta.order);
+  }
   page.on("request", (request) => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) navigation++;
+    requestMeta.set(request, { navigation, order: ++requestOrder });
     if (mockVideoPlayer && request.url().startsWith("https://player.vimeo.com/video/")) {
       request.respond({ status: 200, contentType: "text/html", body: "<html><body>Interview player test</body></html>" });
       return;
@@ -40,13 +57,26 @@ function assertCounterMotion(label, { targets, samples }) {
     }
     request.continue();
   });
-  page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text()); });
+  page.on("console", (m) => {
+    if (m.type() !== "error") return;
+    // Network failures are checked for an actual same-navigation recovery below.
+    if (coreData(m.location().url) && /^Failed to load resource:/.test(m.text())) return;
+    errors.push("console: " + m.text());
+  });
+  page.on("response", (response) => {
+    if (coreData(response.url()) && response.status() >= 400) trackData(response.request(), `HTTP ${response.status()}`);
+  });
+  page.on("requestfinished", (request) => {
+    const response = request.response();
+    if (coreData(request.url()) && (response?.ok() || response?.status() === 304)) trackData(request);
+  });
   page.on("pageerror", (e) => errors.push("pageerror: " + (e.stack || e.message)));
   page.on("requestfailed", (request) => {
     const reason = request.failure()?.errorText;
     // Scrubbing can remove an obsolete flag before its image request completes.
     if (!/favicon/.test(request.url()) && reason !== "net::ERR_ABORTED") {
-      errors.push(`requestfailed: ${request.url()} (${reason})`);
+      if (coreData(request.url())) trackData(request, reason || "network error");
+      else errors.push(`requestfailed: ${request.url()} (${reason})`);
     }
   });
 
@@ -1869,6 +1899,46 @@ function assertCounterMotion(label, { targets, samples }) {
     }
   });
 
+  await check("temporary archive interruptions recover once with visible status", async () => {
+    const recovery = await browser.newPage();
+    recovery.on("pageerror", (error) => errors.push("archive retry: " + error.message));
+    await recovery.setViewport({ width: 390, height: 844 });
+    await recovery.setRequestInterception(true);
+    let mode = "http", requests = 0;
+    recovery.on("request", (request) => {
+      if (!request.url().includes("/data/survivors.geojson")) return request.continue();
+      requests++;
+      if (requests === 1 && mode === "network") return request.abort("connectionfailed");
+      if (requests === 1 || mode === "persistent") {
+        return request.respond({ status: 503, contentType: "application/json", body: "{}" });
+      }
+      request.continue();
+    });
+    try {
+      for (const failure of ["http", "network", "persistent"]) {
+        mode = failure; requests = 0;
+        await recovery.goto(BASE + `/?archive-interruption=${mode}#/explore`, { waitUntil: "domcontentloaded", timeout: 40000 });
+        await recovery.waitForFunction(() => document.querySelector(".loading-status")?.textContent === "Reconnecting to the archive", { timeout: 15000 });
+        if (mode === "persistent") {
+          await recovery.waitForSelector("#fatal:not([hidden])");
+          if (requests !== 2 || await recovery.$(".rail-card")) throw new Error("a persistent archive failure was hidden or retried indefinitely");
+        } else {
+          await recovery.waitForSelector(".rail-card", { timeout: 20000 });
+          if (requests !== 2 || !await recovery.$eval("#fatal", (fatal) => fatal.hidden)) {
+            throw new Error(`the ${mode} interruption did not recover with exactly one retry`);
+          }
+        }
+      }
+    } finally {
+      await recovery.close();
+    }
+  });
+
+  for (const transfer of dataTransfers.values()) {
+    if (transfer.failed < 0) continue;
+    if (transfer.completed <= transfer.failed) errors.push(`unrecovered data request: ${transfer.url} (${transfer.reasons.join(", ")})`);
+    else console.log(`RECOVERED data request: ${transfer.url} (${transfer.reasons.join(", ")})`);
+  }
   await browser.close();
   if (errors.length) {
     console.log("\n=== ERRORS (" + errors.length + ") ===");
