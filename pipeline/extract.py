@@ -13,8 +13,8 @@ Two implementations behind one interface:
   network. It scans the text for gazetteer-known place names in order of appearance.
   Lower confidence, never auto-verified — exactly what the human-review gate is for.
 
-Nothing produced here is ever marked verified=true automatically. Only records a
-human approves (or the hand-entered anchors) render on the site.
+Nothing produced here is ever marked verified=true automatically. Public records
+remain pending human review, and non-personal mentions are kept outside their routes.
 """
 from __future__ import annotations
 
@@ -23,8 +23,7 @@ import os
 import re
 from abc import ABC, abstractmethod
 
-from . import gazetteer
-from .text import source_sentence
+from . import journey
 
 
 class Extractor(ABC):
@@ -63,94 +62,13 @@ def _grounded(waypoints: list[dict], text: str) -> list[dict]:
 
 
 class OfflineExtractor(Extractor):
-    """Deterministic, key-free extractor: find gazetteer places in order of mention.
+    """Literal source places with explicit personal/contextual/uncertain attribution."""
 
-    Roles are assigned with simple, transparent heuristics so an auto-extracted
-    journey reads believably (hometown → camps → resettlement) while staying honest:
-    everything is verified=false and the as-written text is preserved.
-    """
+    def extract_evidence(self, text: str, name: str = "") -> dict:
+        return journey.extract_evidence(text, name)
 
-    RESETTLEMENT = {
-        "Toronto, Canada", "Canada", "Montreal, Canada", "Israel",
-        "New York, USA", "Vienna, Austria",
-    }
-
-    def _role_for(self, canonical: str, is_first: bool) -> str:
-        site_role = gazetteer.known_site_role(canonical)
-        if site_role:
-            return site_role
-        if is_first:
-            return "birthplace"
-        if canonical in self.RESETTLEMENT:
-            return "resettlement"
-        return "transit"
-
-    @staticmethod
-    def _has_birthplace_context(waypoint: dict) -> bool:
-        quote = waypoint.get("source_quote", "")
-        name = re.escape(waypoint.get("as_written", ""))
-        return bool(re.search(
-            rf"(?:\bborn\b[^.!?]{{0,100}}\b{name}\b|\b{name}\b[^.!?]{{0,100}}\bborn\b)",
-            quote,
-            re.IGNORECASE,
-        ))
-
-    def extract(self, text: str) -> list[dict]:
-        aliases = gazetteer._load()["aliases"]
-        hits = []
-        for alias in aliases:
-            for m in re.finditer(rf"\b{re.escape(alias)}\b", text.lower()):
-                hits.append((m.start(), m.end(), alias))
-        # Longest-match-wins: prefer 'bergen-belsen' over the nested 'belsen'.
-        hits.sort(key=lambda h: (h[0], -(h[1] - h[0])))
-        ordered, claimed, accepted, seen = [], [], [], set()
-        for start, end, alias in hits:
-            if any(start < c_end and end > c_start for c_start, c_end in claimed):
-                continue  # overlaps a span we already took
-            canonical = aliases[alias]
-            previous = accepted[-1] if accepted else None
-            if (
-                "," not in canonical
-                and previous
-                and "," in previous[2]
-                and re.fullmatch(r"\s*,\s*", text[previous[1]:start])
-            ):
-                continue  # "Glasgow, Scotland" is one place, not a route leg
-            claimed.append((start, end))
-            accepted.append((start, end, canonical))
-            if canonical in seen:
-                continue  # first mention of each place only
-            seen.add(canonical)
-            window = text[max(0, start - 40): end + 60]
-            ym = re.search(r"(19[3-5]\d)", window)
-            year = ym.group(1) if ym else None
-            ordered.append({
-                "as_written": text[start:end],
-                "_canonical": canonical,
-                "date": {"start": year, "end": year,
-                          "precision": "year" if year else "unknown"},
-                "confidence": 0.5,
-                "verified": False,
-                "source_quote": source_sentence(text, start, end),
-                "_role_context": window,
-            })
-        # Assign roles: first non-site place is the hometown/birthplace.
-        first_assigned = False
-        for wp in ordered:
-            canonical = wp.pop("_canonical")
-            role_context = {**wp, "source_quote": wp.pop("_role_context")}
-            is_first = (
-                not first_assigned
-                and gazetteer.known_site_role(canonical) is None
-                and (
-                    canonical not in self.RESETTLEMENT
-                    or self._has_birthplace_context(role_context)
-                )
-            )
-            wp["role"] = self._role_for(canonical, is_first)
-            if is_first:
-                first_assigned = True
-        return ordered
+    def extract(self, text: str, name: str = "") -> list[dict]:
+        return self.extract_evidence(text, name)["waypoints"]
 
 
 class LLMExtractor(Extractor):

@@ -1,0 +1,1559 @@
+{
+  "source": "Committed OpenHistoricalMap zoom-zero topology",
+  "input_sha256": "054a1f009e58dae580292860e38476e9dde53f95ca21de8c5389148e1f929f0b",
+  "crs": "OGC:CRS84",
+  "method": "Topological interior-intersection tests on source polygons; coincident geometry is distinguished from nonidentical alternatives. No metric measurement in angular units and no automatic repairs.",
+  "software": {
+    "geopandas": "1.1.4",
+    "shapely": "2.1.2",
+    "pyproj": "3.7.2",
+    "topojson_client": "3.1.0"
+  },
+  "features": 1181,
+  "null": 0,
+  "empty": 0,
+  "invalid": 0,
+  "geometry_types": {
+    "MultiPolygon": 643,
+    "Polygon": 538
+  },
+  "antimeridian_records_not_compared": [],
+  "relationships": [
+    {
+      "name": "Lithuania",
+      "controller": "Lithuania",
+      "ids": [
+        -2692218,
+        -2693086
+      ],
+      "start": 1923.05068,
+      "end": 1923.06164,
+      "kind": "alternative"
+    },
+    {
+      "name": "Poland",
+      "controller": "Poland",
+      "ids": [
+        -2692207,
+        -2692206
+      ],
+      "start": 1948.00137,
+      "end": 1948.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Romanian People's Republic",
+      "controller": "Romanian People's Republic",
+      "ids": [
+        -2877965,
+        -2877964
+      ],
+      "start": 1958.00137,
+      "end": 1958.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Kingdom of Romania",
+      "controller": "Romania",
+      "ids": [
+        -2693259,
+        -2693464
+      ],
+      "start": 1921.00137,
+      "end": 1921.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "British Raj",
+      "controller": "United Kingdom",
+      "ids": [
+        -2848483,
+        -2923715
+      ],
+      "start": 1917.00137,
+      "end": 1917.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Bhutan",
+      "controller": "Bhutan",
+      "ids": [
+        -2800954,
+        -2906076
+      ],
+      "start": 1959.49726,
+      "end": 1959.57945,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Bhutan",
+      "controller": "Bhutan",
+      "ids": [
+        -2800954,
+        -2906073
+      ],
+      "start": 1947.00137,
+      "end": 1949.60137,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Republic of China",
+      "controller": "China",
+      "ids": [
+        -2694467,
+        -2889543
+      ],
+      "start": 1971.00137,
+      "end": 1971.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "South Vietnam",
+      "controller": "South Vietnam",
+      "ids": [
+        -2946239,
+        -2745237
+      ],
+      "start": 1974.00137,
+      "end": 1974.08356,
+      "kind": "duplicate"
+    },
+    {
+      "name": "People's Republic of China",
+      "controller": "China",
+      "ids": [
+        -2798450,
+        -2946242
+      ],
+      "start": 2012.00137,
+      "end": 2012.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "People's Republic of China",
+      "controller": "China",
+      "ids": [
+        -2694595,
+        -2694463
+      ],
+      "start": 1971.00137,
+      "end": 1971.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Tsardom of Bulgaria",
+      "controller": "Bulgaria",
+      "ids": [
+        -2920397,
+        -2695478
+      ],
+      "start": 1943.49726,
+      "end": 1943.57945,
+      "kind": "alternative"
+    },
+    {
+      "name": "China",
+      "controller": "China",
+      "ids": [
+        -2889460,
+        -2694471
+      ],
+      "start": 1935.00137,
+      "end": 1935.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Spanish protectorate in Morocco",
+      "controller": "Spain",
+      "ids": [
+        -2860424,
+        -2860423
+      ],
+      "start": 1921.41507,
+      "end": 1921.49452,
+      "kind": "alternative"
+    },
+    {
+      "name": "French protectorate in Morocco",
+      "controller": "France",
+      "ids": [
+        -2866015,
+        -2866016
+      ],
+      "start": 1921.00137,
+      "end": 1921.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "British Guiana",
+      "controller": "United Kingdom",
+      "ids": [
+        -2832971,
+        -2832972
+      ],
+      "start": 1940.00137,
+      "end": 1940.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Dominion of Newfoundland",
+      "controller": "United Kingdom",
+      "ids": [
+        -2830879,
+        -2831077
+      ],
+      "start": 1927.19041,
+      "end": 1934.1274,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Dominion of Newfoundland",
+      "controller": "United Kingdom",
+      "ids": [
+        -2830879,
+        -2828507
+      ],
+      "start": 1927.00137,
+      "end": 1927.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Dominion of Newfoundland",
+      "controller": "United Kingdom",
+      "ids": [
+        -2831077,
+        -2828507
+      ],
+      "start": 1927.19041,
+      "end": 1927.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "British Windward Islands",
+      "controller": "United Kingdom",
+      "ids": [
+        -2834740,
+        -2834750
+      ],
+      "start": 1940.00137,
+      "end": 1940.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Colony of Antigua and Barbuda",
+      "controller": "Colony of Antigua and Barbuda",
+      "ids": [
+        -2832961,
+        -2834867
+      ],
+      "start": 1967.00137,
+      "end": 1967.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "United States",
+      "controller": "United States of America",
+      "ids": [
+        -2873298,
+        -2842115
+      ],
+      "start": 1935.00137,
+      "end": 1935.23151,
+      "kind": "duplicate"
+    },
+    {
+      "name": "United States",
+      "controller": "United States of America",
+      "ids": [
+        -2842115,
+        -2874803
+      ],
+      "start": 1935.23151,
+      "end": 1935.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "France",
+      "controller": "France",
+      "ids": [
+        -2865990,
+        -2692931
+      ],
+      "start": 1947.00137,
+      "end": 1947.11096,
+      "kind": "alternative"
+    },
+    {
+      "name": "Finland",
+      "controller": "Finland",
+      "ids": [
+        -2855285,
+        -2692833
+      ],
+      "start": 1944.00137,
+      "end": 1944.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Panama",
+      "controller": "Panama",
+      "ids": [
+        -2873307,
+        -2873306
+      ],
+      "start": 1935.00137,
+      "end": 1935.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Republic of the Congo",
+      "controller": "Republic of the Congo",
+      "ids": [
+        -2923977,
+        -2923976
+      ],
+      "start": 2018.16301,
+      "end": 2018.24521,
+      "kind": "alternative"
+    },
+    {
+      "name": "Gilbert and Ellice Islands Colony",
+      "controller": "Gilbert and Ellice Islands Colony",
+      "ids": [
+        -2831167,
+        -2846231
+      ],
+      "start": 1926.00137,
+      "end": 1926.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Australia",
+      "controller": "Australia",
+      "ids": [
+        -2848197,
+        -2926852
+      ],
+      "start": 1933.00137,
+      "end": 1933.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Australia",
+      "controller": "Australia",
+      "ids": [
+        -2828359,
+        -2846174
+      ],
+      "start": 1914.49726,
+      "end": 1914.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Norway",
+      "controller": "Norway",
+      "ids": [
+        -2851797,
+        -2692537
+      ],
+      "start": 1921.00137,
+      "end": 1921.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Norway",
+      "controller": "Norway",
+      "ids": [
+        -2851798,
+        -2851792
+      ],
+      "start": 2004.00137,
+      "end": 2004.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Union of South Africa",
+      "controller": "South Africa",
+      "ids": [
+        -2831731,
+        -2831848
+      ],
+      "start": 1922.00137,
+      "end": 1922.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Spain",
+      "controller": "Spain",
+      "ids": [
+        -2860486,
+        -2860485
+      ],
+      "start": 1921.41507,
+      "end": 1921.49452,
+      "kind": "alternative"
+    },
+    {
+      "name": "Spain",
+      "controller": "Spain",
+      "ids": [
+        -2860484,
+        -2862762
+      ],
+      "start": 1931.00137,
+      "end": 1931.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "British occupation zone in Germany",
+      "controller": "Germany",
+      "ids": [
+        -2856522,
+        -2899607
+      ],
+      "start": 1945.55753,
+      "end": 1945.57671,
+      "kind": "alternative"
+    },
+    {
+      "name": "Portugal",
+      "controller": "Portugal",
+      "ids": [
+        -2905980,
+        -2807009
+      ],
+      "start": 1951.00137,
+      "end": 1951.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Luxembourg",
+      "controller": "Luxembourg",
+      "ids": [
+        -2692839,
+        -2826452
+      ],
+      "start": 2007.00137,
+      "end": 2007.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Ecuador",
+      "controller": "Ecuador",
+      "ids": [
+        -2945316,
+        -2945317
+      ],
+      "start": 2012.66803,
+      "end": 2012.74727,
+      "kind": "alternative"
+    },
+    {
+      "name": "Philippines",
+      "controller": "Philippines",
+      "ids": [
+        -2946241,
+        -2889788
+      ],
+      "start": 2012.00137,
+      "end": 2012.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Colony of the Straits Settlement",
+      "controller": "Colony of the Straits Settlement",
+      "ids": [
+        -2848278,
+        -2848277
+      ],
+      "start": 1935.00137,
+      "end": 1935.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Aden Protectorate",
+      "controller": "Aden Protectorate",
+      "ids": [
+        -2848485,
+        -2921507
+      ],
+      "start": 1917.00137,
+      "end": 1917.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Italian Somaliland",
+      "controller": "Italy",
+      "ids": [
+        -2923093,
+        -2848511
+      ],
+      "start": 1927.00137,
+      "end": 1927.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Italian Somaliland",
+      "controller": "Italy",
+      "ids": [
+        -2923094,
+        -2923095
+      ],
+      "start": 1920.00137,
+      "end": 1920.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Ubangi-Shari-Chad",
+      "controller": "France",
+      "ids": [
+        -2839928,
+        -2839929
+      ],
+      "start": 1920.00137,
+      "end": 1920.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Sudan",
+      "controller": "Sudan",
+      "ids": [
+        -2926748,
+        -2801037
+      ],
+      "start": 1958.00137,
+      "end": 1958.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Anglo-Egyptian Sudan",
+      "controller": "United Kingdom",
+      "ids": [
+        -2803203,
+        -2926749
+      ],
+      "start": 1934.00137,
+      "end": 1934.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Republic of Egypt",
+      "controller": "Republic of Egypt",
+      "ids": [
+        -2926747,
+        -2878088
+      ],
+      "start": 1958.00137,
+      "end": 1958.13014,
+      "kind": "alternative"
+    },
+    {
+      "name": "Republic of Egypt",
+      "controller": "Republic of Egypt",
+      "ids": [
+        -2888605,
+        -2878088
+      ],
+      "start": 1958.13014,
+      "end": 1958.14384,
+      "kind": "alternative"
+    },
+    {
+      "name": "United Arab Republic",
+      "controller": "United Arab Republic",
+      "ids": [
+        -2744372,
+        -2839468
+      ],
+      "start": 1961.7411,
+      "end": 1961.74384,
+      "kind": "alternative"
+    },
+    {
+      "name": "Italy",
+      "controller": "Italy",
+      "ids": [
+        -2747829,
+        -2696324
+      ],
+      "start": 1941.37671,
+      "end": 1941.6863,
+      "kind": "alternative"
+    },
+    {
+      "name": "British Western Pacific Territories",
+      "controller": "United Kingdom",
+      "ids": [
+        -2846235,
+        -2846236
+      ],
+      "start": 1939.00137,
+      "end": 1939.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "British Western Pacific Territories",
+      "controller": "United Kingdom",
+      "ids": [
+        -2846235,
+        -2846234
+      ],
+      "start": 1952.00137,
+      "end": 1952.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "British Western Pacific Territories",
+      "controller": "United Kingdom",
+      "ids": [
+        -2846233,
+        -2846236
+      ],
+      "start": 1926.00137,
+      "end": 1926.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Greece",
+      "controller": "Greece",
+      "ids": [
+        -2920399,
+        -2692866
+      ],
+      "start": 1947.11096,
+      "end": 1947.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Italian Islands of the Aegean",
+      "controller": "Italy",
+      "ids": [
+        -2920371,
+        -2830316
+      ],
+      "start": 1921.00137,
+      "end": 1921.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Principality of Albania",
+      "controller": "Principality of Albania",
+      "ids": [
+        -2800556,
+        -2855613
+      ],
+      "start": 1918.89726,
+      "end": 1925.08356,
+      "kind": "alternative"
+    },
+    {
+      "name": "Kingdom of Greece",
+      "controller": "Greece",
+      "ids": [
+        -2692585,
+        -2863749
+      ],
+      "start": 1919.00137,
+      "end": 1919.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Colony of Madagascar and Dependencies",
+      "controller": "France",
+      "ids": [
+        -2865841,
+        -2865795
+      ],
+      "start": 1921.00137,
+      "end": 1921.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Soviet Union",
+      "controller": "Soviet Union",
+      "ids": [
+        -2852346,
+        -2851156
+      ],
+      "start": 1944.00137,
+      "end": 1944.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Soviet Union",
+      "controller": "Soviet Union",
+      "ids": [
+        -2851293,
+        -2742312
+      ],
+      "start": 1951.00137,
+      "end": 1951.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Soviet Union",
+      "controller": "Soviet Union",
+      "ids": [
+        -2851271,
+        -2851157
+      ],
+      "start": 1926.00137,
+      "end": 1926.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Italy",
+      "controller": "Italy",
+      "ids": [
+        -2742909,
+        -2692916
+      ],
+      "start": 1954.00137,
+      "end": 1954.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "British Kenya",
+      "controller": "United Kingdom",
+      "ids": [
+        -2831415,
+        -2831414
+      ],
+      "start": 1926.00137,
+      "end": 1926.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Dominion of New Zealand",
+      "controller": "New Zealand",
+      "ids": [
+        -2846161,
+        -2846160
+      ],
+      "start": 1926.00137,
+      "end": 1926.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Denmark",
+      "controller": "Denmark",
+      "ids": [
+        -2869935,
+        -2692238
+      ],
+      "start": 1920.00137,
+      "end": 1920.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Tanganyika Territory",
+      "controller": "United Kingdom",
+      "ids": [
+        -2855612,
+        -2801206
+      ],
+      "start": 1922.54932,
+      "end": 1961.93836,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Colony of Seychelles",
+      "controller": "Colony of Seychelles",
+      "ids": [
+        -2831866,
+        -2831869
+      ],
+      "start": 1958.00137,
+      "end": 1958.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Colony of Seychelles",
+      "controller": "Colony of Seychelles",
+      "ids": [
+        -2831869,
+        -2831868
+      ],
+      "start": 1965.83425,
+      "end": 1976.49317,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Jordan",
+      "controller": "Jordan",
+      "ids": [
+        -2744316,
+        -2744265
+      ],
+      "start": 1984.00137,
+      "end": 1984.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Federated Malay States",
+      "controller": "Federated Malay States",
+      "ids": [
+        -2848458,
+        -2848459
+      ],
+      "start": 1935.0863,
+      "end": 1935.16027,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Thailand",
+      "controller": "Thailand",
+      "ids": [
+        -2801980,
+        -2874870
+      ],
+      "start": 1941.16301,
+      "end": 1943.79589,
+      "kind": "alternative"
+    },
+    {
+      "name": "Protectorate of Uganda",
+      "controller": "Protectorate of Uganda",
+      "ids": [
+        -2831426,
+        -2695210
+      ],
+      "start": 1926.00137,
+      "end": 1926.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "French West Africa",
+      "controller": "France",
+      "ids": [
+        -2917850,
+        -2906139
+      ],
+      "start": 1931.00137,
+      "end": 1931.99863,
+      "kind": "alternative"
+    },
+    {
+      "name": "Deutsche Kolonie Togo",
+      "controller": "Germany",
+      "ids": [
+        -2691472,
+        -2694162
+      ],
+      "start": 1914.00137,
+      "end": 1914.99863,
+      "kind": "duplicate"
+    },
+    {
+      "name": "Republic of Dahomey",
+      "controller": "Republic of Dahomey",
+      "ids": [
+        -2828683,
+        -2887369
+      ],
+      "start": 1968.1653,
+      "end": 1968.24727,
+      "kind": "alternative"
+    },
+    {
+      "name": "French Chad",
+      "controller": "France",
+      "ids": [
+        -2917199,
+        -2839912
+      ],
+      "start": 1931.00137,
+      "end": 1931.99863,
+      "kind": "alternative"
+    }
+  ],
+  "years": [
+    {
+      "year": 1914,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1915,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1916,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1917,
+      "alternative_record_ids": [
+        -2923715,
+        -2848483
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1918,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1919,
+      "alternative_record_ids": [
+        -2863749,
+        -2855613,
+        -2800556,
+        -2692585
+      ],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1920,
+      "alternative_record_ids": [
+        -2923095,
+        -2923094,
+        -2869935,
+        -2855613,
+        -2839929,
+        -2839928,
+        -2800556,
+        -2692238
+      ],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1921,
+      "alternative_record_ids": [
+        -2866016,
+        -2866015,
+        -2855613,
+        -2851797,
+        -2800556,
+        -2692537
+      ],
+      "duplicate_pairs": 3
+    },
+    {
+      "year": 1922,
+      "alternative_record_ids": [
+        -2855613,
+        -2800556
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1923,
+      "alternative_record_ids": [
+        -2855613,
+        -2800556
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1924,
+      "alternative_record_ids": [
+        -2855613,
+        -2800556
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1925,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1926,
+      "alternative_record_ids": [
+        -2851271,
+        -2851157,
+        -2831426,
+        -2831415,
+        -2831414,
+        -2695210
+      ],
+      "duplicate_pairs": 4
+    },
+    {
+      "year": 1927,
+      "alternative_record_ids": [
+        -2923093,
+        -2848511,
+        -2831077,
+        -2830879,
+        -2828507
+      ],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1928,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1929,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1930,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1931,
+      "alternative_record_ids": [
+        -2917850,
+        -2917199,
+        -2906139,
+        -2839912
+      ],
+      "duplicate_pairs": 3
+    },
+    {
+      "year": 1932,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1933,
+      "alternative_record_ids": [
+        -2926852,
+        -2848197
+      ],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1934,
+      "alternative_record_ids": [
+        -2926749,
+        -2803203
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1935,
+      "alternative_record_ids": [
+        -2889460,
+        -2848278,
+        -2848277,
+        -2694471
+      ],
+      "duplicate_pairs": 3
+    },
+    {
+      "year": 1936,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1937,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1938,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1939,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1940,
+      "alternative_record_ids": [
+        -2834750,
+        -2834740,
+        -2832972,
+        -2832971
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1941,
+      "alternative_record_ids": [
+        -2874870,
+        -2801980,
+        -2747829,
+        -2696324
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1942,
+      "alternative_record_ids": [
+        -2874870,
+        -2801980
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1943,
+      "alternative_record_ids": [
+        -2920397,
+        -2874870,
+        -2801980,
+        -2695478
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1944,
+      "alternative_record_ids": [
+        -2855285,
+        -2852346,
+        -2851156,
+        -2692833
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1945,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1946,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1947,
+      "alternative_record_ids": [
+        -2920399,
+        -2692866
+      ],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1948,
+      "alternative_record_ids": [
+        -2692207,
+        -2692206
+      ],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1949,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1950,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1951,
+      "alternative_record_ids": [
+        -2905980,
+        -2851293,
+        -2807009,
+        -2742312
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1952,
+      "alternative_record_ids": [
+        -2846235,
+        -2846234
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1953,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1954,
+      "alternative_record_ids": [
+        -2742909,
+        -2692916
+      ],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1955,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1956,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1957,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1958,
+      "alternative_record_ids": [
+        -2926748,
+        -2801037
+      ],
+      "duplicate_pairs": 3
+    },
+    {
+      "year": 1959,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1960,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1961,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1962,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1963,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1964,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1965,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1966,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1967,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 2
+    },
+    {
+      "year": 1968,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1969,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1970,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1971,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 3
+    },
+    {
+      "year": 1972,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1973,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1974,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1975,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 1976,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1977,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1978,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1979,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1980,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1981,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1982,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1983,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1984,
+      "alternative_record_ids": [
+        -2744316,
+        -2744265
+      ],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1985,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1986,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1987,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1988,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1989,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1990,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1991,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1992,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1993,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1994,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1995,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1996,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1997,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1998,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 1999,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2000,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2001,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2002,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2003,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2004,
+      "alternative_record_ids": [
+        -2851798,
+        -2851792
+      ],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2005,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2006,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2007,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 1
+    },
+    {
+      "year": 2008,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2009,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2010,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2011,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2012,
+      "alternative_record_ids": [
+        -2946242,
+        -2946241,
+        -2889788,
+        -2798450
+      ],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2013,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2014,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2015,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2016,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2017,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2018,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2019,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2020,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2021,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2022,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2023,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2024,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2025,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    },
+    {
+      "year": 2026,
+      "alternative_record_ids": [],
+      "duplicate_pairs": 0
+    }
+  ],
+  "limitations": [
+    "Valid geometry is not proof of geographic or historical accuracy.",
+    "The source is a generalized world-scale vector tile, not survey geometry or a daily front-line record.",
+    "Nonidentical overlapping records are disclosed, not silently merged into an invented border.",
+    "Administration grouping can be inferred from names; it is not independently verified effective control."
+  ]
+}

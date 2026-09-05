@@ -1,18 +1,10 @@
 [
   {
-    "place": "Lodz Ghetto, Poland",
-    "survivorA": "cohen-israel",
-    "survivorB": "fox-george",
-    "overlap_window": "1942",
-    "note": "Both public summaries mention Lodz Ghetto around 1942 (unverified — not a claim that they met).",
-    "verified": false
-  },
-  {
-    "place": "Westerbork, Netherlands",
-    "survivorA": "herschel-tswi",
-    "survivorB": "vis-leonard",
-    "overlap_window": "1943",
-    "note": "Both public summaries mention Westerbork around 1943 (unverified — not a claim that they met).",
+    "place": "Transnistria",
+    "survivorA": "carmelly-felicia",
+    "survivorB": "hoffer-lou",
+    "overlap_window": "1941",
+    "note": "Both public summaries mention Transnistria around 1941 (unverified — not a claim that they met).",
     "verified": false
   }
 ]

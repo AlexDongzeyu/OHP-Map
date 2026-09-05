@@ -4,79 +4,79 @@
     "lat": 52.237,
     "lng": 19.0,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "Hungary": {
     "lat": 47.1625,
     "lng": 19.5033,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "Romania": {
     "lat": 45.9432,
     "lng": 24.9668,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "Germany": {
     "lat": 51.1657,
     "lng": 10.4515,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "Austria": {
     "lat": 47.5162,
     "lng": 14.5501,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "Czechoslovakia": {
     "lat": 49.8175,
     "lng": 15.473,
     "source": "curated",
-    "precision": "city"
+    "precision": "region"
   },
   "Netherlands": {
     "lat": 52.1326,
     "lng": 5.2913,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "France": {
     "lat": 46.2276,
     "lng": 2.2137,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "Lithuania": {
     "lat": 55.1694,
     "lng": 23.8813,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "Greece": {
     "lat": 39.0742,
     "lng": 21.8243,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "Transnistria": {
     "lat": 47.5,
     "lng": 29.5,
     "source": "curated",
-    "precision": "site"
+    "precision": "region"
   },
   "Transylvania, Romania": {
     "lat": 46.77,
     "lng": 23.59,
     "source": "curated",
-    "precision": "city"
+    "precision": "region"
   },
   "Galicia": {
     "lat": 49.5,
     "lng": 22.5,
     "source": "curated",
-    "precision": "city"
+    "precision": "region"
   },
   "Lodz, Poland": {
     "lat": 51.7592,
@@ -256,7 +256,26 @@
     "lat": 50.027,
     "lng": 19.203,
     "source": "curated",
-    "precision": "site"
+    "precision": "site",
+    "source_url": "https://www.auschwitz.org/en/visiting/getting-to-the-museum/",
+    "note": "Representative Auschwitz I reference point. An unqualified Auschwitz mention does not establish a particular camp sector."
+  },
+  "Birkenau (Auschwitz II), Poland": {
+    "lat": 50.035833,
+    "lng": 19.178333,
+    "source": "curated",
+    "precision": "site",
+    "source_url": "https://www.auschwitz.org/en/history/auschwitz-ii/",
+    "coordinate_source_url": "https://en.wikipedia.org/w/api.php?action=query&titles=Auschwitz_II-Birkenau&prop=coordinates&redirects=1&format=json",
+    "note": "Birkenau is separate from Auschwitz I. This is a site reference, not a prisoner's exact position."
+  },
+  "Oswiecim, Poland": {
+    "lat": 50.038056,
+    "lng": 19.221389,
+    "source": "curated",
+    "precision": "city",
+    "source_url": "https://en.wikipedia.org/w/api.php?action=query&titles=O%C5%9Bwi%C4%99cim&prop=coordinates&format=json",
+    "note": "The town is not automatically identified as a concentration camp."
   },
   "Treblinka, Poland": {
     "lat": 52.6314,
@@ -352,7 +371,8 @@
     "lat": 51.535,
     "lng": 10.743,
     "source": "curated",
-    "precision": "site"
+    "precision": "site",
+    "note": "Bare Dora is a personal name as well as a camp abbreviation; it is not matched without the camp name."
   },
   "Kaufering (Dachau subcamp), Germany": {
     "lat": 48.089,
@@ -370,13 +390,13 @@
     "lat": 50.5108,
     "lng": 14.1508,
     "source": "curated",
-    "precision": "site"
+    "precision": "city"
   },
   "Westerbork, Netherlands": {
     "lat": 52.918,
     "lng": 6.608,
     "source": "curated",
-    "precision": "site"
+    "precision": "city"
   },
   "Toronto, Canada": {
     "lat": 43.6532,
@@ -388,7 +408,7 @@
     "lat": 56.1304,
     "lng": -106.3468,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "Montreal, Canada": {
     "lat": 45.5019,
@@ -400,19 +420,27 @@
     "lat": 31.0461,
     "lng": 34.8516,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
+  },
+  "Palestine (historical region)": {
+    "lat": 31.0,
+    "lng": 35.0,
+    "source": "curated",
+    "precision": "region",
+    "source_url": "https://en.wikipedia.org/w/api.php?action=query&titles=Palestine_(region)&prop=coordinates&format=json",
+    "note": "A broad historical regional reference. Its extent varies by date; it is not replaced with the modern state of Israel."
   },
   "Switzerland": {
     "lat": 46.8182,
     "lng": 8.2275,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "Italy": {
     "lat": 41.8719,
     "lng": 12.5674,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "New York, USA": {
     "lat": 40.7128,
@@ -443,6 +471,21 @@
     "lng": -80.4925,
     "source": "curated",
     "precision": "city"
+  },
+  "Waterloo, Quebec, Canada": {
+    "lat": 45.344921,
+    "lng": -72.515488,
+    "source": "Natural Resources Canada CGNDB EIMLJ",
+    "precision": "city",
+    "source_url": "https://geogratis.gc.ca/services/geoname/en/geonames/EIMLJ"
+  },
+  "Waterloo, Ontario, Canada": {
+    "lat": 43.479722,
+    "lng": -80.541111,
+    "source": "Natural Resources Canada CGNDB FDBJZ",
+    "precision": "city",
+    "source_url": "https://geogratis.gc.ca/services/geoname/en/geonames/FDBJZ",
+    "note": "A city-level reference. It does not locate an exact university building."
   },
   "Kingston, Canada": {
     "lat": 44.2312,
@@ -538,7 +581,7 @@
     "lat": 48.95,
     "lng": -55.65,
     "source": "curated",
-    "precision": "city"
+    "precision": "region"
   },
   "Camp Borden, Canada": {
     "lat": 44.27,
@@ -568,13 +611,28 @@
     "lat": 51.248,
     "lng": -0.76,
     "source": "curated",
-    "precision": "site"
+    "precision": "city"
   },
   "England": {
     "lat": 52.3555,
     "lng": -1.1743,
     "source": "curated",
-    "precision": "city"
+    "precision": "region"
+  },
+  "United Kingdom": {
+    "lat": 54.25,
+    "lng": -1.733333,
+    "source": "Natural Earth 110m, representative interior point",
+    "precision": "country",
+    "source_url": "https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/"
+  },
+  "Great Britain": {
+    "lat": 54.25,
+    "lng": -1.733333,
+    "source": "Natural Earth 110m, representative island point",
+    "precision": "region",
+    "source_url": "https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/",
+    "note": "A broad island reference, not a synonym for England or an exact settlement."
   },
   "Liverpool, England": {
     "lat": 53.4084,
@@ -586,13 +644,21 @@
     "lat": 49.2,
     "lng": -0.37,
     "source": "curated",
-    "precision": "site"
+    "precision": "region"
+  },
+  "Juno Beach, France": {
+    "lat": 49.335278,
+    "lng": -0.415278,
+    "source": "curated",
+    "precision": "region",
+    "source_url": "https://en.wikipedia.org/w/api.php?action=query&titles=Juno_Beach&prop=coordinates&format=json",
+    "note": "A landing-sector reference, not an exact landing point. D-Day alone is not a geographic name."
   },
   "Dieppe, France": {
     "lat": 49.922,
     "lng": 1.078,
     "source": "curated",
-    "precision": "site"
+    "precision": "city"
   },
   "Caen, France": {
     "lat": 49.1829,
@@ -600,11 +666,34 @@
     "source": "curated",
     "precision": "city"
   },
+  "Falaise, France": {
+    "lat": 48.8986,
+    "lng": -0.1924,
+    "source": "French government geographic API, commune 14258",
+    "precision": "city",
+    "source_url": "https://geo.api.gouv.fr/communes/14258?fields=nom,code,centre"
+  },
+  "Falaise Pocket, France": {
+    "lat": 48.8986,
+    "lng": -0.1924,
+    "source": "curated",
+    "precision": "region",
+    "source_url": "https://geo.api.gouv.fr/communes/14258?fields=nom,code,centre",
+    "note": "Regional battle reference near Falaise. It does not reconstruct a front line or an individual's position."
+  },
   "Antwerp, Belgium": {
     "lat": 51.2194,
     "lng": 4.4025,
     "source": "curated",
     "precision": "city"
+  },
+  "Scheldt estuary": {
+    "lat": 51.416667,
+    "lng": 4.166667,
+    "source": "curated",
+    "precision": "region",
+    "source_url": "https://en.wikipedia.org/w/api.php?action=query&titles=Battle_of_the_Scheldt&prop=coordinates&format=json",
+    "note": "A broad estuary/campaign reference spanning Belgium and the Netherlands, not Antwerp city."
   },
   "Arnhem, Netherlands": {
     "lat": 51.9851,
@@ -616,19 +705,19 @@
     "lat": 42.355,
     "lng": 14.403,
     "source": "curated",
-    "precision": "site"
+    "precision": "city"
   },
   "Monte Cassino, Italy": {
     "lat": 41.487,
     "lng": 13.814,
     "source": "curated",
-    "precision": "site"
+    "precision": "city"
   },
   "Sicily, Italy": {
     "lat": 37.6,
     "lng": 14.015,
     "source": "curated",
-    "precision": "city"
+    "precision": "region"
   },
   "Rome, Italy": {
     "lat": 41.9028,
@@ -640,19 +729,19 @@
     "lat": 22.3193,
     "lng": 114.1694,
     "source": "curated",
-    "precision": "site"
+    "precision": "region"
   },
   "Korea": {
     "lat": 37.5,
     "lng": 127.5,
     "source": "curated",
-    "precision": "city"
+    "precision": "region"
   },
   "Kapyong, Korea": {
     "lat": 37.887,
     "lng": 127.489,
     "source": "curated",
-    "precision": "site"
+    "precision": "city"
   },
   "Seoul, Korea": {
     "lat": 37.5665,
@@ -670,13 +759,13 @@
     "lat": 39.8283,
     "lng": -98.5795,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "Scotland": {
     "lat": 56.4907,
     "lng": -4.2026,
     "source": "curated",
-    "precision": "city"
+    "precision": "region"
   },
   "Glasgow, Scotland": {
     "lat": 55.8642,
@@ -700,7 +789,7 @@
     "lat": 53.1424,
     "lng": -7.6921,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
   },
   "Dublin, Ireland": {
     "lat": 53.3498,
@@ -712,7 +801,29 @@
     "lat": 61.524,
     "lng": 105.3188,
     "source": "curated",
-    "precision": "city"
+    "precision": "country"
+  },
+  "Soviet Union (historical region)": {
+    "lat": 58.448647,
+    "lng": 81.56549,
+    "source": "OpenHistoricalMap, 1980 mid-year polygon reference",
+    "precision": "region",
+    "source_url": "https://vtiles.openhistoricalmap.org/maps/ohm_admin/0/0/0.pbf",
+    "note": "Historical multi-republic state. This representative reference is not an exact town or a claim that the whole Soviet Union was modern Russia."
+  },
+  "Tanzania": {
+    "lat": -6.2,
+    "lng": 34.125,
+    "source": "Natural Earth 110m, representative interior point",
+    "precision": "country",
+    "source_url": "https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/"
+  },
+  "Kenya": {
+    "lat": 0.3,
+    "lng": 37.525,
+    "source": "Natural Earth 110m, representative interior point",
+    "precision": "country",
+    "source_url": "https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/"
   },
   "Moscow, Russia": {
     "lat": 55.7558,

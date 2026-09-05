@@ -22,7 +22,7 @@ def _worker(code, payload=None):
         .replace('import otherMediaPages from "../data/source/ohp_media_pages.json";',
           `const otherMediaPages = ${fs.readFileSync('data/source/ohp_media_pages.json', 'utf8')};`)
         .replace('from "./media.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/media.js').href)}`);
-      source += '\nexport { extract, extractSlugs, parseEntry, toFeature, mergeFeature, migrateCachedData, sanitizeCachedFeature, sourceSentence, sentenceExcerpt, repairSourceQuote };';
+      source += '\nexport { extract, extractEvidence, deriveConflicts, extractSlugs, parseEntry, toFeature, mergeFeature, migrateCachedData, sanitizeCachedFeature, sourceSentence, sentenceExcerpt, repairSourceQuote };';
       const worker = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
     """
     result = subprocess.run(
@@ -267,7 +267,7 @@ def test_worker_repairs_split_source_blocks_without_changing_extracted_claims():
     ]
     actual_waypoints = actual["feature"]["properties"]["waypoints"]
     assert [
-        {key: value for key, value in waypoint.items() if key not in {"canonical", "lat", "lng"}}
+        {key: value for key, value in waypoint.items() if key not in {"canonical", "lat", "lng", "location_precision"}}
         for waypoint in actual_waypoints
     ] == expected
     assert actual_waypoints[1]["source_quote"] == (
@@ -346,7 +346,7 @@ def test_content_migration_changes_quotes_and_media_but_not_existing_claims():
         assert new["geometry"] == old["geometry"]
         original = old["properties"]["waypoints"][0]
         updated = new["properties"]["waypoints"][0]
-        assert {key: value for key, value in updated.items() if key != "source_quote"} == {
+        assert {key: value for key, value in updated.items() if key not in {"source_quote", "location_precision"}} == {
             key: value for key, value in original.items() if key != "source_quote"
         }
         assert new["properties"]["profile_media"]["videos"][0]["status"] == "captioned"
@@ -404,7 +404,7 @@ def test_worker_keeps_media_only_profiles_but_does_not_invent_a_biography():
     assert result["protectedFeature"] is None
 
 
-def test_geography_sanitization_does_not_reinfer_roles_from_a_wider_quote():
+def test_geography_sanitization_removes_unsupported_birthplace_without_inheriting_birth_context():
     result = _worker("""
       const waypoint = (place, role, quote) => ({
         as_written: place, canonical: place, role, source_quote: quote, verified: false,
@@ -423,8 +423,11 @@ def test_geography_sanitization_does_not_reinfer_roles_from_a_wider_quote():
       console.log(JSON.stringify(worker.sanitizeCachedFeature(feature).properties.waypoints));
     """)
     assert [(waypoint["as_written"], waypoint["role"]) for waypoint in result] == [
-        ("England", "birthplace"), ("Canada", "resettlement"),
+        ("England", "resettlement"), ("Canada", "resettlement"),
     ]
+    assert all(waypoint["date"]["start"] is None for waypoint in result)
+    cache = json.loads(config.GEOCODE_CACHE.read_text(encoding="utf-8"))
+    assert all(waypoint["location_precision"] == cache[waypoint["canonical"]]["precision"] for waypoint in result)
 
 
 def test_worker_url_guards_only_handle_expected_parse_and_encoding_errors():

@@ -324,6 +324,28 @@ function assertCounterMotion(label, { targets, samples }) {
     }
     await page.click(".panel-close");
   });
+  await check("source context and location precision remain visible", async () => {
+    await page.$eval("#search", (input) => {
+      input.value = "Norman Baker"; input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.click("[data-survivor='baker-norman']");
+    await page.waitForSelector(".contextual-places");
+    const source = await page.evaluate(() => ({
+      context: document.querySelector(".contextual-places").textContent,
+      precision: [...document.querySelectorAll(".place-precision")].map((element) => element.textContent),
+      needsReview: document.querySelectorAll(".place-review").length,
+      firstPlace: document.querySelector(".place-focus .step-place")?.textContent,
+    }));
+    if (!source.context.includes("England") || !source.context.includes("Family background") ||
+        source.firstPlace !== "Toronto, Canada" || !source.needsReview ||
+        !source.precision.some((text) => text.includes("Country-level reference"))) {
+      throw new Error(`source qualification is missing ${JSON.stringify(source)}`);
+    }
+    await page.click(".panel-close");
+    await page.$eval("#search", (input) => {
+      input.value = ""; input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  });
   await check("explore: group chips + grouped rail", async () => {
     await page.click(".nav-tab[data-view='explore']");
     await page.waitForSelector(".rail .gchip", { timeout: 5000 });
@@ -570,6 +592,9 @@ function assertCounterMotion(label, { targets, samples }) {
       germany: document.querySelector("[data-controller='Germany']")?.getAttribute("data-war-side"),
       occupied: document.querySelectorAll(".historical-territory[data-war-side='occupied']").length,
       corridors: document.querySelectorAll(".service-corridor").length,
+      corridorEvidence: [...document.querySelectorAll(".service-corridor")]
+        .every((element) => element.__data__.year === 1944 && element.__data__.count > 1),
+      routeAvailability: document.querySelector("[data-route-availability]")?.textContent,
       selectedRoutes: document.querySelectorAll(".selected-testimony-route").length,
       errorMessage: (() => {
         const root = document.documentElement;
@@ -590,7 +615,8 @@ function assertCounterMotion(label, { targets, samples }) {
         eventState.germany !== "opposition" ||
         eventState.territories < 140 ||
         !eventState.occupied ||
-        !eventState.corridors ||
+        !eventState.corridorEvidence ||
+        (!eventState.corridors && !/No shared city\/site routes/.test(eventState.routeAvailability || "")) ||
         eventState.corridors > 8 ||
         !/historical geometry unavailable/.test(eventState.errorMessage || "")) {
       throw new Error(`historical war layer is incomplete ${JSON.stringify(eventState)}`);
@@ -719,6 +745,26 @@ function assertCounterMotion(label, { targets, samples }) {
     }));
     if (soviet.name !== "Soviet Union" || !/soviet-union/.test(soviet.flag || "")) {
       throw new Error(`a modern controller label replaced the historical entity ${JSON.stringify(soviet)}`);
+    }
+    const alternatives = await page.evaluate(() => ({
+      warning: document.querySelector(".country-inspector .source-caution")?.textContent,
+      outlines: document.querySelectorAll("[data-boundary-uncertain='true'][stroke-dasharray]").length,
+    }));
+    if (!alternatives.warning?.includes("overlap") || !alternatives.outlines) {
+      throw new Error("overlapping historical source records are being shown as certain");
+    }
+    await page.click("[data-act='clear-country']");
+    await page.$eval("[data-year-entry]", (input) => {
+      input.value = "1960"; input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.$eval("[data-country-search]", (input) => { input.value = "East Germany"; });
+    await page.click("[data-history-search] button");
+    const east = await page.evaluate(() => ({
+      name: document.querySelector(".country-heading h3")?.textContent,
+      flag: document.querySelector(".country-flag")?.getAttribute("src"),
+    }));
+    if (east.name !== "East Germany" || !/germany-east-1959/.test(east.flag || "")) {
+      throw new Error(`East Germany was collapsed into the federal state ${JSON.stringify(east)}`);
     }
     await page.click("[data-act='clear-country']");
   });
@@ -928,6 +974,9 @@ function assertCounterMotion(label, { targets, samples }) {
       await page.goto(BASE + `/?layout=${viewport.width}#/explore`, { waitUntil: "domcontentloaded", timeout: 40000 });
       await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
       await wait(500);
+      await page.$eval("#search", (input) => {
+        input.value = "Wally Adam"; input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
       await page.click(".rail-card");
       await page.waitForSelector(".panel");
       await wait(1000);

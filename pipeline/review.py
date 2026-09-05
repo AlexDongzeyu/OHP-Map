@@ -32,7 +32,7 @@ def emit_review_queue(survivors: list[dict]) -> int:
     config.REVIEW_DIR.mkdir(parents=True, exist_ok=True)
     rows = []
     for s in survivors:
-        for i, wp in enumerate(s.get("waypoints", [])):
+        for i, wp in enumerate([*s.get("waypoints", []), *s.get("contextual_places", [])]):
             flag = _flag(wp)
             if flag:
                 rows.append({
@@ -45,6 +45,8 @@ def emit_review_queue(survivors: list[dict]) -> int:
                     "date": json.dumps(wp.get("date")),
                     "confidence": wp.get("confidence", ""),
                     "flag": flag,
+                    "evidence_scope": wp.get("evidence", {}).get("scope", ""),
+                    "evidence_reason": wp.get("evidence", {}).get("reason", ""),
                     "source_quote": wp.get("source_quote", ""),
                     "archive_url": s.get("archive_url", ""),
                     "approved": "",  # a reviewer sets this to yes/no
@@ -55,7 +57,8 @@ def emit_review_queue(survivors: list[dict]) -> int:
         fh.write("\n")
 
     fields = ["survivor_id", "name", "order", "as_written", "canonical", "role",
-              "date", "confidence", "flag", "source_quote", "archive_url", "approved"]
+              "date", "confidence", "flag", "evidence_scope", "evidence_reason",
+              "source_quote", "archive_url", "approved"]
     with open(config.REVIEW_DIR / "review_queue.csv", "w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()
@@ -82,7 +85,7 @@ def stage(survivors: list[dict], strict: bool = False) -> list[dict]:
     for s in survivors:
         wps = s.get("waypoints", [])
         all_verified = bool(wps) and all(wp.get("verified") for wp in wps)
-        status = "reviewed" if all_verified else "pending"
+        status = "reviewed" if all_verified or s.get("review_status") == "reviewed" else "pending"
         if strict and status != "reviewed":
             continue
         s = dict(s)

@@ -7,7 +7,11 @@ import { ROLE_LABEL, GROUPS, parseYear, initials, slug, TIME } from "./config.js
 import { normalizeProfileMedia } from "./media.js";
 
 const BASE = "data";
-const COUNTRY_ALIAS = { Czechoslovakia: "Czechia", Galicia: "Poland" };
+const COUNTRY_ALIAS = {
+  England: "United Kingdom", Scotland: "United Kingdom", "Great Britain": "United Kingdom",
+  UK: "United Kingdom", USA: "United States of America", "United States": "United States of America",
+  "Hong Kong": "China",
+};
 const EVENT_ROLE_ORDER = {
   camp: 0,
   ghetto: 1,
@@ -28,9 +32,10 @@ async function getJSON(name) {
   return res.json();
 }
 
-function countryOf(canonical) {
+function countryOf(canonical, precision) {
   const parts = String(canonical || "").split(",");
   const c = parts[parts.length - 1].trim();
+  if (parts.length === 1 && precision === "region" && !COUNTRY_ALIAS[c]) return null;
   return COUNTRY_ALIAS[c] || c;
 }
 function surnameOf(name) {
@@ -94,30 +99,29 @@ function buildVeteranCorridors(journeys) {
   for (const journey of journeys) {
     if (journey.group !== "Military Veterans") continue;
     if (!journey.serviceConflict) continue;
-    const waypoints = journey.waypoints.filter((waypoint) => (
+    const waypoints = journey.routeWaypoints.filter((waypoint) => (
       Number.isFinite(waypoint.lat) && Number.isFinite(waypoint.lng)
     ));
     for (let index = 0; index < waypoints.length - 1; index++) {
       const first = waypoints[index];
       const second = waypoints[index + 1];
       if (first.canonical === second.canonical) continue;
+      if (!first.historyYear || first.historyYear !== second.historyYear) continue;
       const [a, b] = first.canonical.localeCompare(second.canonical) <= 0
         ? [first, second]
         : [second, first];
       const datedConflicts = journey.serviceConflicts.filter((conflict) => {
         const window = SERVICE_WINDOWS[conflict];
-        return [first.year, second.year].some((year) => (
-          year >= window.start && year <= window.end
-        ));
+        return first.historyYear >= window.start && first.historyYear <= window.end;
       });
-      const corridorConflicts = datedConflicts.length ? datedConflicts : [journey.serviceConflict];
-      for (const conflict of corridorConflicts) {
+      for (const conflict of datedConflicts) {
         if (!byConflict.has(conflict)) byConflict.set(conflict, new Map());
         const corridors = byConflict.get(conflict);
-        const key = `${a.canonical}|${b.canonical}`;
+        const key = `${a.canonical}|${b.canonical}|${first.historyYear}`;
         if (!corridors.has(key)) {
           corridors.set(key, {
             key,
+            year: first.historyYear,
             a: { canonical: a.canonical, lat: a.lat, lng: a.lng },
             b: { canonical: b.canonical, lat: b.lat, lng: b.lng },
             people: [],
@@ -138,8 +142,13 @@ function buildVeteranCorridors(journeys) {
 
 function toJourney(props) {
   const group = props.group || "Holocaust Survivors";
-  const wps = (props.waypoints || []).map((w) => {
-    const year = parseYear(w.date && w.date.start) || parseYear(w.date && w.date.end);
+  const toPlace = (w) => {
+    const startYear = parseYear(w.date && w.date.start);
+    const endYear = parseYear(w.date && w.date.end) || startYear;
+    const year = startYear || endYear;
+    const scope = w.evidence?.scope || (w.verified ? "personal" : "uncertain");
+    const historyYear = scope === "personal" && startYear != null && startYear === endYear &&
+      ["year", "month", "day"].includes(w.date?.precision) ? startYear : null;
     const approx = !w.date || w.date.precision === "range" || w.date.precision === "unknown";
     return {
       canonical: w.canonical,
@@ -149,15 +158,26 @@ function toJourney(props) {
       lat: w.lat,
       lng: w.lng,
       year,
+      historyYear,
+      endYear,
       approx,
+      locationPrecision: w.location_precision || "unknown",
+      locationNote: w.location_note || "",
+      locationSourceUrl: w.location_source_url || "",
+      locationCoordinateSourceUrl: w.location_coordinate_source_url || "",
+      evidenceScope: scope,
+      evidenceReason: w.evidence?.reason || "",
+      dateAsWritten: w.date?.as_written || "",
       liberation: w.role === "liberation",
       newLife: w.role === "resettlement",
       verified: !!w.verified,
       quote: w.source_quote || null,
     };
-  });
+  };
+  const wps = (props.waypoints || []).map(toPlace);
+  const contextualPlaces = (props.contextual_places || []).map(toPlace);
   const home = wps.find((w) => w.roleKey === "birthplace") || null;
-  const routeStart = wps[0] || null;
+  const routeStart = wps.find((point) => point.evidenceScope === "personal" || point.verified) || null;
   const j = {
     id: props.survivor_id,
     sourceAliases: Array.isArray(props.source_aliases) ? props.source_aliases : [],
@@ -167,7 +187,7 @@ function toJourney(props) {
     conflicts: props.conflicts || [],
     born: props.birth_year || null,
     hometown: home ? (home.canonical || home.asWritten) : "",
-    originCountry: routeStart ? countryOf(routeStart.canonical) : null,
+    originCountry: routeStart ? countryOf(routeStart.canonical, routeStart.locationPrecision) : null,
     birthplace: home,
     routeStart,
     initials: initials(props.name),
@@ -183,8 +203,9 @@ function toJourney(props) {
     media: normalizeProfileMedia(props.profile_media),
     reviewStatus: props.review_status || "pending",
     waypoints: wps,
+    contextualPlaces,
   };
-  const datedServicePlaces = wps.filter((point) => !["birthplace", "resettlement"].includes(point.roleKey) && point.year);
+  const datedServicePlaces = wps.filter((point) => !["birthplace", "resettlement"].includes(point.roleKey) && point.historyYear);
   j.serviceConflicts = j.group === "Military Veterans" ? j.conflicts.filter((conflict) => {
     const window = SERVICE_WINDOWS[conflict];
     return window && datedServicePlaces.some((point) => point.year >= window.start && point.year <= window.end);
@@ -200,6 +221,10 @@ function toJourney(props) {
     j.serviceYear = null;
   }
   j.intro = shortIntro(j);
+  j.routeWaypoints = wps.filter((point) => (
+    (point.evidenceScope === "personal" || point.verified) &&
+    (["city", "site"].includes(point.locationPrecision) || (point.verified && point.locationPrecision === "unknown"))
+  ));
   return j;
 }
 
@@ -255,6 +280,11 @@ export async function loadData() {
   const warAt = (year) => warContext.periods.find(
     (period) => year >= period.start && year <= period.end,
   ) || null;
+  const corridorsForYear = (year) => {
+    const conflict = warAt(year)?.archive_conflict;
+    return conflict ? (veteranCorridors.get(conflict) || [])
+      .filter((corridor) => corridor.count > 1 && corridor.year === year).slice(0, 8) : [];
+  };
   const warForJourney = (journey, year = null) => {
     if (!journey?.serviceConflict) return null;
     const dated = year == null ? null : warAt(year);
@@ -285,6 +315,7 @@ export async function loadData() {
     historicalIndex,
     warAt,
     warForJourney,
+    corridorsForYear,
   };
 }
 
@@ -292,18 +323,19 @@ function buildEvents(journeys) {
   const grouped = new Map();
   for (const journey of journeys) {
     for (const waypoint of journey.waypoints) {
-      if (!waypoint.year || !waypoint.canonical) continue;
-      if (waypoint.year < TIME.min || waypoint.year > TIME.max) continue;
-      const key = `${waypoint.year}|${waypoint.roleKey}|${waypoint.canonical}`;
+      if (!waypoint.historyYear || !waypoint.canonical) continue;
+      if (waypoint.historyYear < TIME.min || waypoint.historyYear > TIME.max) continue;
+      const key = `${waypoint.historyYear}|${waypoint.roleKey}|${waypoint.canonical}`;
       if (!grouped.has(key)) {
         grouped.set(key, {
           key,
-          year: waypoint.year,
+          year: waypoint.historyYear,
           place: waypoint.canonical,
           role: waypoint.role,
           roleKey: waypoint.roleKey,
           lat: waypoint.lat,
           lng: waypoint.lng,
+          locationPrecision: waypoint.locationPrecision,
           approximate: 0,
           people: [],
           groups: new Set(),

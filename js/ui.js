@@ -208,7 +208,10 @@ function panel(store, state) {
         <span><span class="step-place">${esc(w.canonical)}</span><span class="step-meta">${esc(wpMeta(w))}</span></span>
         ${icon("arrow-right")}
       </button>
+      <p class="place-precision">${esc(precisionLabel(w))}${w.locationNote ? `. ${esc(w.locationNote)}` : "."}</p>
+      ${w.evidenceScope === "uncertain" && !w.verified ? '<p class="place-review">This mention needs review before it can be treated as a stop in this person\'s journey.</p>' : ""}
       ${showPassage ? `<p class="place-account">${esc(passage)}</p>` : ""}
+      ${w.locationSourceUrl ? `<a class="location-source" href="${esc(w.locationSourceUrl)}" target="_blank" rel="noopener">Location reference ${icon("external-link")}</a>` : ""}
     </li>`;
   }).join("");
   const tags = (j.conflicts.concat(j.themes)).slice(0, 5).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
@@ -236,15 +239,16 @@ function panel(store, state) {
       ${j.serviceYear ? `<details class="related-context"><summary>Historical context and maps ${icon("chevron")}</summary>
         <p class="section-note">These sources describe the period. They are separate from ${esc(j.name)}'s own account.</p>
         ${contextResources(j.serviceYear)}</details>` : ""}
-      ${wp.length > 1 ? `<svg class="mini" viewBox="0 0 340 150" data-mini></svg>
-      <div class="mini-cap">Places named in the OHP profile.</div>` : ""}
+      ${j.routeWaypoints.length > 1 ? `<svg class="mini" viewBox="0 0 340 150" data-mini></svg>
+      <div class="mini-cap">Connections between city and site references, not exact travel paths.</div>` : ""}
       <section class="profile-places" aria-labelledby="recorded-places-title">
         <h3 id="recorded-places-title">Recorded places</h3>
         <p class="section-note">${wp.length
-          ? "These places appear in the OHP profile. Select a place to find it on the map."
+          ? "The route uses person-linked city and site references. Broad areas and mentions needing review are labelled below. Select a place to inspect its map reference."
           : "This account is in the collection, but its places have not been mapped."}</p>
         ${wp.length ? `<ol class="journey">${steps}</ol>` : ""}
       </section>
+      ${contextualPlaces(j)}
       <div class="tags">${tags}</div>
       ${reviewed ? `<div class="ver" style="color:${C.verified}"><span class="ver-dot"></span>Checked against the interview</div>` : ""}
     </aside>`;
@@ -253,6 +257,42 @@ function panel(store, state) {
 function sourcePassage(value) {
   const text = String(value || "").trim().replace(/\s+/g, " ");
   return /^[\p{Lu}0-9"'(\u201c\u2018]/u.test(text) && /[.!?][\u201d\u2019"')\]]*$/.test(text) ? text : "";
+}
+
+function contextualPlaces(journey) {
+  if (!journey.contextualPlaces.length) return "";
+  const reasons = {
+    "ancestor-only": "Family background",
+    "ancestor-origin": "Family background",
+    "historical-event": "Historical context",
+    "military-unit-name": "Military unit name",
+    comparison: "Comparison in the source",
+  };
+  const passages = new Map();
+  for (const place of journey.contextualPlaces) {
+    const quote = sourcePassage(place.quote);
+    const key = `${place.evidenceReason}|${quote || place.canonical}`;
+    if (!passages.has(key)) passages.set(key, { places: [], reason: place.evidenceReason, quote });
+    passages.get(key).places.push(place.canonical);
+  }
+  return `<details class="contextual-places">
+    <summary>Other places in the source (${journey.contextualPlaces.length}) ${icon("chevron")}</summary>
+    <p class="section-note">These mentions concern other people or background context. They are retained here, but are not drawn as this person's route.</p>
+    <ul>${[...passages.values()].map((passage) => `<li>
+      <strong>${esc(passage.places.join("; "))}</strong>
+      <span>${esc(reasons[passage.reason] || "Source context")}</span>
+      ${passage.quote ? `<p>${esc(passage.quote)}</p>` : ""}
+    </li>`).join("")}</ul>
+  </details>`;
+}
+
+function precisionLabel(place) {
+  return {
+    country: "Country-level reference",
+    region: "Regional reference",
+    city: "City-level reference",
+    site: "Site reference",
+  }[place.locationPrecision] || "Location precision has not been established";
 }
 
 function profileGallery(journey) {
@@ -374,6 +414,9 @@ export function patterns(store, state) {
             <label><input type="checkbox" data-history-setting="flags"${state.historyFlags ? " checked" : ""}> Historical flags</label>
             <label><input type="checkbox" data-history-setting="labels"${state.historyLabels ? " checked" : ""}> Territory names</label>
             <label><input type="checkbox" data-history-setting="routes"${state.historyRoutes ? " checked" : ""}> Shared interview routes</label>
+            <p class="section-note" data-route-availability>${store.corridorsForYear(state.scrubYear).length
+              ? "Only person-linked city/site pairs dated to this year are connected."
+              : "No shared city/site routes have sufficient date evidence for this year."}</p>
             <label><input type="checkbox" data-history-setting="testimony"${state.historyTestimony ? " checked" : ""}> Recorded places</label>
             <label><input type="checkbox" data-history-setting="compare"${state.historyCompare ? " checked" : ""}> Compare with today's borders</label>
             <label class="history-range-label">Historical layer opacity
@@ -426,8 +469,9 @@ export function patternsEvents(store, state) {
     <details class="history-sources">
       <summary>Original maps and historical context ${icon("chevron")}</summary>
       ${contextResources(state.scrubYear)}
-      <p class="history-method">The atlas samples the middle of each year. Flags appear only where the dated design has been verified.
-        OpenHistoricalMap coverage is incomplete and does not show every wartime front line.</p>
+      <p class="history-method">The atlas samples the middle of each year. Its polygons are generalized source records, not exact borders or daily front lines.
+        Dashed outlines mark overlapping alternatives. Flags appear only where the dated design has been verified.</p>
+      <a class="catalogue-link" href="data/historical_boundary_quality.json" target="_blank" rel="noopener">Open the geometry audit ${icon("external-link")}</a>
     </details>`;
 }
 
@@ -436,7 +480,8 @@ function countryInspector(country, year) {
   return `<section class="country-inspector">
     <button class="country-back" data-act="clear-country">${icon("arrow-right")} Back to ${year}</button>
     <div class="country-heading">${flag ? `<img class="country-flag" src="${esc(flag.src)}" alt="${esc(flag.label)}" width="66" height="44">` : ""}
-      <div><h3 tabindex="-1">${esc(country.name)}</h3><p>Mapped in ${year}</p></div></div>
+      <div><h3 tabindex="-1">${esc(country.name)}</h3><p>${country.alternativeRecords
+        ? `Source outlines overlap in ${year}` : `Mapped in ${year}`}</p></div></div>
     ${flag ? `<details class="flag-details"><summary>Flag dates and source ${icon("chevron")}</summary>
       <p class="flag-note">${esc(readableFlagText(flag.note || ""))}
       ${flag.start ? `<span class="flag-dates">The recorded use dates are ${esc(flag.start)}${flag.end ? ` to ${esc(flag.end)}` : " onward"}.</span>` : ""}
@@ -444,6 +489,9 @@ function countryInspector(country, year) {
       <span class="flag-credit">${esc(readableFlagText([flag.credit, flag.license].filter(Boolean).join(", ")))}</span></p></details>
       <p class="flag-summary">${esc(readableFlagText(flag.label))}</p>`
       : '<p class="flag-note">A flag design has not been verified for this administration at this date.</p>'}
+    ${country.alternativeRecords ? `<p class="source-caution">${country.alternativeRecords} dated source outlines overlap for this name.
+      Dashed borders mark these unverified alternatives.</p>` : ""}
+    ${country.inferredGrouping ? '<p class="country-source">This administration grouping is inferred from source names. It is not independent verification of effective control.</p>' : ""}
     <details class="country-areas"><summary>View ${country.count} mapped ${country.count === 1 ? "area" : "areas"} ${icon("chevron")}</summary>
       <ul>${country.territories.map((territory) => `<li><strong>${esc(territory.name)}</strong>
         <span>${esc(territory.dates)}${territory.kind ? `, ${esc(territory.kind.replaceAll("_", " "))}` : ""}</span></li>`).join("")}</ul>
@@ -497,6 +545,15 @@ export function about(store) {
         <section><h2>Read alongside the original</h2><p>Profiles are built from public OHP
           summaries. Automated place matching has not been checked for every profile.
           Each account links to its original interview so you can read and listen in context.</p></section>
+        <section><h2>Location and boundary accuracy</h2>
+          <p>City and site markers are reference points, not exact positions within a building or town.
+          Country and regional references cover broader areas. Uncertain dates and contextual mentions
+          should not be read as verified stops in a person's journey.</p>
+          <p>The historical polygons come from a generalized OpenHistoricalMap world tile. They sample
+          the middle of each year and can contain overlapping source records. Valid polygon geometry
+          does not establish that every border or administration is historically correct.</p>
+          <p><a href="data/historical_boundary_quality.json" target="_blank" rel="noopener">Read the geometry and overlap audit</a>.</p>
+        </section>
         <section class="about-sources"><h2>Sources and credits</h2>
           <dl>
             <div><dt>Interviews and photographs</dt><dd><a href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">Crestwood Oral History Project</a></dd></div>
@@ -537,7 +594,9 @@ function haystack(j) {
     j.themes.join(" ") + " " + j.waypoints.map((w) => w.canonical + " " + w.asWritten).join(" ")).toLowerCase();
 }
 function wpMeta(w) {
-  const yr = w.year ? (w.approx ? `c. ${w.year}` : `${w.year}`) : "date uncertain";
+  const yr = w.year
+    ? (w.endYear && w.endYear !== w.year ? `${w.year} to ${w.endYear}` : (w.approx ? `around ${w.year}` : `${w.year}`))
+    : (w.dateAsWritten ? `date uncertain; source says "${w.dateAsWritten}"` : "date uncertain");
   const written = w.asWritten && w.asWritten.toLowerCase() !== (w.canonical || "").toLowerCase()
     ? `. Listed as "${w.asWritten}"` : "";
   return `${w.role}, ${yr}${written}`;
@@ -570,11 +629,7 @@ function warBrief(store, year, showRoutes = true) {
   const eraMap = year <= 1918 ? 1914 : (
     year <= 1945 ? 1944 : (year <= 1988 ? 1960 : (year <= 2000 ? 1991 : 2026))
   );
-  const corridors = showRoutes && context.archive_conflict
-    ? (store.veteranCorridors.get(context.archive_conflict) || [])
-      .filter((corridor) => corridor.count > 1)
-      .slice(0, 8)
-    : [];
+  const corridors = showRoutes ? store.corridorsForYear(year) : [];
   const legend = context.coalition_label ? `
     <div class="war-legend" aria-label="Historical alignment legend">
       <span><i class="coalition"></i>${esc(context.coalition_label)}</span>
@@ -604,7 +659,7 @@ function testimonyMoment(activeEvent, events) {
   if (!events.length) {
     return `<div class="testimony-moment is-empty">
       <span class="micro-label">Testimony layer</span>
-      <p>No testimony place has a date in this year.</p>
+      <p>No person-linked place has a sufficiently precise date for this year.</p>
     </div>`;
   }
   if (!activeEvent) {

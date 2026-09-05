@@ -18,7 +18,8 @@ const UA = "CrestwoodOHP-Map-Worker/2.0 (+https://github.com/AlexDongzeyu/OHP-Ma
 export const DATA_KEY = "survivors.geojson";
 export const STATUS_KEY = "ohp-sync-status.json";
 export const GAZETTEER_REVISION = gazetteer.revision;
-export const CONTENT_REVISION = "reconciled-public-sources-v5";
+export const CONTENT_REVISION = "source-grounded-journeys-v6";
+export const JOURNEY_REVISION = "source-evidence-v1";
 export const HISTORY_MIN_YEAR = 1914;
 export const HISTORY_MAX_YEAR = 2026;
 const SEEN_KEY = "ohp-seen-slugs.json";
@@ -42,10 +43,6 @@ const GROUP_ORDER = [
   "First Nations",
   "Crestwood Families",
 ];
-const RESETTLEMENT = new Set([
-  "Toronto, Canada", "Canada", "Montreal, Canada", "Israel",
-  "New York, USA", "Vienna, Austria",
-]);
 const ROLE_ORDER = { birthplace: 0, ghetto: 1, camp: 2, transit: 3, liberation: 4, resettlement: 5 };
 const NON_PROFILE_SLUGS = new Set(otherMediaPages.pages.map((page) => page.survivor_id));
 
@@ -136,7 +133,7 @@ export async function syncSurvivors(env) {
       }
     }
 
-    const features = [...featuresById.values()];
+    const features = [...featuresById.values()].map(withLocationPrecision);
     const nextCursor = eligibleRefresh.length
       ? (cursor + refreshBatch.length) % eligibleRefresh.length
       : 0;
@@ -234,7 +231,8 @@ function mergeSeedPortraits(cached, seed) {
   );
   return {
     ...cached,
-    features: cached.features.map((feature) => {
+    features: cached.features.map((original) => {
+      const feature = withLocationPrecision(original);
       const seeded = seedById.get(feature.properties.survivor_id);
       if (!seeded) return feature;
       return {
@@ -273,6 +271,10 @@ export async function ensureCurrentData(env, cached) {
         time_max: HISTORY_MAX_YEAR,
       },
     };
+  }
+  const features = current.features.map(withLocationPrecision);
+  if (features.some((feature, index) => feature !== current.features[index])) {
+    current = { ...current, features };
   }
   if (current !== cached) await env.OHP_DATA.put(DATA_KEY, JSON.stringify(current));
   return current;
@@ -313,7 +315,10 @@ function migrateCachedData(cached, seed) {
       };
     }
     const hasReviewedPlaces = existing.properties.waypoints.some((waypoint) => waypoint.verified);
-    const replaceGeography = geographyChanged && !hasReviewedPlaces;
+    const replaceJourney = !hasReviewedPlaces &&
+      seedFeature.properties.journey_revision === JOURNEY_REVISION &&
+      existing.properties.journey_revision !== JOURNEY_REVISION;
+    const replaceGeography = (geographyChanged || replaceJourney) && !hasReviewedPlaces;
     const waypoints = replaceGeography
       ? seedFeature.properties.waypoints
       : mergeSeedQuotes(existing.properties.waypoints, seedFeature.properties.waypoints);
@@ -338,6 +343,18 @@ function migrateCachedData(cached, seed) {
         theme_tags: seedFeature.properties.theme_tags?.length
           ? seedFeature.properties.theme_tags
           : (existing.properties.theme_tags || []),
+        ...(replaceJourney ? {
+          journey_revision: JOURNEY_REVISION,
+          birth_year: seedFeature.properties.birth_year,
+          birth_date: seedFeature.properties.birth_date,
+          conflicts: seedFeature.properties.conflicts,
+          contextual_places: seedFeature.properties.contextual_places || [],
+        } : {}),
+        ...(hasReviewedPlaces ? {
+          journey_revision: existing.properties.journey_revision,
+          birth_date: existing.properties.birth_date,
+          contextual_places: existing.properties.contextual_places || [],
+        } : {}),
         waypoints,
       },
     };
@@ -349,7 +366,7 @@ function migrateCachedData(cached, seed) {
       features.push(feature);
       continue;
     }
-    const sanitized = geographyChanged
+    const sanitized = geographyChanged || cached.metadata?.content_revision !== CONTENT_REVISION
       ? sanitizeCachedFeature(feature)
       : {
         ...feature,
@@ -383,8 +400,50 @@ function migrateCachedData(cached, seed) {
       time_max: HISTORY_MAX_YEAR,
       migrated_at: new Date().toISOString(),
     },
-    features,
+    features: features.map(withLocationPrecision),
   };
+}
+
+function withLocationPrecision(feature) {
+  let changed = false;
+  const properties = { ...feature.properties };
+  for (const key of ["waypoints", "contextual_places"]) {
+    if (!properties[key]) continue;
+    properties[key] = properties[key].map((waypoint) => {
+      const updated = withWaypointLocationMetadata(waypoint, feature.properties.review_status === "reviewed");
+      if (updated !== waypoint) changed = true;
+      return updated;
+    });
+  }
+  return changed ? { ...feature, properties } : feature;
+}
+
+function withWaypointLocationMetadata(waypoint, reviewedRecord = false) {
+  const coordinates = geocodeCache[waypoint.canonical] || {};
+  const metadata = { location_precision: coordinates.precision || "unknown" };
+  const fields = [
+    ["note", "location_note"],
+    ["source_url", "location_source_url"],
+    ["coordinate_source_url", "location_coordinate_source_url"],
+  ];
+  for (const [source, output] of fields) {
+    if (typeof coordinates[source] === "string" && coordinates[source]) metadata[output] = coordinates[source];
+  }
+  const updated = { ...waypoint };
+  let changed = false;
+  for (const key of ["location_precision", ...fields.map(([, output]) => output)]) {
+    if ((reviewedRecord || waypoint.verified) && Object.hasOwn(waypoint, key)) continue;
+    if (Object.hasOwn(metadata, key)) {
+      if (waypoint[key] !== metadata[key]) {
+        updated[key] = metadata[key];
+        changed = true;
+      }
+    } else if (Object.hasOwn(waypoint, key)) {
+      delete updated[key];
+      changed = true;
+    }
+  }
+  return changed ? updated : waypoint;
 }
 
 function mergeSeedQuotes(existing, seeded) {
@@ -400,7 +459,7 @@ function mergeSeedQuotes(existing, seeded) {
 }
 
 function sanitizeCachedFeature(feature) {
-  if (feature.properties.waypoints.some((waypoint) => waypoint.verified)) return feature;
+  if (feature.properties.waypoints.some((waypoint) => waypoint.verified)) return withLocationPrecision(feature);
   const seen = new Set();
   const waypoints = [];
   const cachedWaypoints = feature.properties.waypoints || [];
@@ -419,33 +478,37 @@ function sanitizeCachedFeature(feature) {
       lng: round(coordinates.lng),
     });
   }
-  const retainedBirthplace = waypoints.find((waypoint) => (
-    !gazetteer.known_sites[waypoint.canonical] && waypoint.role === "birthplace"
-  ));
-  const inferredBirthplace = waypoints.find((waypoint) => (
-    !gazetteer.known_sites[waypoint.canonical] && !RESETTLEMENT.has(waypoint.canonical)
-  ));
-  const birthplace = retainedBirthplace || inferredBirthplace;
-  const rerolled = waypoints.map((waypoint) => {
-    const siteRole = gazetteer.known_sites[waypoint.canonical];
-    let role = waypoint.role;
-    if (siteRole) role = siteRole;
-    else if (waypoint === birthplace) role = "birthplace";
-    else if (RESETTLEMENT.has(waypoint.canonical)) role = "resettlement";
-    else if (role === "birthplace") role = "transit";
-    return { ...waypoint, role };
-  });
+  const contextual = [...(feature.properties.contextual_places || [])];
+  const rerolled = [];
+  for (const waypoint of waypoints) {
+    const source = extractEvidence(waypoint.source_quote || "", feature.properties.name || "");
+    const context = source.contextual_places.find((place) => place.canonical === waypoint.canonical);
+    const personal = source.waypoints.find((place) => place.canonical === waypoint.canonical);
+    if (context && !personal) {
+      contextual.push({ ...waypoint, ...context, location_precision: geocodeCache[waypoint.canonical]?.precision || "unknown" });
+      continue;
+    }
+    rerolled.push({
+      ...waypoint,
+      ...(personal || {
+        evidence: { scope: "uncertain", reason: "source-context-unavailable" },
+        ...(waypoint.role === "birthplace" ? { role: "transit" } : {}),
+      }),
+      location_precision: geocodeCache[waypoint.canonical]?.precision || "unknown",
+    });
+  }
   const ordered = orderWaypoints(rerolled);
   const home = ordered.find((waypoint) => waypoint.role === "birthplace") || ordered[0];
-  return {
+  return withLocationPrecision({
     ...feature,
     geometry: home ? { type: "Point", coordinates: [home.lng, home.lat] } : null,
     properties: {
       ...feature.properties,
       bio_excerpt: sentenceExcerpt(feature.properties.bio_excerpt || ""),
       waypoints: ordered,
+      contextual_places: contextual,
     },
-  };
+  });
 }
 
 function aliasKey(value) {
@@ -566,7 +629,7 @@ function parseEntry(slug, html, group) {
     survivor_id: slug,
     name,
     group,
-    conflicts: text || group === "Holocaust Survivors" ? deriveConflicts(group, text) : [],
+    conflicts: text || group === "Holocaust Survivors" ? deriveConflicts(group, text, name) : [],
     archive_url: archiveUrl,
     portrait: selectPortrait(profileMedia.images, name),
     portrait_rights: profileMedia.images[0]?.rights || null,
@@ -589,21 +652,19 @@ function formatName(raw) {
   return raw.trim();
 }
 
-function deriveConflicts(group, text) {
+function deriveConflicts(group, text, name = "") {
   if (group === "Holocaust Survivors") return ["The Holocaust"];
-  const found = [];
-  if (/\bkorea(n)?\b/i.test(text)) found.push("Korean War");
-  if (/\b(world war ii|wwii|second world war|1939|1940|1941|1942|1943|1944|1945|normandy|dieppe|d-?day)\b/i.test(text)) {
-    found.push("Second World War");
-  }
-  if (/\b(world war i|wwi|first world war|1914|1915|1916|1917|1918)\b/i.test(text)) {
-    found.push("First World War");
-  }
-  if (/\b(afghanistan|bosnia|peacekeep|cyprus|suez)\b/i.test(text)) {
-    found.push("Peacekeeping & later service");
-  }
-  if (group === "Military Veterans" && !found.length) found.push("Second World War");
-  return found;
+  const patterns = [
+    ["Korean War", /\b(?:Korean War|Korea)\b/i],
+    ["Second World War", /\b(?:world war ii|wwii|second world war|normandy|dieppe|d-?day)\b/i],
+    ["First World War", /\b(?:world war i|wwi|first world war|great war)\b/i],
+    ["Cold War", /\bcold war\b/i],
+    ["Peacekeeping & later service", /\b(?:afghanistan|bosnia|peacekeep\w*|cyprus|suez)\b/i],
+  ];
+  const eligible = clauseSpans(text).map(([left, right]) => text.slice(left, right)).filter(
+    (clause) => scopeFor(clause, "", name).scope !== "contextual" && !/\bborn\b/i.test(clause),
+  );
+  return patterns.filter(([, pattern]) => eligible.some((clause) => pattern.test(clause))).map(([label]) => label);
 }
 
 function selectPortrait(images, name) {
@@ -627,20 +688,18 @@ function selectPortrait(images, name) {
   return candidates[0]?.url || null;
 }
 
-function extract(text) {
+function placeHits(text) {
   const aliases = gazetteer.aliases;
   const low = text.toLowerCase();
   const hits = [];
   for (const alias of Object.keys(aliases)) {
-    const pattern = new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g");
+    const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${escapePattern(alias)}(?![\\p{L}\\p{N}_])`, "gu");
     let match;
     while ((match = pattern.exec(low))) hits.push([match.index, match.index + alias.length, alias]);
   }
   hits.sort((a, b) => a[0] - b[0] || (b[1] - b[0]) - (a[1] - a[0]));
   const claimed = [];
   const accepted = [];
-  const seen = new Set();
-  const output = [];
   for (const [start, end, alias] of hits) {
     if (claimed.some(([claimStart, claimEnd]) => start < claimEnd && end > claimStart)) continue;
     const canonical = aliases[alias];
@@ -653,53 +712,197 @@ function extract(text) {
       continue;
     }
     claimed.push([start, end]);
-    accepted.push({ end, canonical });
-    if (seen.has(canonical)) continue;
-    seen.add(canonical);
-    const context = text.slice(Math.max(0, start - 40), end + 60);
-    const yearMatch = context.match(/(19[3-5]\d)/);
-    output.push({
-      as_written: text.slice(start, end),
-      _canonical: canonical,
-      date: {
-        start: yearMatch ? yearMatch[1] : null,
-        end: yearMatch ? yearMatch[1] : null,
-        precision: yearMatch ? "year" : "unknown",
-      },
-      confidence: 0.5,
-      verified: false,
-      source_quote: sourceSentence(text, start, end),
-      _role_context: context,
-    });
+    accepted.push({ start, end, canonical });
   }
-  let firstAssigned = false;
-  for (const waypoint of output) {
-    const canonical = waypoint._canonical;
-    delete waypoint._canonical;
-    const roleContext = { ...waypoint, source_quote: waypoint._role_context };
-    delete waypoint._role_context;
-    const siteRole = gazetteer.known_sites[canonical];
-    const isFirst = (
-      !firstAssigned &&
-      !siteRole &&
-      (!RESETTLEMENT.has(canonical) || hasBirthplaceContext(roleContext))
-    );
-    waypoint.role = siteRole || (
-      isFirst ? "birthplace" : (RESETTLEMENT.has(canonical) ? "resettlement" : "transit")
-    );
-    waypoint.canonical = canonical;
-    if (isFirst) firstAssigned = true;
-  }
-  return output;
+  return accepted;
 }
 
-function hasBirthplaceContext(waypoint) {
-  const name = escapePattern(waypoint.as_written);
+function clauseSpans(text) {
+  const endings = [0, ...sentenceEndings(text)];
+  if (endings[endings.length - 1] !== text.length) endings.push(text.length);
+  const patterns = [
+    /;\s*|(?:,\s*)?\b(?:and|but|while|where|when|before|after|as)\s+(?=(?:he|she|they|we|I|his|her|their|my|our)\b)|(?:,\s*)?\b(?:and(?:\s+then)?|then|before|after)\s+(?=(?:later\s+|finally\s+)?(?:mov(?:ed|ing)|sett(?:led|ling)|arriv(?:ed|ing)|return(?:ed|ing)|travell?(?:ed|ing)|went|came|fled|escaped|serv(?:ed|ing)|liv(?:ed|ing)|grew up|was raised|immigrat(?:ed|ing)|emigrat(?:ed|ing)|work(?:ed|ing))\b)/gi,
+    /(?:,\s*|\b(?:and|but|before|after|when|while|where|as)\s+)(?=[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+(?:was|were|had|has|is|faced|went|came|moved|served|worked|joined|found|recalled)\b)/g,
+  ];
+  const spans = [];
+  for (let index = 0; index < endings.length - 1; index++) {
+    const left = endings[index], sentence = text.slice(left, endings[index + 1]);
+    const cuts = [...new Set([0, sentence.length, ...patterns.flatMap(
+      (pattern) => [...sentence.matchAll(pattern)].filter((match) => !(
+        /\b(?:[A-Z][a-z]+|[Hh]e|[Ss]he|I|[Ww]e|[Tt]hey)\s*$/.test(sentence.slice(0, match.index)) &&
+        /^(?:his|her|their|my|our)\s+(?:family|parents?|father|mother)\b/i.test(sentence.slice(match.index + match[0].length)) &&
+        /\band\s+$/i.test(match[0])
+      )).map((match) => match.index + match[0].length),
+    )])].sort((a, b) => a - b);
+    for (let part = 0; part < cuts.length - 1; part++) {
+      if (sentence.slice(cuts[part], cuts[part + 1]).trim()) spans.push([left + cuts[part], left + cuts[part + 1]]);
+    }
+  }
+  return spans;
+}
+
+function unknownDate(asWritten) {
+  return { start: null, end: null, precision: "unknown", ...(asWritten ? { as_written: asWritten } : {}) };
+}
+
+function dateMentions(text) {
+  const year = String.raw`(?:1[6-9]\d{2}|20\d{2})`;
+  const month = String.raw`(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?`;
+  const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
   const pattern = new RegExp(
-    `(?:\\bborn\\b[^.!?]{0,100}\\b${name}\\b|\\b${name}\\b[^.!?]{0,100}\\bborn\\b)`,
-    "i",
+    String.raw`\b(?<mdy>(?<m1>${month})\s+(?<d1>\d{1,2})(?:st|nd|rd|th)?\s*,?\s+(?<y1>${year}))\b` +
+    String.raw`|\b(?<dmy>(?<d2>\d{1,2})(?:st|nd|rd|th)?\s+(?<m2>${month})\s*,?\s+(?<y2>${year}))\b` +
+    String.raw`|\b(?<month>(?<m3>${month})\s+(?<y3>${year}))\b` +
+    String.raw`|\b(?<range>(?<y4>${year})\s*(?:[-–—]|to)\s*(?<y5>${year}|\d{1,2}))\b` +
+    String.raw`|\b(?<decade>${year})['’]?s\b|\b(?<year>${year})\b|(?<!\w)(?<shorthand>['’]?\d{2}['’]?s)\b`, "gi",
   );
-  return pattern.test(waypoint.source_quote || "");
+  return [...text.matchAll(pattern)].map((match) => {
+    const g = match.groups;
+    let value = unknownDate(match[0]);
+    if (g.mdy || g.dmy) {
+      const suffix = g.mdy ? "1" : "2";
+      const y = Number(g[`y${suffix}`]), m = months.indexOf(g[`m${suffix}`].slice(0, 3).toLowerCase()), d = Number(g[`d${suffix}`]);
+      const calendar = new Date(Date.UTC(y, m, d));
+      if (calendar.getUTCFullYear() === y && calendar.getUTCMonth() === m && calendar.getUTCDate() === d) {
+        const token = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        value = { start: token, end: token, precision: "day" };
+      }
+    } else if (g.month) {
+      const token = `${g.y3}-${String(months.indexOf(g.m3.slice(0, 3).toLowerCase()) + 1).padStart(2, "0")}`;
+      value = { start: token, end: token, precision: "month" };
+    } else if (g.range) {
+      const end = g.y5.length === 4 ? g.y5 : g.y4.slice(0, -g.y5.length) + g.y5;
+      if (Number(end) >= Number(g.y4)) value = { start: g.y4, end, precision: "range" };
+    } else if (g.decade) {
+      if (Number(g.decade) % 10 === 0) value = { start: g.decade, end: String(Number(g.decade) + 9), precision: "range", as_written: match[0] };
+    } else if (g.year) {
+      value = { start: g.year, end: g.year, precision: "year" };
+    }
+    const qualifier = text.slice(0, match.index).match(/\b(before|after|until|since|about|around|circa|approximately|early|late|mid)\s*$/i);
+    if (qualifier) {
+      const literal = text.slice(qualifier.index, match.index + match[0].length);
+      value = g.decade && ["early", "late", "mid"].includes(qualifier[1].toLowerCase())
+        ? { ...value, as_written: literal } : unknownDate(literal);
+    }
+    return { start: match.index, end: match.index + match[0].length, value };
+  });
+}
+
+function namedParticipant(clause, name) {
+  const tokens = name.split(/\s+/).filter((token) => token.length > 2);
+  if (!tokens.length) return false;
+  const person = `\\b(?:${tokens.map(escapePattern).join("|")})\\b(?![’'\\ufffd]s)`;
+  const relative = "(?:(?:his|her|their|my|our|the)\\s+)?(?:parents?|father|mother|grandparents?|grandfather|grandmother|ancestors?)\\b";
+  return new RegExp(
+    `(?:${person}\\s+and\\s+${relative}|${relative}\\s+and\\s+${person}|\\b(?:with|alongside|including|took|taking|brought|bringing)\\s+${person})`,
+    "i",
+  ).test(clause);
+}
+
+function scopeFor(clause, before = "", name = "") {
+  const ancestor = clause.match(/(?:^|[,:]\s*|\b(?:and|but)\s+)\s*(?:(?:his|her|their|my|our)\s+|[A-Z][\w’'\ufffd-]*(?:\s+[A-Z][\w’'\ufffd-]*){0,2}(?:[’'\ufffd]s)\s+)(?:\w+\s+)?(?:parents?|father|mother|grandparents?|grandfather|grandmother|ancestors?)\b[^;]*?\b(?:born|was|were|had|became|hailed|came|moved|emigrated|immigrated|lived|served|fought|worked|grew)\b/i);
+  const accompanying = /\b(?:with|alongside|including|took|taking|brought|bringing)\s+(?:him|her|me|them|the children)\b|\b(?:he|she|I|we)\s+and\s+(?:his|her|my|our)\b|\band\s+(?:he|she|I)\b/i;
+  const hasCompanion = accompanying.test(clause) || namedParticipant(clause, name);
+  if (ancestor && !hasCompanion) {
+    const preceding = before || clause, remainder = preceding.slice(ancestor.index);
+    const childNamed = name.split(/\s+/).some((token) => token.length > 2 &&
+      new RegExp(`\\b${escapePattern(token)}\\b(?![’'\\ufffd]s)`, "i").test(preceding.slice(ancestor.index + ancestor[0].length)));
+    if (childNamed || /\b(?:family|children|him|them|us|we)\b/i.test(remainder)) return { scope: "uncertain", reason: "family-participation-unspecified" };
+    if (!before || ancestor.index + ancestor[0].length <= before.length) return { scope: "contextual", reason: "ancestor-only" };
+    return { scope: "uncertain", reason: "subject-not-established" };
+  }
+  if (/\b(?:his|her|their|my|our)\s+(?:son|daughter|brother|sister|husband|wife|uncle|aunt)\b/i.test(before || clause) && !hasCompanion) return { scope: "uncertain", reason: "relative-subject-unresolved" };
+  if (/\b(?:to|of)\s+(?:\w+\s+)?parents\s+(?:from|born in)\s*$/i.test(before)) return { scope: "contextual", reason: "ancestor-origin" };
+  if (/\b(?:unlike|compared (?:with|to)|similar to)\s*$/i.test(before)) return { scope: "contextual", reason: "comparison" };
+  if (/\b(?:regiment|army|navy|air force)\s+of\s*$/i.test(before)) return { scope: "contextual", reason: "military-unit-name" };
+  if (/^\s*(?:In\s+\d{4}\s*,?\s*)?(?:Nazi\s+Germany|Germany|the Nazis|Hitler|the Soviet Union|Japan)\s+(?:had\s+)?(?:invaded|occupied|annexed|attacked)\b/i.test(clause)) return { scope: "contextual", reason: "historical-event" };
+  const named = name.split(/\s+/).some((token) => token.length > 2 && new RegExp(`\\b${escapePattern(token)}\\b`, "i").test(clause));
+  const action = /\b(?:born|grew up|raised|lived|living|resid(?:ed|es|ing)|sett(?:led|ling)|mov(?:e|ed|ing)|immigrat(?:ed|ing)|emigrat(?:ed|ing)|fled|escap(?:ed|ing)|deport(?:ed|ation)|sent|taken|took|brought|explor(?:e|ed)|arriv(?:ed|ing)|went|came|coming|return(?:ed|ing)|travell?(?:ed|ing)|served|serving|stationed|trained|training|worked|working|studied|attended|visited|survived|liberated|liberation|imprisoned|held|spent|remained|was in|were in|was at|were at|was based|were based|headed|landed)\b/i;
+  if (action.test(clause) && (/\b(?:he|she|I|we|they|him|her|his|my|our)\b/i.test(clause) || named || /^\s*(?:Born|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+was born)\b/.test(clause))) {
+    if (/\b(?:his|her|their|the)\s+family\b/i.test(clause) && !(hasCompanion || /\b(?:he|she|I|we)\b/i.test(clause) || named)) {
+      return { scope: "uncertain", reason: "family-membership-unspecified" };
+    }
+    return { scope: "personal", reason: "explicit-personal-context" };
+  }
+  return { scope: "uncertain", reason: "subject-not-established" };
+}
+
+const NEGATED_BIRTH = /\b(?:not|never)\s+(?:(?:actually|really)\s+)?born\b|\bborn\s+not\s+in\b/i;
+
+function roleFor(canonical, before, after, evidence) {
+  const site = gazetteer.known_sites[canonical];
+  if (evidence.scope === "contextual") return site || "transit";
+  if (/\bborn\b(?:(?!\b(?:from|to|moved|lived|grew|parents)\b).)*\b(?:in|at|is)\b(?:(?!\b(?:from|to|near|outside|moved|moving|lived|living|grew|raised|parents|went|came|settled|trained|served|worked)\b).)*$/i.test(before) && evidence.scope === "personal" && !NEGATED_BIRTH.test(before)) return "birthplace";
+  if (/\bliberated\s+(?:at|in|from)\s+(?:(?!\b(?:and|then|before|after|moved|travelled|went|came)\b).)*$/i.test(before)) return "liberation";
+  if (site) return site;
+  const destination = /\b(?:to|in|at)\b(?:(?!\b(?:from|through|via|towards|of)\b).)*$/i.test(before);
+  if (destination && /\b(?:sett(?:led|ling)|immigrat(?:ed|ing)|emigrat(?:ed|ing)|mov(?:ed|ing)|move|relocat(?:ed|ing)|liv(?:ed|ing|es)|resid(?:ed|es|ing)|grew up|raised|made (?:a|their|his|her) home)\b/i.test(before)) return "resettlement";
+  if (destination && /\b(?:came|arrived|went|returned|coming|return)\b/i.test(before) && /\bwhere\b[^.!?]*\b(?:remained|lives?|settled|home)\b/i.test(after)) return "resettlement";
+  return "transit";
+}
+
+function placeDate(clause, hit, hits) {
+  const mentions = dateMentions(clause);
+  if (!mentions.length) return unknownDate(clause.match(/\bduring\s+the\s+(?:Second|First)\s+World\s+War\b/i)?.[0]);
+  const assigned = [];
+  for (const date of mentions) {
+    const gap = (place) => Math.max(date.start - place.end, place.start - date.end, 0);
+    const closest = hits.reduce((best, place) => gap(place) < gap(best) ? place : best, hits[0]);
+    const lo = Math.min(hit.start, closest.start), hi = Math.max(hit.end, closest.end);
+    let between = clause.slice(lo, hi);
+    for (const place of [...hits].reverse()) {
+      if (lo <= place.start && place.end <= hi) {
+        between = between.slice(0, place.start - lo) + " ".repeat(place.end - place.start) + between.slice(place.end - lo);
+      }
+    }
+    if (closest === hit || /^(?:\s|,|\band\b|\bor\b|\bvia\b|\bthrough\b)+$/i.test(between)) assigned.push(date.value);
+  }
+  return assigned.length === 1 ? { ...assigned[0] } : unknownDate(
+    assigned.length ? mentions.map((date) => clause.slice(date.start, date.end)).join(" / ") : null,
+  );
+}
+
+function extractEvidence(text, name = "") {
+  const hits = placeHits(text), routes = new Map(), contextual = new Map(), births = [];
+  for (const [left, right] of clauseSpans(text)) {
+    const clause = text.slice(left, right);
+    if (/\bborn\b/i.test(clause) && scopeFor(clause, "", name).scope === "personal" && !NEGATED_BIRTH.test(clause)) {
+      const values = dateMentions(clause);
+      if (values.length === 1) births.push(values[0].value);
+    }
+    const local = hits.filter((hit) => left <= hit.start && hit.start < right).map(
+      (hit) => ({ ...hit, start: hit.start - left, end: hit.end - left }),
+    );
+    for (const hit of local) {
+      const { start, end, canonical } = hit, before = clause.slice(0, start);
+      let evidence = scopeFor(clause, before, name);
+      const asWritten = text.slice(left + start, left + end);
+      const quote = sourceSentence(text, left + start, left + end);
+      const role = roleFor(canonical, before, quote.slice(quote.toLowerCase().indexOf(asWritten.toLowerCase()) + end - start), evidence);
+      let date = placeDate(clause, hit, local);
+      if (/\bborn\b/i.test(clause) && role !== "birthplace" && evidence.scope !== "contextual") {
+        date = unknownDate();
+        evidence = { scope: "uncertain", reason: "birth-context-not-place-evidence" };
+      }
+      const waypoint = {
+        as_written: asWritten, canonical, role, date,
+        confidence: evidence.scope === "personal" ? 0.5 : 0.35,
+        verified: false, source_quote: quote, evidence,
+      };
+      const target = evidence.scope === "contextual" ? contextual : routes, previous = target.get(canonical);
+      if (!previous || (target === routes && (
+        (role === "birthplace" && previous.role !== "birthplace") ||
+        (evidence.scope === "personal" && previous.evidence.scope === "uncertain")
+      ))) target.set(canonical, waypoint);
+    }
+  }
+  const exactBirths = new Set(births.filter((value) => ["day", "month", "year"].includes(value.precision)).map((value) => value.start));
+  const birthDate = exactBirths.size === 1 ? births.find((value) => exactBirths.has(value.start)) : unknownDate();
+  return { waypoints: [...routes.values()], contextual_places: [...contextual.values()], birth_date: birthDate, birth_year: parseYear(birthDate.start) };
+}
+
+function extract(text, name = "") {
+  return extractEvidence(text, name).waypoints;
 }
 
 function orderWaypoints(waypoints) {
@@ -728,23 +931,22 @@ function orderWaypoints(waypoints) {
 }
 
 function parseYear(value) {
-  const match = String(value || "").match(/(1[89]\d\d|20\d\d)/);
+  const match = String(value || "").match(/(1[6-9]\d\d|20\d\d)/);
   return match ? parseInt(match[1], 10) : null;
 }
 
 function toFeature(record) {
   if (record.protected || record.source_public === false) return null;
-  const placed = [];
-  for (const extracted of extract(record.text)) {
+  const evidence = extractEvidence(record.text, record.name);
+  const place = (waypoints) => waypoints.flatMap((extracted) => {
     const waypoint = repairSourceQuote(extracted, record.quote_text ?? record.text);
     const coordinates = geocodeCache[waypoint.canonical];
-    if (coordinates && typeof coordinates.lat === "number") {
-      placed.push({ ...waypoint, lat: round(coordinates.lat), lng: round(coordinates.lng) });
-    }
-  }
-  const ordered = orderWaypoints(placed);
+    return coordinates && typeof coordinates.lat === "number" ? [withWaypointLocationMetadata({
+      ...waypoint, lat: round(coordinates.lat), lng: round(coordinates.lng),
+    })] : [];
+  });
+  const ordered = orderWaypoints(place(evidence.waypoints));
   const home = ordered.find((waypoint) => waypoint.role === "birthplace") || ordered[0];
-  const birthMatch = record.text.match(/\bborn\b[^.]{0,100}\b(18\d\d|19\d\d|20\d\d)\b/i);
   return {
     type: "Feature",
     geometry: home ? { type: "Point", coordinates: [home.lng, home.lat] } : null,
@@ -753,8 +955,10 @@ function toFeature(record) {
       name: record.name,
       is_sample: false,
       group: record.group,
-      conflicts: record.conflicts,
-      birth_year: birthMatch ? parseInt(birthMatch[1], 10) : null,
+      conflicts: deriveConflicts(record.group, record.text, record.name),
+      birth_year: evidence.birth_year,
+      birth_date: evidence.birth_date,
+      journey_revision: JOURNEY_REVISION,
       review_status: "pending",
       bio_excerpt: sentenceExcerpt(record.quote_text ?? record.text),
       archive_url: record.archive_url,
@@ -764,6 +968,7 @@ function toFeature(record) {
       ...mergeMediaCoverage({}, record),
       theme_tags: [],
       waypoints: ordered,
+      contextual_places: place(evidence.contextual_places),
     },
   };
 }
@@ -802,6 +1007,12 @@ function mergeFeature(existing, fresh) {
       theme_tags: existing.properties.theme_tags?.length
         ? existing.properties.theme_tags
         : fresh.properties.theme_tags,
+      ...(preserveReviewedPlaces ? {
+        birth_year: existing.properties.birth_year,
+        birth_date: existing.properties.birth_date,
+        journey_revision: existing.properties.journey_revision,
+        contextual_places: existing.properties.contextual_places || [],
+      } : {}),
       waypoints,
     },
   };

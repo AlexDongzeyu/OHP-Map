@@ -61,7 +61,17 @@ PLACES = {
     "Budapest Ghetto, Hungary": {"lat": 47.4960, "lng": 19.0570, "role": "ghetto", "aliases": ["budapest ghetto"]},
 
     # ---- Camps (with German spellings) -------------------------------------
-    "Auschwitz (Oswiecim), Poland": {"lat": 50.0270, "lng": 19.2030, "role": "camp", "aliases": ["auschwitz", "auschwitz-birkenau", "birkenau", "oswiecim", "oświęcim", "auschwitz birkenau"]},
+    "Auschwitz (Oswiecim), Poland": {"lat": 50.0270, "lng": 19.2030, "role": "camp", "aliases": ["auschwitz", "auschwitz i"],
+        "note": "Representative Auschwitz I reference point. An unqualified Auschwitz mention does not establish a particular camp sector.",
+        "source_url": "https://www.auschwitz.org/en/visiting/getting-to-the-museum/"},
+    "Birkenau (Auschwitz II), Poland": {"lat": 50.035833, "lng": 19.178333, "role": "camp",
+        "aliases": ["birkenau", "auschwitz-birkenau", "auschwitz birkenau", "auschwitz - birkenau", "auschwitz – birkenau", "auschwitz–birkenau", "auschwitz ii", "auschwitz ii-birkenau"],
+        "source_url": "https://www.auschwitz.org/en/history/auschwitz-ii/",
+        "coordinate_source_url": "https://en.wikipedia.org/w/api.php?action=query&titles=Auschwitz_II-Birkenau&prop=coordinates&redirects=1&format=json",
+        "note": "Birkenau is separate from Auschwitz I. This is a site reference, not a prisoner's exact position."},
+    "Oswiecim, Poland": {"lat": 50.038056, "lng": 19.221389, "aliases": ["oswiecim", "oświęcim"],
+        "source_url": "https://en.wikipedia.org/w/api.php?action=query&titles=O%C5%9Bwi%C4%99cim&prop=coordinates&format=json",
+        "note": "The town is not automatically identified as a concentration camp."},
     "Treblinka, Poland":     {"lat": 52.6314, "lng": 22.0520, "role": "camp", "aliases": ["treblinka"]},
     "Sobibor, Poland":       {"lat": 51.4470, "lng": 23.5950, "role": "camp", "aliases": ["sobibor", "sobibór"]},
     "Belzec, Poland":        {"lat": 50.3717, "lng": 23.4586, "role": "camp", "aliases": ["belzec", "bełżec"]},
@@ -75,9 +85,11 @@ PLACES = {
     "Bergen-Belsen, Germany":{"lat": 52.7575, "lng": 9.9076,  "role": "camp", "aliases": ["bergen-belsen", "bergen belsen", "belsen"]},
     "Mauthausen, Austria":   {"lat": 48.2558, "lng": 14.5014, "role": "camp", "aliases": ["mauthausen"]},
     "Flossenburg, Germany":  {"lat": 49.7340, "lng": 12.3560, "role": "camp", "aliases": ["flossenburg", "flossenbürg"]},
-    "Sachsenhausen, Germany":{"lat": 52.7660, "lng": 13.2630, "role": "camp", "aliases": ["sachsenhausen", "oranienburg"]},
+    "Sachsenhausen, Germany":{"lat": 52.7660, "lng": 13.2630, "role": "camp", "aliases": ["sachsenhausen"]},
     "Ravensbruck, Germany":  {"lat": 53.1900, "lng": 13.1700, "role": "camp", "aliases": ["ravensbruck", "ravensbrück"]},
-    "Dora-Mittelbau, Germany": {"lat": 51.5350, "lng": 10.7430, "role": "camp", "aliases": ["dora-mittelbau", "mittelbau-dora", "nordhausen", "dora"]},
+    "Dora-Mittelbau, Germany": {"lat": 51.5350, "lng": 10.7430, "role": "camp",
+        "aliases": ["dora-mittelbau", "mittelbau-dora", "dora mittelbau", "mittelbau dora", "nordhausen-dora"],
+        "note": "Bare Dora is a personal name as well as a camp abbreviation; it is not matched without the camp name."},
     "Kaufering (Dachau subcamp), Germany": {"lat": 48.0890, "lng": 10.8700, "role": "camp", "aliases": ["kaufering"]},
     "Gunskirchen, Austria": {"lat": 48.2200, "lng": 13.9200, "role": "camp", "aliases": ["gunskirchen"]},
     "Theresienstadt (Terezin), Czechia": {"lat": 50.5108, "lng": 14.1508, "role": "transit", "aliases": ["theresienstadt", "terezin", "terezín"]},
@@ -87,7 +99,10 @@ PLACES = {
     "Toronto, Canada":   {"lat": 43.6532, "lng": -79.3832, "aliases": ["toronto"]},
     "Canada":            {"lat": 56.1304, "lng": -106.3468, "aliases": ["canada"]},
     "Montreal, Canada":  {"lat": 45.5019, "lng": -73.5674, "aliases": ["montreal", "montréal"]},
-    "Israel":            {"lat": 31.0461, "lng": 34.8516, "aliases": ["israel", "palestine"]},
+    "Israel":            {"lat": 31.0461, "lng": 34.8516, "aliases": ["israel"]},
+    "Palestine (historical region)": {"lat": 31.0, "lng": 35.0, "precision": "region", "aliases": ["palestine"],
+        "source_url": "https://en.wikipedia.org/w/api.php?action=query&titles=Palestine_(region)&prop=coordinates&format=json",
+        "note": "A broad historical regional reference. Its extent varies by date; it is not replaced with the modern state of Israel."},
     "Switzerland":       {"lat": 46.8182, "lng": 8.2275,  "aliases": ["switzerland"]},
     "Italy":             {"lat": 41.8719, "lng": 12.5674, "aliases": ["italy"]},
     "New York, USA":     {"lat": 40.7128, "lng": -74.0060, "aliases": ["new york"]},
@@ -96,7 +111,16 @@ PLACES = {
     "Ottawa, Canada":    {"lat": 45.4215, "lng": -75.6972, "aliases": ["ottawa"]},
     "Hamilton, Canada":  {"lat": 43.2557, "lng": -79.8711, "aliases": ["hamilton"]},
     "London, Ontario":   {"lat": 42.9849, "lng": -81.2453, "aliases": ["london, ontario", "london on"]},
-    "Kitchener, Canada": {"lat": 43.4516, "lng": -80.4925, "aliases": ["kitchener", "berlin, ontario", "waterloo"]},
+    "Kitchener, Canada": {"lat": 43.4516, "lng": -80.4925, "aliases": ["kitchener", "berlin, ontario"]},
+    "Waterloo, Quebec, Canada": {"lat": 45.344921, "lng": -72.515488,
+        "aliases": ["waterloo, quebec", "waterloo quebec", "waterloo, québec", "waterloo, qc"],
+        "source": "Natural Resources Canada CGNDB EIMLJ",
+        "source_url": "https://geogratis.gc.ca/services/geoname/en/geonames/EIMLJ"},
+    "Waterloo, Ontario, Canada": {"lat": 43.479722, "lng": -80.541111,
+        "aliases": ["waterloo, ontario", "waterloo ontario", "waterloo, on", "university of waterloo"],
+        "source": "Natural Resources Canada CGNDB FDBJZ",
+        "source_url": "https://geogratis.gc.ca/services/geoname/en/geonames/FDBJZ",
+        "note": "A city-level reference. It does not locate an exact university building."},
     "Kingston, Canada":  {"lat": 44.2312, "lng": -76.4860, "aliases": ["kingston"]},
     "Windsor, Canada":   {"lat": 42.3149, "lng": -83.0364, "aliases": ["windsor"]},
     "Winnipeg, Canada":  {"lat": 49.8951, "lng": -97.1384, "aliases": ["winnipeg"]},
@@ -122,14 +146,33 @@ PLACES = {
     # ---- Britain: staging / training before the front ----------------------
     "London, England":   {"lat": 51.5074, "lng": -0.1278, "aliases": ["london, england", "london, uk"]},
     "Aldershot, England": {"lat": 51.2480, "lng": -0.7600, "role": "transit", "aliases": ["aldershot"]},
-    "England":           {"lat": 52.3555, "lng": -1.1743, "aliases": ["england", "britain", "united kingdom"]},
+    "England":           {"lat": 52.3555, "lng": -1.1743, "precision": "region", "aliases": ["england"]},
+    "United Kingdom":    {"lat": 54.2500, "lng": -1.733333, "precision": "country", "aliases": ["united kingdom"],
+        "source": "Natural Earth 110m, representative interior point",
+        "source_url": "https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/"},
+    "Great Britain":     {"lat": 54.2500, "lng": -1.733333, "precision": "region", "aliases": ["great britain", "britain"],
+        "source": "Natural Earth 110m, representative island point",
+        "source_url": "https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/",
+        "note": "A broad island reference, not a synonym for England or an exact settlement."},
     "Liverpool, England": {"lat": 53.4084, "lng": -2.9916, "aliases": ["liverpool"]},
 
     # ---- Second World War theatres (where veterans served) -----------------
-    "Normandy, France":  {"lat": 49.2000, "lng": -0.3700, "role": "liberation", "aliases": ["normandy", "juno beach", "d-day", "d day"]},
+    "Normandy, France":  {"lat": 49.2000, "lng": -0.3700, "precision": "region", "aliases": ["normandy"]},
+    "Juno Beach, France": {"lat": 49.335278, "lng": -0.415278, "precision": "region", "aliases": ["juno beach"],
+        "source_url": "https://en.wikipedia.org/w/api.php?action=query&titles=Juno_Beach&prop=coordinates&format=json",
+        "note": "A landing-sector reference, not an exact landing point. D-Day alone is not a geographic name."},
     "Dieppe, France":    {"lat": 49.9220, "lng": 1.0780, "role": "transit", "aliases": ["dieppe"]},
-    "Caen, France":      {"lat": 49.1829, "lng": -0.3707, "aliases": ["caen", "falaise"]},
-    "Antwerp, Belgium":  {"lat": 51.2194, "lng": 4.4025, "aliases": ["antwerp", "scheldt"]},
+    "Caen, France":      {"lat": 49.1829, "lng": -0.3707, "aliases": ["caen"]},
+    "Falaise, France":   {"lat": 48.8986, "lng": -0.1924, "aliases": ["falaise"],
+        "source": "French government geographic API, commune 14258",
+        "source_url": "https://geo.api.gouv.fr/communes/14258?fields=nom,code,centre"},
+    "Falaise Pocket, France": {"lat": 48.8986, "lng": -0.1924, "precision": "region", "aliases": ["falaise pocket", "falaise gap"],
+        "source_url": "https://geo.api.gouv.fr/communes/14258?fields=nom,code,centre",
+        "note": "Regional battle reference near Falaise. It does not reconstruct a front line or an individual's position."},
+    "Antwerp, Belgium":  {"lat": 51.2194, "lng": 4.4025, "aliases": ["antwerp"]},
+    "Scheldt estuary":   {"lat": 51.416667, "lng": 4.166667, "precision": "region", "aliases": ["scheldt"],
+        "source_url": "https://en.wikipedia.org/w/api.php?action=query&titles=Battle_of_the_Scheldt&prop=coordinates&format=json",
+        "note": "A broad estuary/campaign reference spanning Belgium and the Netherlands, not Antwerp city."},
     "Arnhem, Netherlands": {"lat": 51.9851, "lng": 5.8987, "aliases": ["arnhem"]},
     "Ortona, Italy":     {"lat": 42.3550, "lng": 14.4030, "role": "transit", "aliases": ["ortona"]},
     "Monte Cassino, Italy": {"lat": 41.4870, "lng": 13.8140, "role": "transit", "aliases": ["monte cassino", "cassino"]},
@@ -151,9 +194,41 @@ PLACES = {
     "Edinburgh, Scotland": {"lat": 55.9533, "lng": -3.1883, "aliases": ["edinburgh"]},
     "Ireland":           {"lat": 53.1424, "lng": -7.6921, "aliases": ["ireland"]},
     "Dublin, Ireland":   {"lat": 53.3498, "lng": -6.2603, "aliases": ["dublin"]},
-    "Russia":            {"lat": 61.5240, "lng": 105.3188, "aliases": ["russia", "soviet union", "ussr"]},
+    "Russia":            {"lat": 61.5240, "lng": 105.3188, "aliases": ["russia"]},
+    "Soviet Union (historical region)": {"lat": 58.448647, "lng": 81.565490, "precision": "region", "aliases": ["soviet union", "ussr"],
+        "source": "OpenHistoricalMap, 1980 mid-year polygon reference",
+        "source_url": "https://vtiles.openhistoricalmap.org/maps/ohm_admin/0/0/0.pbf",
+        "note": "Historical multi-republic state. This representative reference is not an exact town or a claim that the whole Soviet Union was modern Russia."},
+    "Tanzania":          {"lat": -6.2, "lng": 34.125, "precision": "country", "aliases": ["tanzania"],
+        "source": "Natural Earth 110m, representative interior point",
+        "source_url": "https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/"},
+    "Kenya":             {"lat": 0.3, "lng": 37.525, "precision": "country", "aliases": ["kenya"],
+        "source": "Natural Earth 110m, representative interior point",
+        "source_url": "https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/"},
     "Moscow, Russia":    {"lat": 55.7558, "lng": 37.6173, "aliases": ["moscow"]},
 }
+
+COUNTRY_REFERENCES = {
+    "Poland", "Hungary", "Romania", "Germany", "Austria", "Netherlands",
+    "France", "Lithuania", "Greece", "Canada", "Israel", "Switzerland",
+    "Italy", "United States", "Ireland", "Russia", "United Kingdom", "Tanzania", "Kenya",
+}
+REGION_REFERENCES = {
+    "Czechoslovakia", "Transnistria", "Transylvania, Romania", "Galicia",
+    "Newfoundland, Canada", "England", "Scotland", "Normandy, France",
+    "Sicily, Italy", "Hong Kong", "Korea", "Great Britain",
+}
+
+
+def location_precision(canonical, info):
+    if info.get("precision"):
+        return info["precision"]
+    if canonical in COUNTRY_REFERENCES:
+        return "country"
+    if canonical in REGION_REFERENCES:
+        return "region"
+    return "site" if info.get("role") in {"camp", "ghetto"} else "city"
+
 
 def main():
     aliases = {}
@@ -165,14 +240,20 @@ def main():
             aliases[a] = canonical
         if "role" in info:
             known_sites[canonical] = info["role"]
-        cache[canonical] = {"lat": info["lat"], "lng": info["lng"],
-                             "source": "curated", "precision": "site" if "role" in info else "city"}
+        cache[canonical] = {
+            "lat": info["lat"], "lng": info["lng"],
+            "source": info.get("source", "curated"),
+            "precision": location_precision(canonical, info),
+        }
+        for key in ("source_url", "coordinate_source_url", "note"):
+            if info.get(key):
+                cache[canonical][key] = info[key]
 
     gaz = {
         "_about": "Curated place gazetteer (generated by tools/build_gazetteer.py). "
                   "'aliases' maps a historical/as-written spelling to one canonical modern "
                   "name; 'known_sites' force-matches camp/ghetto/transit roles.",
-        "extractor_revision": 3,
+        "extractor_revision": 4,
         "aliases": dict(sorted(aliases.items())),
         "known_sites": dict(sorted(known_sites.items())),
     }

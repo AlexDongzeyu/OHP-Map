@@ -113,7 +113,7 @@ function atlasCtx() {
     warPeriod = store.warAt(state.scrubYear);
     boundaryYear = state.scrubYear;
   } else if (state.view === "explore" && selected) {
-    const year = selected.waypoints[state.activePlaceIndex]?.year;
+    const year = selected.waypoints[state.activePlaceIndex]?.historyYear;
     warPeriod = year ? store.warAt(year) : null;
     boundaryYear = year >= store.time.min && year <= store.time.max
       ? year : null;
@@ -139,6 +139,7 @@ function atlasCtx() {
     historyCompare: state.historyCompare,
     historyOpacity: state.historyOpacity,
     historySplit: state.historySplit,
+    datedCorridors: store.corridorsForYear(state.scrubYear),
   };
 }
 
@@ -394,11 +395,16 @@ function refreshPatternEvents() {
   const next = document.querySelector("[data-act='next-year']");
   if (previous) previous.disabled = state.scrubYear <= store.time.min;
   if (next) next.disabled = state.scrubYear >= store.time.max;
+  const routeNotice = document.querySelector("[data-route-availability]");
+  if (routeNotice) routeNotice.textContent = store.corridorsForYear(state.scrubYear).length
+    ? "Only person-linked city/site pairs dated to this year are connected."
+    : "No shared city/site routes have sufficient date evidence for this year.";
   motion.animatePatternEvent();
 }
 
 function updateHistoryInfo() {
   state.historyInfo = state.historyCountry ? atlas.countryInfo(state.historyCountry, state.scrubYear) : null;
+  if (state.historyInfo) state.historyCountry = state.historyInfo.controller;
   if (state.historyCountry && !state.historyInfo && atlas.historyLoaded()) {
     state.historyCountry = null;
   }

@@ -246,23 +246,9 @@ def reconcile(*, include: list[str] | None = None, refresh_listings: bool = True
 
 
 def derive_conflict(group: str, text: str) -> list[str]:
-    """A light, honest conflict/era facet (doc 13 §4.7). Holocaust for survivors;
-    for veterans, detect named conflicts in the bio, defaulting to WWII."""
-    if group == "Holocaust Survivors":
-        return ["The Holocaust"]
-    low = text.lower()
-    found = []
-    if re.search(r"\bkorea(n)?\b", low):
-        found.append("Korean War")
-    if re.search(r"\b(world war ii|wwii|second world war|1939|1940|1941|1942|1943|1944|1945|normandy|dieppe|d-?day)\b", low):
-        found.append("Second World War")
-    if re.search(r"\b(world war i|wwi|first world war|1914|1915|1916|1917|1918)\b", low):
-        found.append("First World War")
-    if re.search(r"\b(afghanistan|bosnia|peacekeep|cyprus|suez)\b", low):
-        found.append("Peacekeeping & later service")
-    if group == "Military Veterans" and not found:
-        found.append("Second World War")
-    return found
+    """A named source conflict, never a default inferred from birth year or group."""
+    from .journey import derive_conflicts
+    return derive_conflicts(group, text)
 
 
 def scrape_all(refresh: bool = False, limit_per: int | None = None) -> list[dict]:

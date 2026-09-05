@@ -12,6 +12,7 @@
 // a hierarchy (doc 13 §4.3).
 import { C, GROUP_COLOR, motionEnabled } from "./config.js";
 import { flagFor } from "./historical-context.js";
+import { alignmentKey, datedTerritories } from "./historical-identity.js";
 
 const d3 = window.d3;
 const topojson = window.topojson;
@@ -35,6 +36,7 @@ export function createAtlas(container) {
   let historyDisplay = { compare: false, split: 50, opacity: 1 };
   let flagsVisible = true, labelsVisible = true;
   let visibleTerritories = [];
+  let uncertainTerritoryIds = new Set();
   const api = {};
 
   api.ready = (async function init() {
@@ -135,11 +137,12 @@ export function createAtlas(container) {
   api.historyLoaded = () => Boolean(historicalFeatures);
 
   function activeTerritories(year) {
-    const instant = year + .5;
-    return (historicalFeatures || []).filter((feature) => (
-      feature.properties.start <= instant &&
-      (feature.properties.end == null || feature.properties.end > instant)
-    ));
+    return datedTerritories(historicalFeatures || [], year);
+  }
+  function uncertainRecords(year) {
+    const quality = store?.historicalIndex?.quality;
+    if (quality?.input_sha256 !== store?.historicalIndex?.geometry_sha256) return new Set();
+    return new Set(quality.years.find((entry) => entry.year === year)?.alternative_record_ids || []);
   }
   function normalizeLocation(value) {
     return String(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -155,7 +158,7 @@ export function createAtlas(container) {
     for (const feature of features) {
       const controller = feature.properties.controller || feature.properties.name;
       const name = administrationLabel(controller, features);
-      if (name) locations.set(`country:${controller}`, { name, controller, kind: "country" });
+      if (name) locations.set(`country:${controller}`, { name, controller, matchName: alignmentKey(controller), kind: "country" });
     }
     for (const journey of store?.journeys || []) {
       for (const place of journey.waypoints) {
@@ -167,13 +170,19 @@ export function createAtlas(container) {
     const aliases = { uk: "united kingdom", usa: "united states", us: "united states", ussr: "soviet union" };
     const term = aliases[normalizeLocation(query)] || normalizeLocation(query);
     return [...locations.values()]
-      .filter((entry) => !term || normalizeLocation(entry.name).includes(term) || normalizeLocation(entry.controller || "").includes(term))
+      .filter((entry) => !term || normalizeLocation(entry.name).includes(term) || normalizeLocation(entry.controller || "").includes(term) || normalizeLocation(entry.matchName || "").includes(term))
       .sort((a, b) => Number(normalizeLocation(b.name) === term) - Number(normalizeLocation(a.name) === term) ||
         Number(b.kind === "country") - Number(a.kind === "country") || a.name.localeCompare(b.name));
   };
   api.countryInfo = (name, year) => {
     const active = activeTerritories(year);
-    const controller = name === "Soviet Union" && administrationLabel("Russia", active) === name ? "Russia" : name;
+    const controllers = [...new Set(active.map((feature) => feature.properties.controller || feature.properties.name))];
+    const aliases = controllers.filter((controller) => alignmentKey(controller) === name);
+    const controller = controllers.includes(name) ? name : (
+      aliases.length === 1 ? aliases[0] : (
+        name === "Soviet Union" && administrationLabel("Russia", active) === name ? "Russia" : name
+      )
+    );
     const features = active.filter((feature) => (
       (feature.properties.controller || feature.properties.name) === controller
     ));
@@ -189,6 +198,8 @@ export function createAtlas(container) {
     return {
       name: administrationLabel(controller, active), controller,
       count: territories.length, territories, flag: flagFor(administrationLabel(controller, active), year),
+      inferredGrouping: features.some((feature) => feature.properties.controller_basis === "name_grouping"),
+      alternativeRecords: features.filter((feature) => uncertainRecords(year).has(feature.properties.id)).length,
       externalUrl: `https://www.oldmapsonline.org/en/history/regions#${referencePosition}year=${year}`,
     };
   };
@@ -504,7 +515,8 @@ export function createAtlas(container) {
   function ensureHistoricalBoundaries() {
     if (historicalFeatures || historicalPromise) return historicalPromise;
     document.documentElement.dataset.historicalBoundaries = "loading";
-    historicalPromise = fetch("data/historical_boundaries.json", { cache: "force-cache" })
+    const revision = store?.historicalIndex?.geometry_revision || "legacy";
+    historicalPromise = fetch(`data/historical_boundaries.json?v=${encodeURIComponent(revision)}`, { cache: "force-cache" })
       .then((response) => {
         if (!response.ok) throw new Error(`Historical boundaries failed to load: ${response.status}`);
         return response.json();
@@ -529,7 +541,8 @@ export function createAtlas(container) {
 
   function territoryStatus(feature, period) {
     if (!period) return "neutral";
-    const { controller, name, kind } = feature.properties;
+    const { name, kind } = feature.properties;
+    const controller = alignmentKey(feature.properties.controller);
     if ((period.occupied || []).includes(controller) || (period.occupied || []).includes(name)) {
       return "occupied";
     }
@@ -558,7 +571,9 @@ export function createAtlas(container) {
 
   function territoryDescription(feature) {
     const { name, controller, kind } = feature.properties;
-    const control = controller && controller !== name ? `, administered by ${controller}` : "";
+    const control = controller && controller !== name
+      ? `, ${feature.properties.controller_basis === "name_grouping" ? "grouped from the name under" : "grouped under"} ${controller}`
+      : "";
     const type = kind ? `, ${String(kind).replaceAll("_", " ")}` : "";
     const status = territoryStatus(feature, currentTerritoryPeriod);
     const alignment = status === "coalition"
@@ -566,7 +581,9 @@ export function createAtlas(container) {
       : (status === "opposition"
         ? currentTerritoryPeriod?.opposition_label
         : (status === "occupied" ? "occupied / contested" : null));
-    return `${name}${control}${type}. Active ${territoryYears(feature)}${alignment ? `. ${alignment}` : ""}`;
+    const uncertainty = uncertainTerritoryIds.has(feature.properties.id)
+      ? ". Multiple dated source outlines overlap for this name." : "";
+    return `${name}${control}${type}. Source dates: ${territoryYears(feature)}${alignment ? `. ${alignment}` : ""}${uncertainty}`;
   }
 
   function emphasizeTerritories() {
@@ -588,7 +605,8 @@ export function createAtlas(container) {
         controller && feature.properties.controller === controller
           ? 1.25
           : (Math.floor(feature.properties.start) === currentBoundaryYear ? 0.95 : 0.45)
-      ));
+      ))
+      .attr("stroke-dasharray", (feature) => uncertainTerritoryIds.has(feature.properties.id) ? "3 2" : null);
   }
 
   function renderHistoricalLabels(features, flaggedNames = new Set()) {
@@ -712,6 +730,7 @@ export function createAtlas(container) {
     const active = activeTerritories(year)
       .sort((a, b) => Number(a.properties.kind === "occupation") - Number(b.properties.kind === "occupation"));
     visibleTerritories = active;
+    uncertainTerritoryIds = uncertainRecords(year);
     document.documentElement.dataset.historicalBoundaries = "ready";
     countriesG.style("display", null);
     historicalG.style("display", null);
@@ -748,6 +767,7 @@ export function createAtlas(container) {
       .attr("data-controller", (feature) => feature.properties.controller)
       .attr("data-territory", (feature) => feature.properties.name)
       .attr("data-new-territory", (feature) => Math.floor(feature.properties.start) === year ? "true" : null)
+      .attr("data-boundary-uncertain", (feature) => uncertainTerritoryIds.has(feature.properties.id) ? "true" : null)
       .attr("data-war-side", (feature) => territoryStatus(feature, period));
     emphasizeTerritories();
     const flaggedNames = renderHistoricalFlags(active, year);
@@ -762,6 +782,7 @@ export function createAtlas(container) {
     hoveredController = null;
     pinnedController = null;
     visibleTerritories = [];
+    uncertainTerritoryIds = new Set();
     historicalG.style("display", "none");
     historicalLabelsG.style("display", "none");
     historicalFlagsG.style("display", "none");
@@ -774,7 +795,7 @@ export function createAtlas(container) {
     if (!store) { globeRoutePool = []; return; }
     globeRoutePool = store.journeys.map((journey) => {
       const coordinates = [];
-      for (const waypoint of journey.waypoints) {
+      for (const waypoint of journey.routeWaypoints) {
         if (!Number.isFinite(waypoint.lng) || !Number.isFinite(waypoint.lat)) continue;
         const coordinate = [waypoint.lng, waypoint.lat];
         const previous = coordinates[coordinates.length - 1];
@@ -923,7 +944,7 @@ export function createAtlas(container) {
     });
     const sel = dots.selectAll("circle").data(store ? store.journeys : [], (j) => j.id);
     sel.enter().append("circle").attr("r", 1.2).merge(sel).each(function (j) {
-      const home = j.waypoints[0];
+      const home = j.routeStart;
       if (!home) { d3.select(this).attr("display", "none"); return; }
       const vis = d3.geoDistance([home.lng, home.lat], center) < Math.PI / 2;
       if (!vis) { d3.select(this).attr("display", "none"); return; }
@@ -997,7 +1018,8 @@ export function createAtlas(container) {
       const journey = store.byId.get(ctx.selectedId);
       const place = journey?.waypoints[ctx.activePlaceIndex];
       if (place && Number.isFinite(place.px) && Number.isFinite(place.py)) {
-        moveCamera({ x: place.px, y: place.py }, 4);
+        const broad = ["country", "region"].includes(place.locationPrecision);
+        moveCamera({ x: place.px, y: place.py }, broad ? 1.6 : 4);
       } else if (changed || frameChanged || reframe || selectedJourney !== ctx.selectedId) {
         if (journey) focusJourney(journey);
         else api.resetCamera();
@@ -1017,7 +1039,7 @@ export function createAtlas(container) {
     const sel = store.byId.get(ctx.selectedId);
     const visible = ctx.matches || (() => true);
     if (sel) {
-      const wp = sel.waypoints.filter((w) => w.px != null);
+      const wp = sel.routeWaypoints.filter((w) => w.px != null);
       const col = GROUP_COLOR[sel.group] || C.accent;
       route(g, wp, {
         className: "explore-route",
@@ -1026,8 +1048,9 @@ export function createAtlas(container) {
         op: 0.9,
         animate: ctx.selectedId !== selectedJourney,
       });
-      wp.forEach((w) => {
-        dot(g, w.px, w.py, { r: 3.6, fill: col });
+      sel.waypoints.filter((w) => w.px != null && (w.evidenceScope === "personal" || w.verified)).forEach((w) => {
+        const broad = ["country", "region", "unknown"].includes(w.locationPrecision);
+        dot(g, w.px, w.py, { r: broad ? 5 : 3.6, fill: broad ? C.paperSoft : col, stroke: broad ? col : "none", sw: broad ? 1 : 0 });
         if (w.liberation || w.newLife) dot(g, w.px, w.py, { r: 8, fill: "none", stroke: col, sw: 1.2, op: 0.35 });
       });
       const active = sel.waypoints[ctx.activePlaceIndex];
@@ -1037,7 +1060,7 @@ export function createAtlas(container) {
       }
     }
     for (const j of store.journeys) {
-      const home = j.waypoints[0];
+      const home = j.routeStart;
       if (!home || home.px == null) continue;
       const isSel = sel && j.id === sel.id;
       const col = GROUP_COLOR[j.group] || C.accent;
@@ -1048,7 +1071,7 @@ export function createAtlas(container) {
       });
       c.style("cursor", "pointer").attr("pointer-events", "all")
         .on("click", () => ctx.onSelect && ctx.onSelect(j.id))
-        .on("mouseenter", (e) => showTip(e, `${j.name}, ${j.hometown || j.group}`))
+        .on("mouseenter", (e) => showTip(e, `${j.name}, ${home.canonical}. ${home.locationPrecision || "Unknown"}-level map reference.`))
         .on("mousemove", (e) => moveTip(e)).on("mouseleave", hideTip);
     }
   }
@@ -1060,9 +1083,7 @@ export function createAtlas(container) {
     const activeIds = new Set(activeEvent?.people.slice(0, 4).map((person) => person.id) || []);
     const activeConflict = ctx.warPeriod?.archive_conflict;
 
-    const corridors = activeConflict && ctx.historyRoutes !== false
-      ? (store.veteranCorridors.get(activeConflict) || []).filter((corridor) => corridor.count > 1).slice(0, 8)
-      : [];
+    const corridors = ctx.historyRoutes !== false ? (ctx.datedCorridors || []) : [];
     const maximumCorridor = Math.max(1, ...corridors.map((corridor) => corridor.count));
     for (const corridor of corridors) {
       const a = projection([corridor.a.lng, corridor.a.lat]);
@@ -1183,7 +1204,7 @@ export function createAtlas(container) {
     if (!svgEl || !j) return;
     const sel = d3.select(svgEl); sel.selectAll("*").remove();
     const W = 340, H = 150, pad = 22;
-    const pts = j.waypoints.filter((w) => w.px != null).map((w) => ({ px: w.px, py: w.py, newLife: w.newLife }));
+    const pts = j.routeWaypoints.filter((w) => w.px != null).map((w) => ({ px: w.px, py: w.py, newLife: w.newLife }));
     if (pts.length < 1) return;
     const xs = pts.map((p) => p.px), ys = pts.map((p) => p.py);
     const minx = Math.min(...xs), maxx = Math.max(...xs), miny = Math.min(...ys), maxy = Math.max(...ys);

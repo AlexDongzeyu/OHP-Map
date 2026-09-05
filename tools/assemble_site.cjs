@@ -25,6 +25,7 @@ const DATA = [
   "war_context.json",
   "historical_boundaries.json",
   "historical_boundary_index.json",
+  "historical_boundary_quality.json",
   "atlas-europe.json",
   "atlas-world.json",
 ];

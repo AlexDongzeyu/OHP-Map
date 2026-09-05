@@ -8,8 +8,8 @@ def test_derive_conflict_holocaust():
     assert scrape_all.derive_conflict("Holocaust Survivors", "anything") == ["The Holocaust"]
 
 
-def test_derive_conflict_veteran_defaults_wwii():
-    assert "Second World War" in scrape_all.derive_conflict("Military Veterans", "he served overseas")
+def test_derive_conflict_does_not_guess_a_veterans_war():
+    assert scrape_all.derive_conflict("Military Veterans", "he served overseas") == []
 
 
 def test_derive_conflict_detects_korea():

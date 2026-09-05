@@ -199,8 +199,9 @@ the map, ARIA labels, a skip link, AA-contrast palette, and a fully honoured
 
 ## Data model (`data/`)
 
-`survivors.geojson` — a GeoJSON `FeatureCollection`, one Feature per survivor, point
-geometry at the hometown (coordinate order **`[lng, lat]`**). Each waypoint keeps both the
+`survivors.geojson` — a GeoJSON `FeatureCollection`, one Feature per account, with a
+reference point for a mapped place (coordinate order **`[lng, lat]`**), not a verified
+personal position. Each waypoint keeps both the
 **as-written** name and the **canonical** one. Properties also carry `review_status`
 (`pending`/`reviewed`) and `featured`. Also emitted: `place_index.json`
 (`canonical place → [survivor_id]`) and `connections.json` (each with a `verified` flag).
@@ -210,6 +211,12 @@ geometry at the hometown (coordinate order **`[lng, lat]`**). Each waypoint keep
 The reproducible builder lives in `tools/historical-boundaries/`. Public accounts that have
 no geocoded places have null geometry and empty waypoints, but retain their source and media.
 `profile_media` contains credited image references and ordered Vimeo chapter metadata.
+`waypoints[].evidence` distinguishes personal, contextual, and uncertain source
+attribution. `contextual_places` preserves family background, historical events, and
+other non-personal mentions without drawing them as the interviewee's route.
+`location_precision` identifies country, region, city, or site references; optional
+location notes and source links explain the reference. `birth_date` and uncertain
+`date.as_written` values retain the source's precision instead of inventing dates.
 `data/source/vimeo_caption_index.json` records public caption availability for every Vimeo
 clip linked from public OHP pages across all groups. Full VTT tracks stay in the ignored
 `data/source/transcript_cache/`. The published dataset contains chapter references and
@@ -227,6 +234,44 @@ ruler database, map-upload/georeferencing service, accounts, and commercial feat
 on the original service.
 `geocode_cache.json` + `data/source/ohp_scraped.json` are committed so rebuilds are
 reproducible and offline. Validated against `data/schema/survivors.schema.json`.
+
+## Accuracy and remaining uncertainty
+
+The map is an index to testimony, not an independently verified reconstruction of every
+life or border. Solid route connections use person-linked city/site references.
+Country-level, regional, contextual, and unresolved mentions do not become precise route
+legs. Ranged or unknown dates are not assigned to a single history year. Shared
+historical links require dated endpoints in the same year.
+
+The place table separates formerly conflated references such as Birkenau/Auschwitz I,
+Oświęcim town/the camp, Waterloo in Quebec/Kitchener, Falaise/Caen, Juno Beach/Normandy,
+and Palestine/the modern state of Israel. Government and museum references are recorded
+alongside the relevant cached locations. Broad reference points remain labelled as broad.
+
+Historical geometry comes from a generalized OpenHistoricalMap zoom-zero tile. Its
+source vertices are preserved. Historical polity names are not silently replaced with
+modern states, and modern country keys are used only for alignment joins. Polygon area
+is calculated on the decoded sphere for ranking, not treated as an official land-area
+measurement. Identical concurrent outlines are deduplicated for display; overlapping
+different outlines remain visible as dashed source alternatives.
+
+The checks are recorded in `data/review/journey_accuracy_audit.json` and
+`data/historical_boundary_quality.json`. The geometry report includes the input hash,
+CRS, tool versions, validity counts, and temporal overlap pairs. Zero invalid polygons
+does not certify historical accuracy. Uncertain source associations still require
+human review of the interview.
+
+To regenerate the historical geometry checks, install the isolated development
+dependencies from `tools/historical-boundaries/requirements.txt`, then run:
+
+```powershell
+node tools\historical-boundaries\build.mjs
+python tools\historical-boundaries\audit_geometry.py --write
+```
+
+The audit performs no network requests, coordinate repairs, or forced boundary unions.
+The browser uses a geometry revision in its request URL so corrected metadata is not
+hidden behind an older cached layer.
 
 ---
 

@@ -1008,6 +1008,17 @@ body[data-view="landing"] :focus-visible { outline-color:var(--on-binding); }
 .place-focus:hover, .place-focus[aria-pressed="true"] { color:var(--accent-deep); background:var(--accent-wash); }
 .place-order { color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
 .place-account { margin:var(--space-2) 0 0 34px; color:var(--ink-soft); font-family:var(--serif); font-size:16px; line-height:1.7; }
+.place-precision { margin:4px 0 var(--space-2) 34px; color:var(--muted); font-size:11px; line-height:1.5; }
+.place-review { margin:var(--space-2) 0 0 34px; color:var(--ink-soft); font-size:11px; line-height:1.55; }
+.location-source { display:flex; align-items:center; gap:var(--space-2); min-height:36px; margin-left:34px; font-size:11px; text-underline-offset:3px; }
+.contextual-places { margin:var(--space-6) 0; }
+.contextual-places > summary { display:flex; align-items:center; justify-content:space-between; gap:var(--space-2); min-height:44px; color:var(--accent-deep); font-size:12px; list-style:none; cursor:pointer; }
+.contextual-places > summary::-webkit-details-marker { display:none; }
+.contextual-places ul { margin:0; padding:0; list-style:none; }
+.contextual-places li { margin:var(--space-4) 0; }
+.contextual-places li > strong { display:block; font-family:var(--serif); font-size:18px; font-weight:500; }
+.contextual-places li > span { display:block; color:var(--muted); font-size:11px; margin-top:4px; }
+.contextual-places li > p { color:var(--ink-soft); font-family:var(--serif); font-size:16px; line-height:1.65; margin:var(--space-2) 0; }
 .map-tools { position:absolute; right:var(--space-6); bottom:var(--space-6); display:grid; padding:3px; border:1px solid var(--rule); border-radius:var(--radius-control); background:var(--paper-soft); box-shadow:var(--shadow-float); }
 .map-tools button { width:40px; height:40px; display:grid; place-items:center; border:0; border-radius:3px; color:var(--ink); background:none; cursor:pointer; }
 .map-tools button:hover { background:var(--accent-wash); }
@@ -1101,6 +1112,7 @@ body[data-view="landing"] :focus-visible { outline-color:var(--on-binding); }
 .country-areas li strong { font-weight:500; }
 .country-areas li span { color:var(--muted); font-size:10px; }
 .country-source { font-size:10px; color:var(--muted); line-height:1.5; margin:var(--space-3) 0 0; }
+.source-caution { margin:var(--space-4) 0; color:var(--ink-soft); font-size:12px; line-height:1.6; }
 .country-inspector .archive-link { min-height:44px; font-size:11px; }
 .history-sources { padding:var(--space-2) var(--space-5) var(--space-3); border-top:1px solid var(--line); }
 .context-resources { margin:var(--space-3) 0; padding:0; list-style:none; }

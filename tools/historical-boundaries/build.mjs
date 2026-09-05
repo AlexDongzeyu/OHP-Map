@@ -1,12 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 
 import { VectorTile } from "@mapbox/vector-tile";
-import { geoEqualEarth, geoPath } from "d3-geo";
+import { geoArea, geoEqualEarth, geoPath } from "d3-geo";
 import { PbfReader } from "pbf";
 import { feature as topojsonFeature } from "topojson-client";
 import { topology } from "topojson-server";
+import { datedTerritories, historicalIdentity } from "../../js/historical-identity.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..", "..");
@@ -31,39 +33,7 @@ const EXCLUDED_NAMES = [
 ];
 
 function controllerFor(name) {
-  const rules = [
-    ["Canada", /^(?:Dominion of )?Canada$/i],
-    ["Australia", /^Australia$/i],
-    ["New Zealand", /^(?:Dominion of )?New Zealand$/i],
-    ["South Africa", /^(?:Union of )?South Africa$/i],
-    ["United States of America", /^(?:United States|US Philippines)$|\bAmerican occupation\b/i],
-    ["Germany", /\b(?:German|Germany|Deutsche|Kiautschou|Nazi)\b/i],
-    ["France", /\bFrench\b|^France$|^French Republic$|^Indochinese (?:Union|Federation)$|^Kwangchowan$|^La Réunion$|^Upper Senegal and Niger$|^Ubangi-Shari-Chad$|^Protectorate of Mauritania$|^Colony of Madagascar and Dependencies$|^Fezzan-Ghadames Military Territory$/i],
-    ["United Kingdom", /\bBritish\b|^United Kingdom|^Crown Colony|^Rhodesia$|^Northern Rhodesia$|^Nyasaland|^Gold Coast|^Trucial States$|^Anglo-Egyptian Sudan$|^Tanganyika Territory$|^Bechuanaland Protectorate$|^Colony and Protectorate of Nigeria$|^(?:Dominion of |Commission Government of )Newfoundland$/i],
-    ["Italy", /\bItalian\b|^Italy$|^Kingdom of Italy$/i],
-    ["Japan", /\bJapan(?:ese)?\b|^Manchukuo$/i],
-    ["Netherlands", /\bDutch\b|^Kingdom of the Netherlands$|^Netherlands$/i],
-    ["Belgium", /\bBelgian\b|^Belgium$/i],
-    ["Portugal", /\bPortuguese\b|^Portugal$|^(?:Province|Colony) of Mozambique$/i],
-    ["Spain", /\bSpanish\b|^Spain$/i],
-    ["Russia", /^Russian Empire$|^Soviet Union$|^USSR$|^Russia$/i],
-    ["Turkey", /^Ottoman Empire$|^Turkey$/i],
-    ["Austria", /^Austria-Hungary$|^Austria$/i],
-    ["Iran", /^Persia$|^Iran$/i],
-    ["Thailand", /^Siam$|^Thailand$/i],
-    ["Egypt", /^(?:Kingdom|Sultanate) of Egypt$|^Egypt$/i],
-    ["Afghanistan", /^(?:Kingdom|Emirate|Protectorate) of Afghanistan$|^Afghanistan$/i],
-    ["Pakistan", /^Dominion of Pakistan$|^Pakistan$/i],
-    ["Myanmar", /^Burma$|^Myanmar$/i],
-    ["Japan", /^State of Burma$/i],
-    ["China", /^China$|^(?:People's )?Republic of China$/i],
-    ["Poland", /^Poland$|^Republic of Poland$/i],
-    ["Czechia", /^Czechoslovakia$|^Czechoslovak Republic$/i],
-    ["Romania", /^Kingdom of Romania$|^Romania$/i],
-    ["Greece", /^Kingdom of Greece$|^Greece$/i],
-    ["Bulgaria", /^(?:Tsardom|Kingdom|People's Republic|Republic) of Bulgaria$|^Bulgaria$/i],
-  ];
-  return rules.find(([, pattern]) => pattern.test(name))?.[0] || name;
+  return historicalIdentity(name).controller;
 }
 
 function overlapsTargetPeriod(start, end) {
@@ -138,12 +108,31 @@ if (refresh || !boundaryExists) {
     max_year: MAX_YEAR,
     feature_count: refreshedFeatures.length,
   };
-  await fs.writeFile(boundaryPath, `${JSON.stringify(output)}\n`);
 } else {
   output = JSON.parse(await fs.readFile(boundaryPath, "utf8"));
 }
 
 const features = topojsonFeature(output, output.objects.territories).features;
+for (let i = 0; i < features.length; i++) {
+  const feature = features[i];
+  const properties = output.objects.territories.geometries[i].properties;
+  if (!("source_area_value" in properties)) properties.source_area_value = properties.area_km2;
+  Object.assign(properties, historicalIdentity(properties.name));
+  properties.area_km2 = Math.round(geoArea(feature) * 6371.0088 ** 2 * 10) / 10;
+  properties.geometry_key = createHash("sha256").update(JSON.stringify(feature.geometry)).digest("hex").slice(0, 20);
+  feature.properties = properties;
+}
+Object.assign(output.metadata, {
+  coordinate_reference_system: "OGC:CRS84",
+  geometry_resolution: "Generalized zoom-zero vector-tile polygons; not survey boundaries or daily front lines.",
+  controller_method: "Historical names are retained. Other administration groups may be inferred from territory names.",
+  area_method: "Spherical area of decoded generalized polygons, radius 6371.0088 km; includes source water/claim geometry, not official land area.",
+  source_area_method: "Provider area value retained without assuming its measurement units.",
+  identity_revision: 2,
+});
+const encoded = `${JSON.stringify(output)}\n`;
+await fs.writeFile(boundaryPath, encoded);
+const geometryHash = createHash("sha256").update(encoded).digest("hex");
 
 const years = [];
 for (let year = MIN_YEAR; year <= MAX_YEAR; year++) {
@@ -153,7 +142,8 @@ for (let year = MIN_YEAR; year <= MAX_YEAR; year++) {
   }).length;
   years.push({
     year,
-    active: features.filter((feature) => activeAt(feature, year)).length,
+    active: datedTerritories(features, year).length,
+    source_records: features.filter((feature) => activeAt(feature, year)).length,
     changes,
   });
 }
@@ -162,8 +152,17 @@ const index = {
   source_license: "CC0",
   min_year: MIN_YEAR,
   max_year: MAX_YEAR,
+  geometry_revision: geometryHash.slice(0, 16),
+  geometry_sha256: geometryHash,
   years,
 };
+const qualityPath = path.join(dataDir, "historical_boundary_quality.json");
+try {
+  const quality = JSON.parse(await fs.readFile(qualityPath, "utf8"));
+  if (quality.input_sha256 === geometryHash) index.quality = quality;
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
 
 const historyAssetDir = path.join(ROOT, "assets", "history");
 await fs.mkdir(historyAssetDir, { recursive: true });
@@ -173,7 +172,7 @@ await fs.writeFile(
 );
 
 for (const year of ERA_ART_YEARS) {
-  const active = features.filter((feature) => activeAt(feature, year));
+  const active = datedTerritories(features, year);
   const activeCollection = { type: "FeatureCollection", features: active };
   const projection = geoEqualEarth().fitExtent([[12, 12], [688, 388]], activeCollection);
   const draw = geoPath(projection).digits(1);

@@ -42,6 +42,57 @@ def source_sentence(text: str, start: int, end: int) -> str:
     return text[left:right].strip()
 
 
+def sentence_spans(text: str) -> list[tuple[int, int]]:
+    """Offsets of abbreviation-aware source sentences, including an unfinished tail."""
+    boundaries = [0, *_sentence_endings(text)]
+    if boundaries[-1] != len(text):
+        boundaries.append(len(text))
+    return [(left, right) for left, right in zip(boundaries, boundaries[1:]) if text[left:right].strip()]
+
+
+_CLAUSE_BREAK = re.compile(
+    r";\s*"
+    r"|(?:,\s*)?\b(?:and|but|while|where|when|before|after|as)\s+"
+    r"(?=(?:he|she|they|we|I|his|her|their|my|our)\b)"
+    r"|(?:,\s*)?\b(?:and(?:\s+then)?|then|before|after)\s+"
+    r"(?=(?:later\s+|finally\s+)?(?:mov(?:ed|ing)|sett(?:led|ling)|arriv(?:ed|ing)|"
+    r"return(?:ed|ing)|travell?(?:ed|ing)|went|came|fled|escaped|serv(?:ed|ing)|"
+    r"liv(?:ed|ing)|grew up|was raised|immigrat(?:ed|ing)|emigrat(?:ed|ing)|work(?:ed|ing))\b)",
+    re.I,
+)
+_NAMED_CLAUSE_BREAK = re.compile(
+    r"(?:,\s*|\b(?:and|but|before|after|when|while|where|as)\s+)"
+    r"(?=[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+"
+    r"(?:was|were|had|has|is|faced|went|came|moved|served|worked|joined|found|recalled)\b)",
+)
+
+
+def clause_spans(text: str) -> list[tuple[int, int]]:
+    """Split only explicit clause boundaries; never use a character-radius window."""
+    spans = []
+    for left, right in sentence_spans(text):
+        sentence = text[left:right]
+        def boundary(match):
+            joint_subject = (
+                re.search(r"\b(?:[A-Z][a-z]+|(?i:he|she|I|we|they))\s*$", sentence[:match.start()])
+                and re.match(r"(?:his|her|their|my|our)\s+(?:family|parents?|father|mother)\b", sentence[match.end():], re.I)
+                and re.search(r"\band\s+$", match.group(0), re.I)
+            )
+            return not joint_subject
+
+        cuts = sorted({0, len(sentence), *(
+            match.end()
+            for pattern in (_CLAUSE_BREAK, _NAMED_CLAUSE_BREAK)
+            for match in pattern.finditer(sentence)
+            if boundary(match)
+        )})
+        spans.extend(
+            (left + start, left + end) for start, end in zip(cuts, cuts[1:])
+            if sentence[start:end].strip()
+        )
+    return spans
+
+
 def repair_source_quote(waypoint: dict, text: str) -> dict:
     """Expand an unreviewed supporting quotation without re-extracting its claims."""
     if waypoint.get("verified") or not text:

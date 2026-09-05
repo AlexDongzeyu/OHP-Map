@@ -17,14 +17,14 @@ import argparse
 import json
 import sys
 
-from . import config, derive, extract, gazetteer, geocode, ingest, media, review, transcript_index, validate
+from . import config, derive, extract, gazetteer, geocode, ingest, journey, media, review, transcript_index, validate
 from .text import repair_source_quote, sentence_excerpt
 
 
 def _normalize_waypoint(wp: dict) -> dict:
-    """Fill canonical name + force-match known-site role. Keeps as_written intact."""
+    """Resolve names without changing source roles or reviewed canonical identities."""
     wp = dict(wp)
-    canonical = gazetteer.normalize(wp.get("as_written", ""))
+    canonical = wp.get("canonical") or gazetteer.normalize(wp.get("as_written", ""))
     wp["canonical"] = canonical or wp.get("as_written", "")
     wp["resolved"] = canonical is not None
     return wp
@@ -33,13 +33,34 @@ def _normalize_waypoint(wp: dict) -> dict:
 def _record_to_survivor(rec: dict, extractor) -> dict:
     """Produce a survivor dict with normalized, ordered waypoints (pre-geocode)."""
     quote_text = media.source_text_for(rec)
-    if rec.get("waypoints"):
+    evidence = None
+    reviewed = rec.get("review_status") == "reviewed"
+    contextual = rec.get("contextual_places", [])
+    if rec.get("waypoints") or reviewed:
         waypoints = [
             _normalize_waypoint(
                 repair_source_quote(wp, quote_text)
                 if rec.get("review_status") != "reviewed" else wp
             )
-            for wp in rec["waypoints"]
+            for wp in rec.get("waypoints", [])
+        ]
+        if not reviewed:
+            # Curated ordering/dates are not silently replaced by a heuristic.
+            # Unsupported claims remain explicit review questions.
+            for wp in waypoints:
+                if not wp.get("verified"):
+                    wp.setdefault("evidence", {
+                        "scope": "uncertain", "reason": "curated-claim-needs-review",
+                    })
+    elif isinstance(extractor, extract.OfflineExtractor):
+        evidence = extractor.extract_evidence(rec.get("text", ""), rec.get("name", ""))
+        waypoints = [
+            _normalize_waypoint(repair_source_quote(wp, quote_text))
+            for wp in evidence["waypoints"]
+        ]
+        contextual = [
+            _normalize_waypoint(repair_source_quote(wp, quote_text))
+            for wp in evidence["contextual_places"]
         ]
     else:  # raw testimony text -> run the extractor
         waypoints = [
@@ -56,8 +77,13 @@ def _record_to_survivor(rec: dict, extractor) -> dict:
         "is_sample": rec.get("is_sample", False),
         "featured": rec.get("featured", False),
         "group": rec.get("group", "Holocaust Survivors"),
-        "conflicts": rec.get("conflicts", []),
-        "birth_year": rec.get("birth_year"),
+        "conflicts": (
+            journey.derive_conflicts(rec.get("group", "Holocaust Survivors"), rec.get("text", ""), rec.get("name", ""))
+            if evidence is not None else rec.get("conflicts", [])
+        ),
+        "birth_year": evidence["birth_year"] if evidence is not None else rec.get("birth_year"),
+        **({"birth_date": evidence["birth_date"], "journey_revision": journey.REVISION} if evidence is not None else {}),
+        **({"review_status": "reviewed"} if reviewed else {}),
         "bio_excerpt": sentence_excerpt(
             rec.get("bio_excerpt", "") or quote_text,
         ),
@@ -70,24 +96,40 @@ def _record_to_survivor(rec: dict, extractor) -> dict:
         "profile_media": profile_media,
         **media_coverage,
         "waypoints": waypoints,
+        "contextual_places": contextual,
     }
 
 
 def _geocode_survivor(s: dict, cache: dict, allow_network: bool, warnings: list) -> dict:
-    placed = []
-    for wp in s["waypoints"]:
-        coords = geocode.geocode(wp["canonical"], cache, allow_network=allow_network)
-        if not coords:
-            warnings.append(f"{s['survivor_id']}: no coordinates for "
-                            f"{wp['canonical']!r} (as written {wp['as_written']!r}) — dropped")
-            continue
-        wp = dict(wp)
-        wp["lat"] = round(coords["lat"], 6)
-        wp["lng"] = round(coords["lng"], 6)
-        wp.pop("resolved", None)
-        placed.append(wp)
     s = dict(s)
-    s["waypoints"] = placed
+    for key in ("waypoints", "contextual_places"):
+        placed = []
+        for wp in s.get(key, []):
+            coords = geocode.geocode(wp["canonical"], cache, allow_network=allow_network)
+            if not coords:
+                warnings.append(f"{s['survivor_id']}: no coordinates for "
+                                f"{wp['canonical']!r} (as written {wp['as_written']!r}) — dropped")
+                continue
+            wp = dict(wp)
+            reviewed = wp.get("verified") or s.get("review_status") == "reviewed"
+            wp["lat"] = wp.get("lat", round(coords["lat"], 6)) if reviewed else round(coords["lat"], 6)
+            wp["lng"] = wp.get("lng", round(coords["lng"], 6)) if reviewed else round(coords["lng"], 6)
+            wp["location_precision"] = wp.get("location_precision", coords.get("precision", "unknown")) if reviewed else coords.get("precision", "unknown")
+            for source_key, output_key in (
+                ("note", "location_note"),
+                ("source_url", "location_source_url"),
+                ("coordinate_source_url", "location_coordinate_source_url"),
+            ):
+                if reviewed and output_key in wp:
+                    continue
+                value = coords.get(source_key)
+                if isinstance(value, str) and value:
+                    wp[output_key] = value
+                else:
+                    wp.pop(output_key, None)
+            wp.pop("resolved", None)
+            placed.append(wp)
+        s[key] = placed
     return s
 
 

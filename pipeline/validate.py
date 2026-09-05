@@ -175,8 +175,13 @@ def validate_geojson(doc: dict) -> list[str]:
             if checked_places.get(canonical):
                 errors.append(f"{sid}: {checked_places[canonical]}")
             expected = gazetteer.known_site_role(wp.get("canonical", ""))
-            # A known *camp* mislabelled as e.g. birthplace is the classic LLM error.
-            if expected == "camp" and wp.get("role") in ("birthplace", "resettlement"):
+            documented_camp_birth = wp.get("role") == "birthplace" and (
+                wp.get("verified") or props.get("review_status") == "reviewed" or (
+                    wp.get("evidence", {}).get("scope") == "personal"
+                    and re.search(r"\bborn\b", wp.get("source_quote", ""), re.I)
+                )
+            )
+            if expected == "camp" and wp.get("role") in ("birthplace", "resettlement") and not documented_camp_birth:
                 errors.append(
                     f"{sid}: {wp.get('canonical')} is a known camp but labelled "
                     f"'{wp.get('role')}' — check the extraction"
