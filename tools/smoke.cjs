@@ -42,7 +42,13 @@ function assertCounterMotion(label, { targets, samples }) {
   });
   page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text()); });
   page.on("pageerror", (e) => errors.push("pageerror: " + (e.stack || e.message)));
-  page.on("requestfailed", (r) => { if (!/favicon/.test(r.url())) errors.push("requestfailed: " + r.url()); });
+  page.on("requestfailed", (request) => {
+    const reason = request.failure()?.errorText;
+    // Scrubbing can remove an obsolete flag before its image request completes.
+    if (!/favicon/.test(request.url()) && reason !== "net::ERR_ABORTED") {
+      errors.push(`requestfailed: ${request.url()} (${reason})`);
+    }
+  });
 
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   async function check(label, fn) {
@@ -1004,6 +1010,7 @@ function assertCounterMotion(label, { targets, samples }) {
   await check("the archive remains usable without GSAP", async () => {
     const staticPage = await browser.newPage();
     staticPage.on("pageerror", (error) => errors.push("static mode: " + (error.stack || error.message)));
+    staticPage.on("console", (message) => { if (message.type() === "error") errors.push("static mode: " + message.text()); });
     await staticPage.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
     await staticPage.setRequestInterception(true);
     staticPage.on("request", (request) => {
@@ -1012,7 +1019,13 @@ function assertCounterMotion(label, { targets, samples }) {
       } else request.continue();
     });
     await staticPage.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 40000 });
-    await staticPage.waitForSelector(".archive-register", { timeout: 15000 });
+    await staticPage.waitForFunction(
+      () => document.querySelector(".archive-register, #fatal:not([hidden]), #error:not([hidden])"),
+      { timeout: 20000 },
+    );
+    if (!await staticPage.$(".archive-register")) {
+      throw new Error(await staticPage.$eval("#fatal:not([hidden]), #error:not([hidden])", (element) => element.textContent.trim()));
+    }
     const fallback = await staticPage.evaluate(() => ({
       mode: document.documentElement.dataset.motion,
       counters: [...document.querySelectorAll("[data-counter]")].map((counter) => ({
