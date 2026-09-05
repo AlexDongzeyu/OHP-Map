@@ -61,6 +61,19 @@ offers a retry without resetting the year or layers. About and the year-context 
 include a readable boundary-audit summary, with the underlying report labelled as a
 technical JSON download.
 
+On a short screen, Explore gives the account list and reader the available height
+instead of leaving them below a fixed map. **Map** and **Read** controls switch between
+the two without discarding the reader's scroll position. On portrait phones, the reader
+can also be expanded. Compact History context opens as a readable sheet with a clear
+return to the map.
+
+Every dated place is available in the History browse list, including references omitted
+from the map to avoid crowded markers. Selecting one opens and focuses its account
+details. Selected history routes use only city/site references dated to that year;
+an account's undated or other-year references remain in Explore, not on that year map.
+Account-map markers also open their matching source entries. Broken account and place
+links show an explanation and recovery actions rather than silently returning home.
+
 ---
 
 ## Quick start (offline, ~2 minutes)

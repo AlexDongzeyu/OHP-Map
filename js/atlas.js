@@ -250,7 +250,7 @@ export function createAtlas(container) {
     let left = 20, right = w - 20, top = header + 20, bottom = h - 24;
     const bounds = (selector) => {
       const element = document.querySelector(selector);
-      if (!element || (mobile && selector === ".rail" && element.closest(".has-sel"))) return null;
+      if (!element?.getClientRects().length || (mobile && selector === ".rail" && element.closest(".has-sel"))) return null;
       let x = 0, y = 0;
       for (let parent = element; parent && parent !== container.parentElement; parent = parent.offsetParent) {
         x += parent.offsetLeft;
@@ -258,7 +258,7 @@ export function createAtlas(container) {
       }
       return { left: x, top: y, right: x + element.offsetWidth, bottom: y + element.offsetHeight };
     };
-    if (view === "explore") {
+    if (view === "explore" && document.querySelector(".ov-explore")?.dataset.presentation !== "reader") {
       const sheet = bounds(".rail");
       const profile = bounds(".panel-host:has(.panel)");
       const caption = bounds(".explore-map-status");
@@ -270,6 +270,8 @@ export function createAtlas(container) {
         if (profile) right = profile.left - 24;
       }
       if (caption) top = Math.max(top, caption.bottom + 12);
+      const readerReturn = bounds(".reader-return");
+      if (readerReturn) bottom = Math.min(bottom, readerReturn.top - 16);
     } else if (view === "patterns") {
       const origins = bounds(".patterns-intro");
       const heading = bounds(".patterns-map-head");
@@ -746,6 +748,7 @@ export function createAtlas(container) {
         return group;
       });
     groups.attr("aria-label", (entry) => `Inspect ${entry.name} in ${year}`)
+      .attr("data-map-focus", (entry) => `country:${entry.name}`)
       .attr("transform", (entry) => `translate(${entry.x},${entry.y}) scale(${1 / currentK})`);
     groups.select("image").attr("href", (entry) => entry.flag.src);
     groups.select("text").text((entry) => labelsVisible ? entry.name : "");
@@ -1016,6 +1019,7 @@ export function createAtlas(container) {
       historySplit: historyDisplay.split,
     }, forceFrame);
     if (!overlayG) return;
+    const focusKey = container.contains(document.activeElement) ? document.activeElement.dataset.mapFocus : null;
     const changed = v !== view; view = v;
     controllerHandler = v === "patterns" ? ctx.onController : null;
     const nextController = v === "patterns" && ctx.patternsLayer !== "origins" ? ctx.historyCountry : null;
@@ -1069,6 +1073,9 @@ export function createAtlas(container) {
         focusController(pinnedController, ctx.scrubYear);
       } else if ((changed || frameChanged || reframe) && !ctx.activePatternEvent) api.resetCamera();
     }
+    if (focusKey && !container.inert) {
+      svg.select(`[data-map-focus="${CSS.escape(focusKey)}"]`).node()?.focus({ preventScroll: true });
+    }
   };
 
   function drawExplore(ctx) {
@@ -1087,13 +1094,29 @@ export function createAtlas(container) {
       });
       personalMapPoints(sel).forEach((w) => {
         const broad = ["country", "region", "unknown"].includes(w.locationPrecision);
-        dot(g, w.px, w.py, { r: broad ? 5 : 3.6, fill: broad ? C.paperSoft : col, stroke: broad ? col : "none", sw: broad ? 1 : 0 });
-        if (w.liberation || w.newLife) dot(g, w.px, w.py, { r: 8, fill: "none", stroke: col, sw: 1.2, op: 0.35 });
+        const index = sel.waypoints.indexOf(w);
+        const description = `${w.canonical}. ${w.locationPrecision || "Unknown"}-level reference. Open the source passage.`;
+        dot(g, w.px, w.py, { r: broad ? 6 : 5, fill: broad ? C.paperSoft : col, stroke: broad ? col : "none", sw: broad ? 1 : 0 })
+          .attr("class", "account-place-marker").attr("data-place-index", index)
+          .attr("data-map-focus", `place:${sel.id}:${index}`)
+          .attr("role", "button").attr("tabindex", 0).attr("aria-label", description)
+          .style("cursor", "pointer")
+          .on("click", () => ctx.onPlace(index))
+          .on("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              ctx.onPlace(index);
+            }
+          })
+          .on("mouseenter", (event) => showTip(event, description))
+          .on("mousemove", moveTip).on("mouseleave", hideTip);
+        if (w.liberation || w.newLife) dot(g, w.px, w.py, { r: 8, fill: "none", stroke: col, sw: 1.2, op: 0.35 })
+          .style("pointer-events", "none");
       });
       const active = sel.waypoints[ctx.activePlaceIndex];
       if (active && Number.isFinite(active.px) && Number.isFinite(active.py)) {
         dot(g, active.px, active.py, { r: 9, fill: C.paperSoft, stroke: col, sw: 2 })
-          .attr("class", "selected-place-ring");
+          .attr("class", "selected-place-ring").style("pointer-events", "none");
       }
       return;
     }
@@ -1148,9 +1171,10 @@ export function createAtlas(container) {
 
     for (const journey of store.journeys) {
       if (!activeIds.has(journey.id)) continue;
-      const waypoints = journey.waypoints.filter((waypoint) => waypoint.px != null);
+      const waypoints = journey.routeWaypoints.filter((waypoint) => waypoint.px != null && waypoint.historyYear === ctx.scrubYear);
       if (waypoints.length < 2) continue;
       g.append("path")
+        .datum({ account: journey.id, year: ctx.scrubYear, waypoints })
         .attr("class", "selected-testimony-route")
         .attr("d", journeyPath(waypoints))
         .attr("fill", "none")
@@ -1187,6 +1211,7 @@ export function createAtlas(container) {
         op: active ? 0.98 : 0.76,
       });
       marker.attr("class", "pattern-event-marker")
+        .attr("data-map-focus", `event:${event.key}`)
         .attr("role", "button")
         .attr("tabindex", 0)
         .attr("aria-label", `${event.year}, ${event.place}, ${event.count} ${event.count === 1 ? "testimony" : "testimonies"}`)

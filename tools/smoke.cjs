@@ -712,14 +712,25 @@ function assertCounterMotion(label, { targets, samples }) {
       marker.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await page.waitForSelector(".testimony-moment.is-selected", { timeout: 3000 });
-    const selection = await page.evaluate(() => ({
-      selectedRoutes: document.querySelectorAll(".selected-testimony-route").length,
-      segmentedRoutes: [...document.querySelectorAll(".selected-testimony-route")]
-        .filter((path) => (path.getAttribute("d").match(/M/g) || []).length !== 1).length,
-      place: document.querySelector(".testimony-moment.is-selected > strong")?.textContent,
-      eventPosition: document.querySelector(".moment-nav b")?.textContent,
-    }));
-    if (!selection.selectedRoutes || selection.selectedRoutes > 4 || selection.segmentedRoutes ||
+    const selection = await page.evaluate(async () => {
+      const { loadData } = await import("./js/data.js");
+      const store = await loadData();
+      const ids = [...document.querySelectorAll(".testimony-moment .event-person")].slice(0, 4).map((button) => button.dataset.survivor);
+      const paths = [...document.querySelectorAll(".selected-testimony-route")];
+      return {
+        expectedRoutes: ids.filter((id) => store.byId.get(id).routeWaypoints.filter((place) => place.historyYear === 1944).length > 1).length,
+        selectedRoutes: paths.length,
+        invalidRoutes: paths.some((path) => path.__data__.waypoints.some((place) => place.historyYear !== 1944 ||
+          (!place.verified && place.evidenceScope !== "personal") || ["country", "region"].includes(place.locationPrecision))),
+        peoplePaired: [...document.querySelectorAll(".testimony-moment .event-person")].every((button) =>
+          button.querySelector(".event-avatar .medal") &&
+          button.querySelector(".event-person-name")?.textContent === store.byId.get(button.dataset.survivor).name),
+        segmentedRoutes: paths.filter((path) => (path.getAttribute("d").match(/M/g) || []).length !== 1).length,
+        place: document.querySelector(".testimony-moment.is-selected > strong")?.textContent,
+        eventPosition: document.querySelector(".moment-nav b")?.textContent,
+      };
+    });
+    if (selection.selectedRoutes !== selection.expectedRoutes || selection.invalidRoutes || selection.segmentedRoutes || !selection.peoplePaired ||
         !selection.place || !/\d+ \/ \d+/.test(selection.eventPosition || "")) {
       throw new Error(`testimony selection did not reveal focused detail ${JSON.stringify(selection)}`);
     }
@@ -1425,6 +1436,254 @@ function assertCounterMotion(label, { targets, samples }) {
     }));
     if (!closed.hidden || closed.expanded !== "false" || closed.focused !== "share-map") {
       throw new Error(`sharing could not be dismissed ${JSON.stringify(closed)}`);
+    }
+  });
+
+  await check("landscape and zoomed layouts keep the collection and reader usable", async () => {
+    for (const viewport of [
+      { width: 568, height: 320 },
+      { width: 667, height: 375 },
+      { width: 683, height: 425, deviceScaleFactor: 2 },
+    ]) {
+      await page.setViewport(viewport);
+      await page.goto(BASE + `/?compact-reader=${viewport.width}#/explore`, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      const collection = await page.evaluate(() => ({
+        presentation: document.querySelector(".ov-explore").dataset.presentation,
+        listHeight: document.querySelector("[data-rail-list]").clientHeight,
+        mapInert: document.getElementById("map").inert,
+        overflow: document.documentElement.scrollWidth > innerWidth,
+      }));
+      if (collection.presentation !== "reader" || collection.listHeight < 100 || !collection.mapInert || collection.overflow) {
+        throw new Error(`compact collection is not usable ${JSON.stringify({ viewport, ...collection })}`);
+      }
+      await page.type("#search", "Wally Adam");
+      await page.click(".rail-card");
+      await page.waitForSelector(".panel");
+      await wait(650);
+      const space = await page.$eval(".panel", (panel) => panel.clientHeight - panel.querySelector(".profile-toolbar").offsetHeight);
+      if (space < 160) throw new Error(`only ${space}px of reading space at ${viewport.width}px`);
+      await page.click("[data-act='expand-reader']");
+      await page.waitForFunction(() => document.querySelector(".ov-explore").dataset.presentation === "map");
+      await wait(950);
+      if (await page.$eval("#map", (map) => map.inert)) throw new Error("switching to Map left the map disabled");
+      const label = await page.$eval(".account-place-marker", (marker) => marker.getAttribute("aria-label"));
+      const accessibility = await page.target().createCDPSession();
+      const { nodes } = await accessibility.send("Accessibility.getFullAXTree");
+      await accessibility.detach();
+      if (!nodes.some((node) => !node.ignored && node.role?.value === "button" && node.name?.value === label)) {
+        throw new Error("the account map reference is absent from the accessibility tree");
+      }
+      await page.$eval(".account-place-marker", (marker) => marker.focus());
+      await page.keyboard.press("Enter");
+      await wait(650);
+      const returned = await page.evaluate(() => ({
+        presentation: document.querySelector(".ov-explore").dataset.presentation,
+        focused: document.activeElement.dataset.placeStep,
+        pressed: document.activeElement.getAttribute("aria-pressed"),
+        top: document.activeElement.getBoundingClientRect().top,
+        toolbar: document.querySelector(".profile-toolbar").getBoundingClientRect().bottom,
+      }));
+      if (returned.presentation !== "reader" || returned.focused == null || returned.pressed !== "true" ||
+          returned.top < returned.toolbar + 8) {
+        throw new Error(`a map reference did not open its source entry ${JSON.stringify(returned)}`);
+      }
+      await page.click(".panel-close");
+      if (await page.$eval("#search", (search) => search.value) !== "Wally Adam") {
+        throw new Error("closing the compact reader lost the search");
+      }
+    }
+  });
+  await check("portrait readers expand without losing the account or scroll position", async () => {
+    await page.setViewport({ width: 390, height: 844 });
+    await page.goto(BASE + "/?expand-reader=1#/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    const before = await page.$eval(".panel", (panel) => panel.clientHeight);
+    await page.click("[data-act='expand-reader']");
+    const expanded = await page.$eval(".panel", (panel) => panel.clientHeight);
+    if (expanded < before + 100) throw new Error("Expand did not give the account more reading space");
+    await page.click("[data-profile-section='profile-places']");
+    await wait(650);
+    const top = await page.$eval(".panel", (panel) => panel.scrollTop);
+    await page.click("[data-act='expand-reader']");
+    const restored = await page.evaluate(() => ({
+      mode: document.querySelector(".ov-explore").dataset.presentation,
+      name: document.getElementById("profile-name").textContent,
+      scroll: document.querySelector(".panel").scrollTop,
+      mapInert: document.getElementById("map").inert,
+    }));
+    if (restored.mode !== "split" || restored.name !== "Wally Adam" || restored.mapInert || Math.abs(restored.scroll - top) > 1) {
+      throw new Error(`restoring the map lost the reading position ${JSON.stringify(restored)}`);
+    }
+  });
+  await check("every dated place can be browsed and selection exposes its people", async () => {
+    await page.setViewport({ width: 390, height: 844 });
+    await page.goto(BASE + "/?history-directory=1#/patterns/1944", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    await page.waitForSelector(".pattern-event-marker");
+    await page.$eval(".pattern-event-marker", (marker) => marker.focus());
+    await page.keyboard.press("Enter");
+    await wait(550);
+    const selected = await page.evaluate(() => {
+      const title = document.getElementById("testimony-place-title");
+      const body = document.querySelector("[data-pattern-events]").getBoundingClientRect();
+      const rect = title.getBoundingClientRect();
+      return {
+        open: document.querySelector("[data-history-context]").open,
+        focused: document.activeElement.id,
+        visible: rect.top >= body.top && rect.bottom <= body.bottom,
+      };
+    });
+    if (!selected.open || selected.focused !== "testimony-place-title" || !selected.visible) {
+      throw new Error(`selected testimony is hidden ${JSON.stringify(selected)}`);
+    }
+    await page.click("[data-act='clear-event']");
+    const directory = await page.evaluate(async () => {
+      const { loadData } = await import("./js/data.js");
+      const store = await loadData();
+      const listed = [...document.querySelectorAll("[data-event]")].map((button) => button.dataset.event);
+      const expected = store.eventsByYear.get(1944).map((event) => event.key);
+      const markers = [...document.querySelectorAll(".pattern-event-marker")].map((marker) => marker.getAttribute("aria-label"));
+      const omitted = store.eventsByYear.get(1944).find((event) => !markers.some((label) => label.includes(`${event.year}, ${event.place},`)));
+      return { listed, expected, omitted: omitted?.key, open: document.querySelector("[data-history-place-list]").open };
+    });
+    if (!directory.open || directory.listed.length !== directory.expected.length ||
+        directory.expected.some((key) => !directory.listed.includes(key)) || !directory.omitted) {
+      throw new Error(`the directory omits dated references ${JSON.stringify(directory)}`);
+    }
+    await page.evaluate((key) => document.querySelector(`[data-event="${CSS.escape(key)}"]`).focus(), directory.omitted);
+    await page.keyboard.press("Enter");
+    await wait(550);
+    if (!await page.$(".testimony-moment.is-selected")) throw new Error("a lower-ranked place could not be opened");
+    await page.$eval("[data-act='next-event']", (button) => button.focus());
+    await page.keyboard.press("Enter");
+    if (await page.evaluate(() => document.activeElement.dataset.act) !== "next-event") {
+      throw new Error("next-place navigation lost keyboard focus");
+    }
+  });
+  await check("dated routes keep positive evidence and exclude other-year or broad references", async () => {
+    const sample = await page.evaluate(async () => {
+      const { loadData } = await import("./js/data.js");
+      const store = await loadData();
+      const event = store.events.find((entry) => entry.year >= store.time.min && entry.year <= store.time.max &&
+        entry.people.slice(0, 4).some((person) => store.byId.get(person.id).routeWaypoints.filter((place) => place.historyYear === entry.year).length > 1));
+      return event && { key: event.key, year: event.year };
+    });
+    if (!sample) throw new Error("no source-backed positive route case is available for validation");
+    await page.setViewport({ width: 1366, height: 850 });
+    await page.goto(BASE + `/?dated-route=1#/patterns/${sample.year}`, { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    await page.click("[data-history-place-list] > summary");
+    await page.evaluate((key) => document.querySelector(`[data-event="${CSS.escape(key)}"]`).focus(), sample.key);
+    await page.keyboard.press("Enter");
+    const routes = await page.$$eval(".selected-testimony-route", (paths) => paths.map((path) => ({
+      year: path.__data__.year,
+      valid: path.__data__.waypoints.length > 1 && path.__data__.waypoints.every((place) =>
+        place.historyYear === path.__data__.year && (place.verified || place.evidenceScope === "personal") &&
+        !["country", "region"].includes(place.locationPrecision)),
+    })));
+    if (!routes.length || routes.some((route) => !route.valid || route.year !== sample.year)) {
+      throw new Error(`selected history routes mix date or precision ${JSON.stringify(routes)}`);
+    }
+  });
+  await check("compact history context is a readable sheet with a working return", async () => {
+    await page.setViewport({ width: 667, height: 375 });
+    await page.goto(BASE + "/?compact-history=1#/patterns/1944", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    await page.waitForFunction(() => document.documentElement.dataset.historicalBoundaries === "ready");
+    await page.type("[data-country-search]", "Canada");
+    await page.click("[data-history-search] button");
+    await wait(450);
+    const context = await page.evaluate(() => ({
+      height: document.querySelector("[data-pattern-events]").clientHeight,
+      name: document.querySelector(".country-heading h3")?.textContent,
+      mapInert: document.getElementById("map").inert,
+      returnLabel: getComputedStyle(document.querySelector(".context-return")).display,
+    }));
+    if (context.height < 200 || context.name !== "Canada" || !context.mapInert || context.returnLabel === "none") {
+      throw new Error(`compact history context cannot be read ${JSON.stringify(context)}`);
+    }
+    await page.keyboard.press("Escape");
+    await wait(250);
+    const returned = await page.evaluate(() => ({
+      open: document.querySelector("[data-history-context]").open,
+      hidden: document.getElementById("map").inert,
+      controls: [...document.querySelectorAll(".history-toolbar > button, .history-toolbar .map-tools button, .history-settings > summary")].every((button) => {
+        const rect = button.getBoundingClientRect();
+        return rect.width > 0 && document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest("button, summary") === button;
+      }),
+    }));
+    if (returned.open || returned.hidden || !returned.controls) throw new Error(`return to the map failed ${JSON.stringify(returned)}`);
+  });
+  await check("broken bookmarks explain the problem and preserve legacy entry links", async () => {
+    await page.setViewport({ width: 390, height: 844 });
+    for (const route of ["#/survivor/no-such-account", "#/place/no-such-place", "#/unknown-view", "#/patterns/invalid-year"]) {
+      await page.goto(BASE + "/?broken-link=1" + route, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      const missing = await page.evaluate(() => ({
+        view: document.body.dataset.view,
+        heading: document.getElementById("missing-title")?.textContent,
+        focus: document.activeElement.id,
+      }));
+      if (missing.view !== "not-found" || !missing.heading?.includes("could not") || missing.focus !== "missing-title") {
+        throw new Error(`broken link silently changed pages ${JSON.stringify(missing)}`);
+      }
+      await page.click(".not-found-content [data-act='explore']");
+      await page.waitForSelector(".rail-card");
+    }
+    for (const legacy of ["#map", "#overlay", "#/guided"]) {
+      await page.goto(BASE + "/?legacy-entry=1" + legacy, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      if (await page.evaluate(() => location.hash) !== "#/explore") throw new Error(`legacy entry did not recover: ${legacy}`);
+    }
+  });
+
+  await check("late historical loading preserves marker focus and open reading controls", async () => {
+    for (const target of ["marker", "place-list"]) {
+      const delayed = await browser.newPage();
+      delayed.on("pageerror", (error) => errors.push("delayed history: " + (error.stack || error.message)));
+      await delayed.setViewport({ width: 390, height: 844 });
+      await delayed.setCacheEnabled(false);
+      await delayed.setRequestInterception(true);
+      let boundaryRequest;
+      delayed.on("request", (request) => {
+        if (request.url().includes("/data/historical_boundaries.json")) boundaryRequest = request;
+        else request.continue();
+      });
+      try {
+        await delayed.goto(BASE + `/?delayed-history=${target}#/patterns/1944`, { waitUntil: "domcontentloaded", timeout: 40000 });
+        await delayed.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+        await delayed.waitForSelector(".pattern-event-marker");
+        if (target === "marker") {
+          await delayed.$eval(".pattern-event-marker", (element) => element.focus());
+        } else {
+          await delayed.click("[data-history-context] > summary");
+          await delayed.click("[data-history-place-list] > summary");
+          await delayed.$eval("[data-event]", (element) => element.focus());
+        }
+        const before = await delayed.evaluate(() => ({
+          map: document.activeElement.dataset.mapFocus,
+          event: document.activeElement.dataset.event,
+        }));
+        if (!boundaryRequest) throw new Error("historical loading was not intercepted");
+        await boundaryRequest.continue();
+        await delayed.waitForFunction(() => document.documentElement.dataset.historicalBoundaries === "ready", { timeout: 20000 });
+        const after = await delayed.evaluate(() => ({
+          map: document.activeElement.dataset.mapFocus,
+          event: document.activeElement.dataset.event,
+          open: document.querySelector("[data-history-place-list]").open,
+        }));
+        if (target === "marker" ? !before.map || after.map !== before.map : !before.event || after.event !== before.event || !after.open) {
+          throw new Error(`loading discarded ${target} focus ${JSON.stringify({ before, after })}`);
+        }
+        await delayed.keyboard.press("Enter");
+        await delayed.waitForSelector("#testimony-place-title");
+        if (await delayed.evaluate(() => document.activeElement.id) !== "testimony-place-title") {
+          throw new Error("the preserved control did not activate its testimony");
+        }
+      } finally {
+        await delayed.close();
+      }
     }
   });
 

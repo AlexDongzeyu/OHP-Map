@@ -156,6 +156,7 @@ export function explore(store, state) {
       <div class="rail-summary">
         <div class="rail-count micro-label" data-rail-count role="status">${shown} of ${total} shown</div>
         <button class="link filter-reset" data-act="reset-search"${filtered ? "" : " hidden"}>Reset filters</button>
+        <button class="link collection-map-toggle" data-act="show-explore-map">Map ${icon("arrow-right")}</button>
       </div>
       <div class="rail-list" data-rail-list>${html}</div>
     </aside>
@@ -166,6 +167,8 @@ export function explore(store, state) {
       ${boundaryNotice()}
     </div>
     ${!state.selectedId ? `<p class="explore-hint">Choose a person to trace their recorded places.</p>` : ""}
+    <button class="reader-return" data-act="show-reader">${state.selectedId
+      ? `Read ${esc(store.byId.get(state.selectedId).name)}'s account` : "Browse the collection"} ${icon("arrow-right")}</button>
   </div>`;
 }
 
@@ -241,7 +244,9 @@ function panel(store, state) {
   return `
     <aside class="panel scroll" aria-labelledby="profile-name">
       <div class="profile-toolbar">
-        <div class="panel-topline"><button class="link" data-act="clear">Back to the collection</button>
+        <div class="panel-topline"><button class="link" data-act="clear" aria-label="Back to the collection">
+          <span class="profile-back-long">Back to the collection</span><span class="profile-back-short">Collection</span></button>
+          <button class="reader-toggle" data-act="expand-reader" aria-label="Expand account reader"><span data-reader-label>Expand</span>${icon("fit")}</button>
           <button class="panel-close" data-act="clear" aria-label="Close profile">${icon("close")}</button></div>
         <nav class="profile-nav" aria-label="In this account">${sections.map(([id, label]) =>
           `<button data-profile-section="${id}" aria-controls="${id}">${label}</button>`).join("")}</nav>
@@ -505,7 +510,8 @@ export function patterns(store, state) {
     </div>
     <aside class="history-dossier" aria-label="Historical context and recorded places">
       <details class="history-context-disclosure" data-history-context${(state.historyContextOpen ?? window.innerWidth > 820) ? " open" : ""}>
-        <summary>Year context and sources <span data-year>${state.scrubYear}</span>${icon("chevron")}</summary>
+        <summary><span class="context-title">Year context and sources</span><span class="context-return">Back to the map</span>
+          <span data-year>${state.scrubYear}</span>${icon("chevron")}</summary>
         <div class="history-context-body" data-pattern-events tabindex="0">${patternsEvents(store, state)}</div>
       </details>
     </aside>
@@ -536,7 +542,7 @@ export function patternsEvents(store, state) {
   const activeEvent = events.find((event) => event.key === state.patternEventKey) || null;
   return `
     ${state.historyInfo ? countryInspector(state.historyInfo, state.scrubYear) : warBrief(store, state.scrubYear, state.historyRoutes)}
-    ${state.historyTestimony ? testimonyMoment(activeEvent, events) : ""}
+    ${state.historyTestimony ? testimonyMoment(activeEvent, events, state, store) : ""}
     <details class="history-sources">
       <summary>Original maps and historical context ${icon("chevron")}</summary>
       ${contextResources(state.scrubYear)}
@@ -680,6 +686,21 @@ export function about(store) {
   </div>`;
 }
 
+export function notFound(kind) {
+  const account = kind === "account";
+  return `<div class="ov ov-not-found scroll">
+    <section class="not-found-content" aria-labelledby="missing-title">
+      <h1 id="missing-title" tabindex="-1">${account ? "This account could not be found" : "This link could not be opened"}</h1>
+      <p>${account
+        ? "The account may have moved or may no longer be public. Search the collection by name, or look in the original OHP archive."
+        : "This address does not match a place or view in the current map. You can search the collection or return to the start."}</p>
+      <div class="cta-row"><button class="btn btn-primary" data-act="explore">Search the collection ${icon("search")}</button>
+        <button class="btn btn-ghost" data-act="home">Back to the start</button></div>
+      <a class="archive-link" href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">Visit the original OHP archive ${icon("external-link")}</a>
+    </section>
+  </div>`;
+}
+
 // ---- helpers ----------------------------------------------------------------
 function shortName(j) {
   const p = j.name.split(" ");
@@ -747,40 +768,49 @@ function warBrief(store, year, showRoutes = true) {
     </div>
   </section>`;
 }
-function testimonyMoment(activeEvent, events) {
+function testimonyMoment(activeEvent, events, state, store) {
   if (!events.length) {
     return `<div class="testimony-moment is-empty">
-      <span class="micro-label">Testimony layer</span>
+      <strong>No dated place references</strong>
       <p>No person-linked place has a sufficiently precise date for this year.</p>
     </div>`;
   }
+  const places = `<details class="year-place-list" data-history-place-list${state.historyPlacesOpen ? " open" : ""}>
+    <summary>Browse all ${events.length} recorded ${events.length === 1 ? "place" : "places"} ${icon("chevron")}</summary>
+    <ul>${events.map((event) => `<li><button data-event="${esc(event.key)}" aria-pressed="${event.key === activeEvent?.key}">
+      <span>${esc(event.place)}<small>${event.count} ${event.count === 1 ? "account" : "accounts"} with a reference in ${event.year}</small></span>${icon("arrow-right")}
+    </button></li>`).join("")}</ul>
+  </details>`;
   if (!activeEvent) {
     return `<div class="testimony-moment">
-      <span class="micro-label">${events.length} recorded ${events.length === 1 ? "place" : "places"}</span>
-      <p>Select a ring on the map to see the people recorded at that place.</p>
+      <p>Choose a place to find the accounts that name it in ${state.scrubYear}. The list includes places that do not fit on the map.</p>
+      ${places}
     </div>`;
   }
-  const portraits = activeEvent.people.filter((person) => person.portrait).slice(0, 5)
-    .map((person) => `<img src="${esc(person.portrait)}" alt="" loading="lazy" decoding="async">`).join("");
-  const personLink = (person) => `<button class="event-person" data-survivor="${esc(person.id)}">${esc(person.name)}</button>`;
-  const names = activeEvent.people.slice(0, 4).map(personLink).join("");
+  const personLink = (person) => {
+    const journey = store.byId.get(person.id);
+    return `<button class="event-person" data-survivor="${esc(person.id)}">
+      <span class="event-avatar" aria-hidden="true">${profileMedal(journey, GROUP_COLOR[journey.group] || C.accent)}</span>
+      <span class="event-person-name">${esc(person.name)}</span>${icon("arrow-right")}</button>`;
+  };
+  const names = activeEvent.people.slice(0, 4).map((person) => `<li>${personLink(person)}</li>`).join("");
   return `<div class="testimony-moment is-selected">
     <div class="moment-head">
-      <span class="event-role">${esc(activeEvent.role)}</span>
+      <button class="country-back" data-act="clear-event">${icon("arrow-right")} All places</button>
       <span class="moment-nav">
         <button data-act="prev-event" aria-label="Previous testimony place">${icon("arrow-right")}</button>
         <b>${events.indexOf(activeEvent) + 1} / ${events.length}</b>
         <button data-act="next-event" aria-label="Next testimony place">${icon("arrow-right")}</button>
       </span>
     </div>
-    <strong>${esc(activeEvent.place)}</strong>
-    <span class="event-people">
-      <span class="event-portraits">${portraits}</span>
-      <span class="event-names">${names}</span>
-    </span>
+    <strong id="testimony-place-title" tabindex="-1">${esc(activeEvent.place)}</strong>
+    <span class="event-role">${esc(activeEvent.role)}</span>
+    <ul class="event-people">${names}</ul>
     ${activeEvent.people.length > 4 ? `<details class="more-event-people"><summary>Show all ${activeEvent.people.length} people ${icon("chevron")}</summary>
       <div>${activeEvent.people.slice(4).map(personLink).join("")}</div></details>` : ""}
-    <small>${activeEvent.count} ${activeEvent.count === 1 ? "interview" : "interviews"}${activeEvent.approximate ? ", some dates are approximate" : ""}</small>
+    <small>${activeEvent.count} ${activeEvent.count === 1 ? "account" : "accounts"}${activeEvent.approximate ? ", some dates are approximate" : ""}</small>
+    <p class="event-route-note">Connections use only city and site references dated to ${state.scrubYear}. Open an account to follow its other recorded places.</p>
+    ${places}
   </div>`;
 }
 function boundaryDensity(store, selectedYear) {

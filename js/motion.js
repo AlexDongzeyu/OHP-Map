@@ -21,7 +21,8 @@ function reveal(targets, from, options = {}) {
   const elements = gsap.utils.toArray(targets);
   if (!elements.length) return null;
   gsap.killTweensOf(elements);
-  return gsap.fromTo(elements, from, {
+  return gsap.from(elements, {
+    ...from,
     duration: .45,
     ease: "power3.out",
     clearProps: "opacity,visibility,transform,clipPath",
@@ -132,7 +133,7 @@ export function animateOverlay(view, changes) {
 
 export function animatePatternEvent() {
   if (!canAnimate()) return;
-  reveal(".testimony-moment", { autoAlpha: 0, x: 8 }, {
+  reveal(".testimony-moment", { opacity: .55, x: 8 }, {
     duration: .38,
   });
 }
