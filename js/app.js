@@ -4,7 +4,7 @@ import { loadData, journeyFilter } from "./data.js";
 import { createAtlas } from "./atlas.js";
 import * as ui from "./ui.js";
 import * as motion from "./motion.js";
-import { motionEnabled, slug } from "./config.js";
+import { motionEnabled, onMotionPreferenceChange, slug } from "./config.js";
 import { playerURL } from "./media.js";
 
 const VIEWS = ["landing", "explore", "patterns", "about", "not-found"];
@@ -971,6 +971,11 @@ function closeShare(restoreFocus = true) {
 
 // ---- event wiring ------------------------------------------------------------
 function wireGlobal() {
+  onMotionPreferenceChange((reduced) => {
+    motion.syncPreference();
+    atlas.syncMotion();
+    if (reduced) stopHistoryPlayback();
+  });
   document.getElementById("topbar").addEventListener("click", onActivate);
   document.querySelector(".skip-link").addEventListener("click", (event) => {
     event.preventDefault();
@@ -985,7 +990,10 @@ function wireGlobal() {
       refreshHistorySearch();
     }
   });
-  document.addEventListener("visibilitychange", () => { if (document.hidden) stopHistoryPlayback(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopHistoryPlayback();
+    atlas.syncMotion();
+  });
   document.addEventListener("toggle", (event) => {
     if (event.target.matches("[data-history-place-list]")) state.historyPlacesOpen = event.target.open;
   }, true);
@@ -1009,6 +1017,7 @@ function wireGlobal() {
       } else if (state.historyPlaying) stopHistoryPlayback();
       else if (state.view === "patterns" && state.historyCountry) selectCountry(null, { openContext: false });
       else if (state.view === "about") go("explore");
+      else if (state.view === "explore" && document.querySelector("[data-player]:not([hidden])")) closeVideo();
       else if (state.view === "explore" && state.selectedId) clearSel();
     }
   });

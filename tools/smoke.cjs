@@ -657,6 +657,17 @@ function assertCounterMotion(label, { targets, samples }) {
       }
       await page.click("[data-act='all-groups']");
       await page.$eval(".collection-filters", (details) => { details.open = false; });
+      await page.keyboard.press("Escape");
+      const escaped = await page.evaluate(() => ({
+        name: document.getElementById("profile-name")?.textContent,
+        player: Boolean(document.querySelector(".player-frame iframe")),
+        chapter: document.activeElement.dataset.video,
+      }));
+      if (escaped.name !== "Wally Adam" || escaped.player || !escaped.chapter) {
+        throw new Error(`Escape left the account instead of closing its video ${JSON.stringify(escaped)}`);
+      }
+      await page.keyboard.press("Enter");
+      await page.waitForSelector(".player-frame iframe");
       await page.click("[data-act='close-video']");
       if (await page.$(".player-frame iframe")) throw new Error("closing the player left a video running");
     } finally {
@@ -1932,6 +1943,98 @@ function assertCounterMotion(label, { targets, samples }) {
       }
     } finally {
       await recovery.close();
+    }
+  });
+
+  await check("live reduced-motion changes settle counters and pause ambient motion", async () => {
+    const liveMotion = await browser.newPage();
+    liveMotion.on("pageerror", (error) => errors.push("live motion: " + error.message));
+    await liveMotion.setViewport({ width: 390, height: 844 });
+    await liveMotion.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+    try {
+      await liveMotion.goto(BASE + "/?live-motion=1", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await liveMotion.waitForSelector("[data-counter]", { timeout: 15000 });
+      await liveMotion.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+      await liveMotion.waitForFunction(() => document.documentElement.dataset.motion === "reduced");
+      await liveMotion.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      const capture = () => liveMotion.evaluate(() => ({
+        counters: [...document.querySelectorAll("[data-counter]")].map((counter) => ({
+          value: Number(counter.textContent.replace(/,/g, "")), target: Number(counter.dataset.counter),
+        })),
+        belt: getComputedStyle(document.querySelector(".mosaic-track")).transform,
+        globe: document.querySelector(".globe-graticule").getAttribute("d"),
+        mode: document.documentElement.dataset.motion,
+        mosaic: document.documentElement.dataset.mosaicMotion,
+        visible: [...document.querySelectorAll(".landing-card > *")].every((element) =>
+          getComputedStyle(element).visibility !== "hidden" && Number(getComputedStyle(element).opacity) > 0),
+      }));
+      const reduced = await capture();
+      await wait(750);
+      const still = await capture();
+      if (reduced.mode !== "reduced" || reduced.mosaic !== "static" || !reduced.visible ||
+          reduced.counters.some((counter) => counter.value !== counter.target) ||
+          still.belt !== reduced.belt || still.globe !== reduced.globe) {
+        throw new Error("the live reduced-motion setting left moving or incomplete content");
+      }
+      await liveMotion.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+      await liveMotion.waitForFunction(() => document.documentElement.dataset.mosaicMotion === "animated");
+      await wait(500);
+      const resumed = await capture();
+      if (resumed.belt === still.belt || resumed.globe === still.globe ||
+          resumed.counters.some((counter) => counter.value !== counter.target)) {
+        throw new Error("restoring motion failed or replayed the completed counters");
+      }
+      await liveMotion.waitForFunction(() => [...document.querySelectorAll(".mosaic-tile")]
+        .some((tile) => Number(tile.dataset.swapCount) > 0), { timeout: 5000 });
+      await liveMotion.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+      await liveMotion.waitForFunction(() => document.documentElement.dataset.motion === "reduced");
+      const facesVisible = await liveMotion.$$eval(".mosaic-tile", (tiles) => tiles.every((tile) =>
+        [...tile.querySelectorAll(".mosaic-side")].some((side) => {
+          const style = getComputedStyle(side);
+          return style.visibility !== "hidden" && Number(style.opacity) >= .99;
+        })));
+      if (!facesVisible) throw new Error("reducing motion during a portrait change left a faded or hidden photograph");
+    } finally {
+      await liveMotion.close();
+    }
+  });
+  await check("motion changes finish active routes and cameras and pause history playback", async () => {
+    await page.setViewport({ width: 1366, height: 850 });
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+    await page.goto(BASE + "/?motion-state=1#/explore?q=Wally+Adam", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    await page.click(".rail-card");
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+    await page.waitForFunction(() => document.documentElement.dataset.motion === "reduced");
+    const stopped = await page.evaluate(() => ({
+      name: document.getElementById("profile-name").textContent,
+      offset: Number(document.querySelector(".explore-route").getAttribute("stroke-dashoffset") || 0),
+      camera: document.querySelector(".camera").getAttribute("transform"),
+    }));
+    await wait(1000);
+    if (stopped.name !== "Wally Adam" || stopped.offset !== 0 ||
+        await page.$eval(".camera", (camera) => camera.getAttribute("transform")) !== stopped.camera) {
+      throw new Error("reducing motion left an incomplete route or moving camera");
+    }
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+    const before = await page.$eval(".camera", (camera) => Number(camera.getAttribute("transform").match(/scale\(([^)]+)\)/)[1]));
+    await page.click("[data-act='zoom-out']");
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+    await page.waitForFunction(() => document.documentElement.dataset.motion === "reduced");
+    const zoom = await page.$eval(".camera", (camera) => Number(camera.getAttribute("transform").match(/scale\(([^)]+)\)/)[1]));
+    if (Math.abs(zoom - Math.max(1, before / 1.5)) > .01) throw new Error("motion change abandoned the intended zoom target");
+    await page.click(".nav-tab[data-view='patterns']");
+    await page.waitForSelector("[data-year-entry]");
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+    await page.click("[data-act='play-history']");
+    const year = await page.$eval("[data-year-entry]", (input) => Number(input.value));
+    await page.waitForFunction((previous) => Number(document.querySelector("[data-year-entry]").value) > previous, { timeout: 5000 }, year);
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+    const paused = await page.$eval("[data-year-entry]", (input) => input.value);
+    await wait(1400);
+    if (await page.$eval("[data-year-entry]", (input) => input.value) !== paused ||
+        await page.$eval("[data-act='play-history']", (button) => button.getAttribute("aria-pressed")) !== "false") {
+      throw new Error("changing the motion preference did not pause history playback");
     }
   });
 

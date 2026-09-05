@@ -25,6 +25,7 @@ export function createAtlas(container) {
   let mapFrame = null;
   let selectedJourney = null;
   let selectedPatternEvent = null;
+  let cameraTarget = null;
   let store = null, tipEl = null, zoom = null;
   let view = null, rotateRAF = null, rot = [-40, -32, 0];
   let globeRoutePool = [], globeRouteBatch = [], globeRouteCursor = 0;
@@ -436,9 +437,14 @@ export function createAtlas(container) {
     const t = target
       ? d3.zoomIdentity.translate(centerX - k * target.x, centerY - k * target.y).scale(k)
       : d3.zoomIdentity;
+    applyCameraTransform(t, 850, d3.easeCubicInOut, animate);
+  }
+  function applyCameraTransform(transform, duration, ease, animate = motionEnabled()) {
     svg.interrupt("camera");
-    const sel = animate ? svg.transition("camera").duration(850).ease(d3.easeCubicInOut) : svg;
-    sel.call(zoom.transform, t);
+    cameraTarget = animate ? transform : null;
+    const selection = animate ? svg.transition("camera").duration(duration).ease(ease)
+      .on("end.motion interrupt.motion", () => { cameraTarget = null; }) : svg;
+    selection.call(zoom.transform, transform);
   }
   api.resetCamera = () => moveCamera(null, 1);
   function personalMapPoints(journey) {
@@ -458,10 +464,28 @@ export function createAtlas(container) {
     moveCamera({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, scale);
   }
   api.zoomBy = (factor) => {
-    svg.interrupt("camera");
+    if (!Number.isFinite(factor) || factor <= 0) {
+      console.warn("The map zoom factor must be a positive number.");
+      return;
+    }
     const center = [(mapFrame[0] + mapFrame[2]) / 2, (mapFrame[1] + mapFrame[3]) / 2];
-    const selection = motionEnabled() ? svg.transition("camera").duration(280).ease(d3.easeCubicOut) : svg;
-    selection.call(zoom.scaleBy, factor, center);
+    const current = d3.zoomTransform(svg.node());
+    const point = current.invert(center);
+    const scale = Math.max(1, Math.min(14, current.k * factor));
+    const target = d3.zoomIdentity.translate(center[0] - scale * point[0], center[1] - scale * point[1]).scale(scale);
+    applyCameraTransform(target, 280, d3.easeCubicOut);
+  };
+
+  api.syncMotion = () => {
+    if (!svg) return;
+    if (!motionEnabled()) {
+      const target = cameraTarget;
+      svg.interrupt("camera");
+      if (target) svg.call(zoom.transform, target);
+      overlayG.selectAll("[stroke-dashoffset]").interrupt().attr("stroke-dashoffset", 0);
+    }
+    if (view === "landing" && motionEnabled() && !document.hidden) startRotate();
+    else stopRotate();
   };
 
   function showTip(e, text) { if (!tipEl) return; tipEl.textContent = text; tipEl.style.opacity = 1; moveTip(e); }

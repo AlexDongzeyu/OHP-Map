@@ -5,6 +5,7 @@ let warned = false;
 let mosaicStates = [];
 let beltTweens = [];
 let landingTimeline = null;
+const entranceTweens = new Set();
 
 function canAnimate() {
   if (!motionEnabled()) return false;
@@ -21,22 +22,54 @@ function reveal(targets, from, options = {}) {
   const elements = gsap.utils.toArray(targets);
   if (!elements.length) return null;
   gsap.killTweensOf(elements);
-  return gsap.from(elements, {
+  let tween;
+  tween = gsap.from(elements, {
     ...from,
     duration: .45,
     ease: "power3.out",
     clearProps: "opacity,visibility,transform,clipPath",
     ...options,
+    onComplete(...args) {
+      entranceTweens.delete(tween);
+      options.onComplete?.apply(this, args);
+    },
+    onInterrupt(...args) {
+      entranceTweens.delete(tween);
+      options.onInterrupt?.apply(this, args);
+    },
   });
+  entranceTweens.add(tween);
+  return tween;
 }
 
 export function init() {
   updateMotionMode();
   canAnimate();
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) stopMosaic();
+    if (document.hidden) pauseMosaic();
     else if (document.body.dataset.view === "landing") startMosaic();
   });
+}
+
+export function syncPreference() {
+  updateMotionMode();
+  if (motionEnabled()) {
+    if (document.body.dataset.view === "landing" && !document.hidden) startMosaic();
+    return;
+  }
+  if (landingTimeline) {
+    landingTimeline.progress(1);
+    landingTimeline.kill();
+    landingTimeline = null;
+  }
+  for (const tween of [...entranceTweens]) {
+    tween.progress(1);
+    tween.kill();
+  }
+  for (const counter of document.querySelectorAll("[data-counter]")) {
+    counter.textContent = Number(counter.dataset.counter).toLocaleString("en-CA");
+  }
+  pauseMosaic();
 }
 
 function updateMotionMode() {
@@ -50,6 +83,7 @@ export function animateShell() {
 
 export function animateOverlay(view, changes) {
   if (landingTimeline) { landingTimeline.kill(); landingTimeline = null; }
+  if (view !== "landing") stopMosaic();
   if (!canAnimate()) {
     document.documentElement.dataset.mosaicMotion = view === "landing" ? "static" : "inactive";
     return;
@@ -96,8 +130,6 @@ export function animateOverlay(view, changes) {
     return;
   }
 
-  stopMosaic();
-
   if (view === "explore") {
     if (changes.viewChanged) {
       reveal(".rail", mobile ? { opacity: .55, y: 16 } : { opacity: .55, x: -12 });
@@ -139,9 +171,15 @@ export function animatePatternEvent() {
 }
 
 function startMosaic() {
-  stopMosaic();
-  if (!canAnimate()) {
-    document.documentElement.dataset.mosaicMotion = "static";
+  if (document.hidden || !canAnimate()) {
+    pauseMosaic();
+    return;
+  }
+  if (mosaicStates.length) {
+    for (const tween of beltTweens) tween.resume();
+    for (const state of mosaicStates) state.call?.resume();
+    document.documentElement.dataset.mosaicMotion = "animated";
+    document.documentElement.dataset.mosaicBelts = "rolling";
     return;
   }
   const tiles = gsap.utils.toArray(".mosaic-tile:not([data-clone])");
@@ -168,7 +206,21 @@ function startMosaic() {
   });
 }
 
+function pauseMosaic() {
+  for (const state of mosaicStates) state.call?.pause();
+  for (const tween of beltTweens) tween.pause();
+  if (gsap) {
+    for (const tween of gsap.getTweensOf(".mosaic-side")) {
+      tween.progress(1);
+      tween.kill();
+    }
+  }
+  document.documentElement.dataset.mosaicMotion = document.body.dataset.view === "landing" ? "static" : "inactive";
+  document.documentElement.dataset.mosaicBelts = "still";
+}
+
 function stopMosaic() {
+  pauseMosaic();
   for (const state of mosaicStates) if (state.call) state.call.kill();
   for (const tween of beltTweens) tween.kill();
   mosaicStates = [];

@@ -81,6 +81,10 @@ year and layers, so sharing a view or returning from an account restores its con
 Unsupported community filters and dated-place/year combinations receive an explicit
 link-recovery view instead of silently changing the selection.
 Browser tab and bookmark titles identify the account, search, or historical place/year.
+Changes to the system's reduced-motion preference apply immediately without a reload.
+Counters and route drawing settle to their readable final state, ambient motion pauses,
+and ongoing history playback stops. Escape closes an open interview player before
+leaving its account, returning keyboard focus to the selected chapter.
 
 Initial data requests retry once after a transport interruption or a temporary
 502/503/504 response. The loading screen announces reconnection; a second failure,

@@ -55,8 +55,21 @@ export const ROLE_LABEL = {
 
 export const TIME = { min: 1914, max: 2026 };
 
-export const SYSTEM_REDUCED_MOTION =
-  window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const motionPreference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+const motionListeners = new Set();
+export let SYSTEM_REDUCED_MOTION = Boolean(motionPreference?.matches);
+
+const updateMotionPreference = (event) => {
+  SYSTEM_REDUCED_MOTION = event.matches;
+  for (const listener of motionListeners) listener(SYSTEM_REDUCED_MOTION);
+};
+if (motionPreference?.addEventListener) motionPreference.addEventListener("change", updateMotionPreference);
+else motionPreference?.addListener?.(updateMotionPreference);
+
+export function onMotionPreferenceChange(listener) {
+  motionListeners.add(listener);
+  return () => motionListeners.delete(listener);
+}
 
 export function motionEnabled() {
   return !SYSTEM_REDUCED_MOTION;
