@@ -28,7 +28,7 @@ OUT_CONNECTIONS = DATA / "connections.json"
 # outside the years explicitly dated in the archive.
 TIME_MIN = 1914
 TIME_MAX = 2026
-CONTENT_REVISION = "complete-excerpts-v2"
+CONTENT_REVISION = "complete-excerpts-v3"
 
 # WordPress source of truth (doc 04). We only ever READ.
 WP_BASE = "https://ohp.crestwood.on.ca"

@@ -5,7 +5,7 @@
     "source": "all",
     "extractor": "offline",
     "gazetteer_revision": "710ef8693282c808",
-    "content_revision": "complete-excerpts-v2",
+    "content_revision": "complete-excerpts-v3",
     "count": 1048,
     "reviewed": 0,
     "pending": 1048,

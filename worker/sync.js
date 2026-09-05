@@ -9,7 +9,7 @@ const UA = "CrestwoodOHP-Map-Worker/2.0 (+https://github.com/AlexDongzeyu/OHP-Ma
 export const DATA_KEY = "survivors.geojson";
 export const STATUS_KEY = "ohp-sync-status.json";
 export const GAZETTEER_REVISION = gazetteer.revision;
-export const CONTENT_REVISION = "complete-excerpts-v2";
+export const CONTENT_REVISION = "complete-excerpts-v3";
 export const HISTORY_MIN_YEAR = 1914;
 export const HISTORY_MAX_YEAR = 2026;
 const SEEN_KEY = "ohp-seen-slugs.json";
@@ -735,6 +735,8 @@ function mergeFeature(existing, fresh) {
       media_url: existing.properties.media_url || null,
       portrait: existing.properties.portrait || fresh.properties.portrait || null,
       portrait_rights: existing.properties.portrait_rights || fresh.properties.portrait_rights || null,
+      portrait_faces:
+        existing.properties.portrait_faces || fresh.properties.portrait_faces || 0,
       ...mergeMediaCoverage(existing.properties, fresh.properties),
       review_status: existing.properties.review_status || "pending",
       theme_tags: existing.properties.theme_tags?.length
