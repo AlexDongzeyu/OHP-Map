@@ -124,15 +124,14 @@ def test_published_data_has_no_qualified_country_route_legs():
                 )
                 quote = country.get("source_quote", "")
                 country_matches = list(
-                    re.finditer(re.escape(country["as_written"]), quote, re.IGNORECASE),
+                    re.finditer(rf"\b{re.escape(country['as_written'])}\b", quote, re.IGNORECASE),
                 )
                 if not country_matches:
                     continue
-                country_match = min(
-                    country_matches,
-                    key=lambda match: abs(match.start() - 40),
-                )
-                if re.search(pattern, quote[:country_match.start()], re.IGNORECASE):
+                if all(
+                    re.search(pattern, quote[:match.start()], re.IGNORECASE)
+                    for match in country_matches
+                ):
                     duplicates.append(
                         (feature["properties"]["survivor_id"], city["canonical"], country["canonical"]),
                     )

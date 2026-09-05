@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 SOURCE = DATA / "source" / "survivors_source.json"
 VIMEO_CAPTION_INDEX = DATA / "source" / "vimeo_caption_index.json"
+PROFILE_MEDIA_INDEX = DATA / "source" / "ohp_profile_media.json"
+OHP_MEDIA_PAGES = DATA / "source" / "ohp_media_pages.json"
+OHP_RECONCILIATION = DATA / "source" / "ohp_reconciliation.json"
 TRANSCRIPT_CACHE = DATA / "source" / "transcript_cache"
 GAZETTEER = DATA / "gazetteer.json"
 GEOCODE_CACHE = DATA / "geocode_cache.json"
@@ -28,7 +31,7 @@ OUT_CONNECTIONS = DATA / "connections.json"
 # outside the years explicitly dated in the archive.
 TIME_MIN = 1914
 TIME_MAX = 2026
-CONTENT_REVISION = "complete-excerpts-v3"
+CONTENT_REVISION = "reconciled-public-sources-v5"
 
 # WordPress source of truth (doc 04). We only ever READ.
 WP_BASE = "https://ohp.crestwood.on.ca"

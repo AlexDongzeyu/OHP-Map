@@ -66,7 +66,8 @@ def emit_review_queue(survivors: list[dict]) -> int:
 def stage(survivors: list[dict], strict: bool = False) -> list[dict]:
     """Tag each survivor with a review_status and decide what publishes.
 
-    Every survivor keeps only its placeable waypoints. We do NOT silently drop
+    Every survivor keeps only its placeable waypoints. Public profiles with none
+    remain pending and discoverable with null geometry. We do NOT silently drop
     unverified records — on a memorial, hiding everything unreviewed would just show
     "0 journeys". Instead each record is labelled honestly:
 
@@ -80,9 +81,7 @@ def stage(survivors: list[dict], strict: bool = False) -> list[dict]:
     staged = []
     for s in survivors:
         wps = s.get("waypoints", [])
-        if not wps:
-            continue
-        all_verified = all(wp.get("verified") for wp in wps)
+        all_verified = bool(wps) and all(wp.get("verified") for wp in wps)
         status = "reviewed" if all_verified else "pending"
         if strict and status != "reviewed":
             continue

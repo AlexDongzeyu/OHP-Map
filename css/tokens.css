@@ -50,8 +50,7 @@
   --radius-sheet:10px;
   --header-height:72px;
   --rail-width:352px;
-  --profile-width:408px;
-  --story-width:min(40vw, 536px);
+  --profile-width:460px;
   --shadow-sheet:0 18px 48px rgba(28,48,53,.08);
   --shadow-float:0 8px 24px rgba(28,48,53,.07);
 }

@@ -24,6 +24,7 @@ import re
 from abc import ABC, abstractmethod
 
 from . import gazetteer
+from .text import source_sentence
 
 
 class Extractor(ABC):
@@ -130,18 +131,20 @@ class OfflineExtractor(Extractor):
                           "precision": "year" if year else "unknown"},
                 "confidence": 0.5,
                 "verified": False,
-                "source_quote": window.strip(),
+                "source_quote": source_sentence(text, start, end),
+                "_role_context": window,
             })
         # Assign roles: first non-site place is the hometown/birthplace.
         first_assigned = False
         for wp in ordered:
             canonical = wp.pop("_canonical")
+            role_context = {**wp, "source_quote": wp.pop("_role_context")}
             is_first = (
                 not first_assigned
                 and gazetteer.known_site_role(canonical) is None
                 and (
                     canonical not in self.RESETTLEMENT
-                    or self._has_birthplace_context(wp)
+                    or self._has_birthplace_context(role_context)
                 )
             )
             wp["role"] = self._role_for(canonical, is_first)

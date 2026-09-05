@@ -1,0 +1,12 @@
+{
+  "_about": "Public OHP media pages that are not individual interviewees. Audit their public chapters, but do not list an assembly as a person in Explore.",
+  "pages": [
+    {
+      "survivor_id": "remembrance-day-2024",
+      "name": "Remembrance Day 2024",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/remembrance-day-2024/",
+      "group": "Archive Events",
+      "record_type": "event"
+    }
+  ]
+}

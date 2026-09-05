@@ -7,10 +7,11 @@ semantic checks the JSON Schema can't express (coordinate sanity, role/site matc
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from math import cos, hypot, radians
 
-from . import config, gazetteer
+from . import config, gazetteer, media
 
 
 _COUNTRY_ALIASES = {
@@ -128,9 +129,40 @@ def validate_geojson(doc: dict) -> list[str]:
     for feat in doc.get("features", []):
         props = feat.get("properties", {})
         sid = props.get("survivor_id", "?")
-        lng, lat = (feat.get("geometry", {}).get("coordinates", [None, None]) + [None, None])[:2]
-        if lat is None or not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
-            errors.append(f"{sid}: feature coordinates out of range (remember [lng, lat])")
+        geometry = feat.get("geometry")
+        if geometry is not None:
+            lng, lat = (geometry.get("coordinates", [None, None]) + [None, None])[:2]
+            if (
+                not isinstance(lat, (int, float)) or not isinstance(lng, (int, float))
+                or not (-90 <= lat <= 90) or not (-180 <= lng <= 180)
+            ):
+                errors.append(f"{sid}: feature coordinates out of range (remember [lng, lat])")
+        profile_media = props.get("profile_media")
+        if profile_media:
+            videos = profile_media.get("videos", [])
+            ids = [video.get("id") for video in videos]
+            if len(set(ids)) != len(ids) or len(videos) != props.get("video_count", len(videos)):
+                errors.append(f"{sid}: video inventory count or identifiers disagree")
+            for video in videos:
+                reference = media.safe_vimeo_reference(video.get("embed_url"))
+                if (
+                    not reference or reference["id"] != video.get("id")
+                    or reference["embed_url"] != video.get("embed_url")
+                    or video.get("url") != reference["url"]
+                ):
+                    errors.append(f"{sid}: unsafe or mismatched public video reference")
+            for image in profile_media.get("images", []):
+                if not media.safe_photo_url(image.get("source_url")):
+                    errors.append(f"{sid}: image lacks an official OHP photograph source")
+                if image.get("full_url") and (
+                    not image.get("primary")
+                    or not re.fullmatch(r"assets/portraits/[a-z0-9-]+\.webp", image.get("url", ""))
+                    or not media.safe_photo_url(image["full_url"])
+                    or media.photo_key(image["full_url"]) != media.photo_key(image["source_url"])
+                ):
+                    errors.append(f"{sid}: uncropped photograph must be the same cleared primary source")
+        if props.get("captioned_video_count", 0) > props.get("video_count", 0):
+            errors.append(f"{sid}: caption coverage exceeds the chapter inventory")
         for wp in props.get("waypoints", []):
             canonical = wp.get("canonical", "")
             wp_lat, wp_lng = wp.get("lat"), wp.get("lng")

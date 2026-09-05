@@ -70,6 +70,8 @@ def _clean(fragment: str) -> str:
 
 
 def parse_entry(slug: str, html: str) -> dict:
+    from .media import biography_text, parse_profile_media
+
     body = re.sub(r"<script.*?</script>", " ", html, flags=re.S)
     body = re.sub(r"<style.*?</style>", " ", body, flags=re.S)
 
@@ -84,9 +86,16 @@ def parse_entry(slug: str, html: str) -> dict:
 
     # Bio text: the entry-content block.
     cm = re.search(r'class="[^"]*entry-content[^"]*"[^>]*>(.*?)</div>', body, flags=re.S)
-    text = _clean(cm.group(1)) if cm else ""
+    excerpt = re.split(
+        r"""<(?:div|section)\b[^>]*\bid=["']ohp-(?:video|photo)["']""",
+        cm.group(1), flags=re.I,
+    )[0] if cm else ""
+    text = _clean(excerpt)
     # Trim boilerplate tails ("Videos", interviewer credits) that follow the bio.
     text = re.split(r"\bVideos\b", text)[0].strip()
+    protected = bool(re.search(r"(?:post-password-form|name=[\"']post_password[\"'])", body, re.I))
+    if protected:
+        text = ""
 
     return {
         "survivor_id": slug,
@@ -94,6 +103,9 @@ def parse_entry(slug: str, html: str) -> dict:
         "archive_url": f"{BASE}/ohp/{slug}/",
         "theme_tags": [],
         "text": text,
+        "quote_text": biography_text(html),
+        "protected": protected,
+        "profile_media": parse_profile_media(html, f"{BASE}/ohp/{slug}/", name),
     }
 
 
@@ -115,7 +127,9 @@ def scrape(refresh: bool = False, limit: int | None = None) -> list[dict]:
         if not html:
             continue
         rec = parse_entry(slug, html)
-        if rec["text"]:
+        if not rec.get("protected") and (
+            rec["text"] or rec["profile_media"]["videos"] or rec["profile_media"]["images"]
+        ):
             records.append(rec)
         if i % 25 == 0:
             print(f"  …scraped {i}/{len(slugs)}")

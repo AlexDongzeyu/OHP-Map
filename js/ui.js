@@ -1,8 +1,10 @@
-// ui.js — overlay panels (landing, guided, explore, patterns, about) as class-based
+// ui.js — overlay panels (landing, explore, history, about) as class-based
 // markup over the persistent atlas. Markup here; styling in css; map engine in atlas.js;
 // orchestration in app.js. Everyone is presented equally — grouped by the archive's own
 // categories (doc 13 §4.2), no "featured" hierarchy (§4.3), each with a brief intro (§4.4).
 import { C, GROUP_COLOR, SYSTEM_REDUCED_MOTION, esc } from "./config.js";
+import { captionStatus, playerURL } from "./media.js";
+import { FLAG_SOURCES, resourcesForYear } from "./historical-context.js";
 
 const RAIL_PAGE = 140;
 const icon = (name) => `<svg class="icon icon-${name}" aria-hidden="true" focusable="false">
@@ -16,14 +18,13 @@ export function landing(store) {
   return `
   <div class="ov ov-landing">
     <div class="landing-card">
-      <p class="kicker">Crestwood Oral History Project</p>
       <h1 class="display">Journeys</h1>
       <p class="landing-subtitle">An atlas of recorded lives</p>
       <p class="lede">Explore the places remembered by Holocaust survivors, veterans,
         and community members in interviews with Crestwood students.</p>
       <div class="cta-row">
-        <button class="btn btn-primary" data-act="follow">Begin with one story ${icon("arrow-right")}</button>
-        <button class="btn btn-ghost" data-act="explore">Browse the collection</button>
+        <button class="btn btn-primary" data-act="explore">Explore the collection ${icon("arrow-right")}</button>
+        <button class="btn btn-ghost" data-view="patterns">Open the historical atlas</button>
       </div>
       <section class="archive-register" aria-label="Archive totals">
         <div class="register-head">
@@ -106,75 +107,15 @@ function mosaicSide(person, className) {
 }
 
 function clearedPortrait(journey) {
-  if (!journey.portrait) return null;
   const rights = String(journey.portraitRights || "").toLowerCase();
-  return /\b(cleared|licensed|public domain|permission granted)\b/.test(rights)
+  const original = journey.portrait && /\b(cleared|licensed|public domain|permission granted)\b/.test(rights)
     ? journey.portrait
     : null;
+  return original;
 }
 
-function validatedPortrait(journey) {
-  return journey.portraitFaces > 0 ? clearedPortrait(journey) : null;
-}
-
-// ---- GUIDED -----------------------------------------------------------------
-export function guided(store, state) {
-  const j = store.byId.get(state.guidedId) || store.journeys[0];
-  const first = j.name.split(" ")[0];
-  const wp = j.waypoints;
-  const portrait = validatedPortrait(j);
-  const activeIndex = Math.min(state.guidedIndex || 0, Math.max(0, wp.length - 1));
-  const chapters = wp.map((w, i) => {
-    const context = store.warForJourney(j, w.year);
-    const showContext = context && !["birthplace", "resettlement"].includes(w.roleKey);
-    return `
-    <section class="chapter ${i === 0 ? "chapter-first" : ""} ${i === activeIndex ? "is-active" : ""}" data-chapter="${i}">
-      <div class="ch-head"><span class="ch-num">${i + 1} / ${wp.length}</span>
-        <span class="ch-role">${esc(w.role)}</span></div>
-      <h3 class="ch-title">${esc(w.canonical)}</h3>
-      <div class="ch-sub">${esc(metaLine(w))}</div>
-      ${showContext ? `<div class="chapter-war"><i></i><span>War context</span>${esc(context.phase)}</div>` : ""}
-      ${w.quote ? `<blockquote>“${esc(trimQuote(w.quote))}”</blockquote>` : ""}
-    </section>`;
-  }).join("");
-  return `
-  <div class="ov ov-guided">
-    <div class="narr scroll" data-narr tabindex="0" aria-label="Read ${esc(j.name)}'s journey">
-      <div class="narr-head">
-        <p class="micro-label">A guided account</p>
-        <div class="story-heading">
-          ${portrait ? `<figure class="guided-portrait">
-            <img src="${esc(portrait)}" alt="${esc(j.name)}" loading="eager" decoding="async">
-          </figure>` : ""}
-          <div>
-            <h2 class="serif-xl">${esc(j.name)}</h2>
-            <p class="kicker">${esc(j.group)}</p>
-            <p class="narr-meta">${profileMeta(j)}</p>
-          </div>
-        </div>
-        ${recordingMeta(j)}
-        <p class="bio">${esc(j.bio)}</p>
-        ${serviceContext(store, j)}
-        <p class="reading-note">Scroll through the account to follow its places on the map.</p>
-      </div>
-      ${chapters}
-      <section class="chapter closing">
-        <h3 class="serif-lg">Continue in the archive</h3>
-        <p class="bio">The map includes the places named in this profile. The OHP page has
-          the full interview and supporting material.</p>
-        <a class="archive-link" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">
-          Open ${esc(first)}'s OHP page ${icon("external-link")}</a>
-      </section>
-    </div>
-    <nav class="narr-nav" aria-label="Journey places">
-      <div class="narr-position" aria-live="polite" aria-atomic="true">
-        <span data-guided-count>Place ${wp.length ? activeIndex + 1 : 0} of ${wp.length}</span>
-        <strong data-guided-place>${esc(wp[activeIndex]?.canonical || "No recorded places")}</strong>
-      </div>
-      <button data-act="prev-chapter" aria-label="Previous place"${activeIndex === 0 ? " disabled" : ""}>${icon("arrow-right")}</button>
-      <button data-act="next-chapter" aria-label="Next place"${activeIndex >= wp.length - 1 ? " disabled" : ""}>${icon("arrow-right")}</button>
-    </nav>
-  </div>`;
+function profilePicture(journey) {
+  return clearedPortrait(journey) || journey.media?.images.find((image) => image.primary)?.url || journey.media?.images[0]?.url || null;
 }
 
 // ---- EXPLORE ----------------------------------------------------------------
@@ -256,39 +197,117 @@ function panel(store, state) {
   if (!j) return "";
   const col = GROUP_COLOR[j.group] || C.accent;
   const wp = j.waypoints;
-  const steps = wp.map((w, i) => `
-    <li><span class="step-rail"><span class="step-dot ${w.newLife ? "ink" : ""}" style="--gc:${col}"></span>
-      ${i < wp.length - 1 ? '<span class="step-line"></span>' : ""}</span>
-      <span class="step-text"><span class="step-place">${esc(w.canonical)}</span>
-        <span class="step-meta">${esc(wpMeta(w))}</span></span></li>`).join("");
+  const usedPassages = new Set();
+  const steps = wp.map((w, i) => {
+    const passage = sourcePassage(w.quote);
+    const showPassage = passage && !usedPassages.has(passage) && !j.bio.includes(passage);
+    if (showPassage) usedPassages.add(passage);
+    return `<li class="recorded-place">
+      <button class="place-focus" data-place-step="${i}" aria-pressed="${state.activePlaceIndex === i}">
+        <span class="place-order">${i + 1}</span>
+        <span><span class="step-place">${esc(w.canonical)}</span><span class="step-meta">${esc(wpMeta(w))}</span></span>
+        ${icon("arrow-right")}
+      </button>
+      ${showPassage ? `<p class="place-account">${esc(passage)}</p>` : ""}
+    </li>`;
+  }).join("");
   const tags = (j.conflicts.concat(j.themes)).slice(0, 5).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
   const reviewed = j.reviewStatus === "reviewed";
   return `
     <aside class="panel scroll" aria-labelledby="profile-name">
-      <div class="panel-topline"><span class="micro-label">From the collection</span>
+      <div class="panel-topline"><button class="link" data-act="clear">Back to the collection</button>
         <button class="panel-close" data-act="clear" aria-label="Close profile">${icon("close")}</button></div>
       <div class="profile-heading">
         ${profileMedal(j, col, true)}
         <div>
-          <div class="panel-group" style="--gc:${col}">${esc(j.group)}</div>
           <h2 class="serif-lg" id="profile-name" tabindex="-1">${esc(j.name)}</h2>
+          <div class="panel-group" style="--gc:${col}">${esc(j.group)}</div>
           <div class="panel-meta">${profileMeta(j)}</div>
         </div>
       </div>
       <div class="profile-actions">
-        ${wp.length > 1 ? `<button class="guided-pill" data-guided="${esc(j.id)}">Follow this account ${icon("arrow-right")}</button>` : ""}
+        ${j.videoCount ? `<button class="interview-action" data-act="show-interviews">Watch the interview ${icon("play")}</button>` : ""}
         <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Original interview ${icon("external-link")}</a>
       </div>
       ${recordingMeta(j)}
-      <p class="bio">${esc(j.bio)}</p>
-      ${serviceContext(store, j)}
+      <p class="bio">${esc(j.bio || "The original OHP page contains this person's account.")}</p>
+      ${profileGallery(j)}
+      ${profileInterviews(j)}
+      ${j.serviceYear ? `<details class="related-context"><summary>Historical context and maps ${icon("chevron")}</summary>
+        <p class="section-note">These sources describe the period. They are separate from ${esc(j.name)}'s own account.</p>
+        ${contextResources(j.serviceYear)}</details>` : ""}
       ${wp.length > 1 ? `<svg class="mini" viewBox="0 0 340 150" data-mini></svg>
       <div class="mini-cap">Places named in the OHP profile.</div>` : ""}
-      <div class="micro-label">Recorded places</div>
-      <ol class="journey">${steps}</ol>
+      <section class="profile-places" aria-labelledby="recorded-places-title">
+        <h3 id="recorded-places-title">Recorded places</h3>
+        <p class="section-note">${wp.length
+          ? "These places appear in the OHP profile. Select a place to find it on the map."
+          : "This account is in the collection, but its places have not been mapped."}</p>
+        ${wp.length ? `<ol class="journey">${steps}</ol>` : ""}
+      </section>
       <div class="tags">${tags}</div>
       ${reviewed ? `<div class="ver" style="color:${C.verified}"><span class="ver-dot"></span>Checked against the interview</div>` : ""}
     </aside>`;
+}
+
+function sourcePassage(value) {
+  const text = String(value || "").trim().replace(/\s+/g, " ");
+  return /^[\p{Lu}0-9"'(\u201c\u2018]/u.test(text) && /[.!?][\u201d\u2019"')\]]*$/.test(text) ? text : "";
+}
+
+function profileGallery(journey) {
+  const images = journey.media.images;
+  const references = journey.media.imageReferences;
+  if (!images.length && !references.length) return "";
+  const figures = images.map((image) => `<figure class="profile-photo">
+    <a href="${esc(image.fullUrl || image.sourceUrl || image.url)}" target="_blank" rel="noopener" aria-label="Open photograph from ${esc(journey.name)}'s OHP page">
+      <img src="${esc(image.fullUrl || (image.primary ? image.sourceUrl : null) || image.url)}" alt="${esc(image.caption || `Photograph from ${journey.name}'s OHP gallery`)}" loading="lazy" decoding="async">
+    </a>
+    <figcaption>${esc(image.caption || `This photograph appears on ${journey.name}'s OHP page.`)}
+      <span>${esc(image.credit)}</span></figcaption>
+  </figure>`);
+  return `<section class="profile-gallery" aria-label="Photographs from the original account">
+    ${figures[0] || ""}
+    ${figures.length > 1 ? `<details class="more-photographs">
+      <summary>View ${figures.length - 1} more ${figures.length === 2 ? "photograph" : "photographs"} ${icon("chevron")}</summary>
+      <div class="photo-list">${figures.slice(1).join("")}</div>
+    </details>` : ""}
+    ${references.length ? `<details class="original-gallery">
+      <summary>More photographs on OHP (${references.length}) ${icon("chevron")}</summary>
+      <p class="section-note">The original gallery includes these additional images. Their individual reuse rights have not been confirmed, so they open at the source.</p>
+      <ul>${references.map((image, index) => `<li><a href="${esc(image.sourceUrl || image.url)}" target="_blank" rel="noopener">${esc(
+        image.caption && !/^Photograph from |^OHP archive photograph/i.test(image.caption)
+          ? image.caption : `Open source photograph ${index + 1}`,
+      )} ${icon("external-link")}</a></li>`).join("")}</ul>
+    </details>` : ""}
+  </section>`;
+}
+
+function profileInterviews(journey) {
+  if (!journey.videoCount && !journey.media.videos.length) return "";
+  const chapters = journey.media.videos.map((video, index) => {
+    const playable = playerURL(video);
+    const chapterTitle = video.title.replace(new RegExp(`^${index + 1}[.)]\\s*`), "");
+    const title = `<span class="video-order">${index + 1}</span><span>${esc(chapterTitle)}
+      <small>${esc(captionStatus(video))}</small></span>${icon(playable ? "play" : "external-link")}`;
+    return `<li>${playable
+      ? `<button class="video-chapter" data-video="${esc(video.id)}">${title}</button>`
+      : `<a class="video-chapter" href="${esc(journey.archiveUrl)}" target="_blank" rel="noopener">${title}</a>`}</li>`;
+  });
+  return `<section class="profile-interviews" id="profile-interviews" aria-labelledby="interviews-title">
+    <h3 id="interviews-title" tabindex="-1">The interview</h3>
+    <p class="section-note">These chapters come from ${esc(journey.name)}'s OHP page. A video loads only when you choose a chapter.</p>
+    <div class="interview-player" data-player hidden>
+      <div class="player-heading"><strong data-player-title></strong>
+        <button data-act="close-video" aria-label="Close video">${icon("close")}</button></div>
+      <div class="player-frame" data-player-frame></div>
+      <p class="player-note">If Vimeo cannot play this recording here, <a href="${esc(journey.archiveUrl)}" target="_blank" rel="noopener">open it on the OHP page</a>.</p>
+    </div>
+    ${chapters.length ? `<ol class="video-chapters">${chapters.slice(0, 5).join("")}</ol>
+      ${chapters.length > 5 ? `<details class="more-videos"><summary>View all ${chapters.length} chapters ${icon("chevron")}</summary>
+        <ol class="video-chapters" start="6">${chapters.slice(5).join("")}</ol></details>` : ""}`
+      : `<a class="archive-link" href="${esc(journey.archiveUrl)}" target="_blank" rel="noopener">Open the interview chapters on OHP ${icon("external-link")}</a>`}
+  </section>`;
 }
 
 function mapTools() {
@@ -300,7 +319,7 @@ function mapTools() {
 }
 
 function profileMedal(journey, color, large = false) {
-  const portrait = clearedPortrait(journey);
+  const portrait = profilePicture(journey);
   return `<span class="medal ${large ? "medal-lg" : ""}" style="--gc:${color}">
     <span class="avatar-initials">${esc(journey.initials)}</span>
     ${portrait ? `<img src="${esc(portrait)}" alt="" loading="lazy" decoding="async">` : ""}
@@ -314,7 +333,7 @@ export function patterns(store, state) {
   const toggle = `
     <div class="layer-toggle" role="group" aria-label="Pattern layer">
       <button class="seg ${layer === "journeys" ? "on" : ""}" aria-pressed="${layer === "journeys"}" data-layer="journeys">History and routes</button>
-      <button class="seg ${layer === "origins" ? "on" : ""}" aria-pressed="${layer === "origins"}" data-layer="origins">Birthplaces</button>
+      <button class="seg ${layer === "origins" ? "on" : ""}" aria-pressed="${layer === "origins"}" data-layer="origins">Route origins</button>
     </div>`;
 
   if (layer === "origins") {
@@ -323,14 +342,13 @@ export function patterns(store, state) {
     return `
     <div class="ov ov-patterns is-origins">
       <div class="patterns-intro">
-        <p class="kicker">Archive birthplaces</p>
-        <h2 class="serif-xl">Where the accounts begin</h2>
+        <h2 class="serif-xl">Where the mapped routes begin</h2>
         <p class="lede sm">${topOrigin
-          ? `<span class="accent">${esc(topOrigin[0])}</span> has the largest count, with <b>${topOrigin[1]}</b> recorded birthplaces.`
-          : "No birthplace data is available."}</p>
+          ? `<span class="accent">${esc(topOrigin[0])}</span> has the largest count, with <b>${topOrigin[1]}</b> mapped starting places.`
+          : "No mapped starting places are available."}</p>
         ${toggle}
         <ul class="origin-list">${list}</ul>
-        <p class="cross-sub">Historical place names are grouped under present-day countries.</p>
+        <p class="cross-sub">This layer counts the first place in each mapped route, not confirmed birthplaces. Historical names are grouped under present-day countries.</p>
       </div>
       ${mapTools()}
     </div>`;
@@ -339,32 +357,113 @@ export function patterns(store, state) {
   return `
   <div class="ov ov-patterns">
     <div class="patterns-map-head">
-      <div>
-        <p class="micro-label">Historical atlas / 1914 to 2026</p>
-        <h2>Territory and testimony</h2>
-      </div>
+      <h2>Territory and testimony</h2>
+      <p class="history-scope">Explore dated borders and recorded accounts, ${store.time.min} to ${store.time.max}.</p>
       ${toggle}
+      <form class="history-search" data-history-search>
+        <label class="sr-only" for="history-location">Find a country or an OHP place</label>
+        <input id="history-location" type="search" list="history-locations" placeholder="Find a country or recorded place" autocomplete="off" data-country-search>
+        <button type="submit" aria-label="Find location">${icon("search")}</button>
+        <datalist id="history-locations"></datalist>
+      </form>
+      <p class="history-search-status" data-search-status role="status"></p>
+      <div class="history-toolbar">
+        <details class="history-settings">
+          <summary>${icon("layers")} Map layers ${icon("chevron")}</summary>
+          <div class="history-settings-body">
+            <label><input type="checkbox" data-history-setting="flags"${state.historyFlags ? " checked" : ""}> Historical flags</label>
+            <label><input type="checkbox" data-history-setting="labels"${state.historyLabels ? " checked" : ""}> Territory names</label>
+            <label><input type="checkbox" data-history-setting="routes"${state.historyRoutes ? " checked" : ""}> Shared interview routes</label>
+            <label><input type="checkbox" data-history-setting="testimony"${state.historyTestimony ? " checked" : ""}> Recorded places</label>
+            <label><input type="checkbox" data-history-setting="compare"${state.historyCompare ? " checked" : ""}> Compare with today's borders</label>
+            <label class="history-range-label">Historical layer opacity
+              <input type="range" min="0.2" max="1" step="0.05" value="${state.historyOpacity}" data-history-opacity aria-label="Historical layer opacity"></label>
+            <label class="history-range-label" data-compare-control${state.historyCompare ? "" : " hidden"}>Move the comparison divider
+              <input type="range" min="0" max="100" step="1" value="${state.historySplit}" data-history-split aria-label="Historical comparison divider"></label>
+            <button class="compact-layer-switch" data-layer="origins">Show mapped route origins</button>
+          </div>
+        </details>
+        <button class="history-share" data-act="share-map" aria-label="Copy map link" title="Copy map link">${icon("share")}</button>
+        ${mapTools()}
+      </div>
+      <p class="history-share-status" data-share-status role="status"></p>
+      <input class="share-address" data-share-address aria-label="Map link" readonly hidden>
     </div>
-    <aside class="history-dossier" data-pattern-events tabindex="0" aria-label="Historical context and recorded places">${patternsEvents(store, state)}</aside>
+    <aside class="history-dossier" aria-label="Historical context and recorded places">
+      <details class="history-context-disclosure" data-history-context${(state.historyContextOpen ?? window.innerWidth > 820) ? " open" : ""}>
+        <summary>Year context and sources <span data-year>${state.scrubYear}</span>${icon("chevron")}</summary>
+        <div class="history-context-body" data-pattern-events tabindex="0">${patternsEvents(store, state)}</div>
+      </details>
+    </aside>
     <div class="scrubber">
-      <div class="scrub-head"><span class="micro-label">Historical timeline</span>
-        <span class="scrub-year" data-year>${state.scrubYear}</span></div>
+      <div class="scrub-head">
+        <button class="history-play" data-act="play-history" aria-label="${state.historyPlaying ? "Pause history" : "Play history"}" aria-pressed="${state.historyPlaying}">${icon(state.historyPlaying ? "pause" : "play")}</button>
+        <span class="timeline-label">Historical timeline</span>
+        <div class="year-navigation">
+          <button data-act="prev-year" aria-label="Previous year"${state.scrubYear <= store.time.min ? " disabled" : ""}>${icon("arrow-right")}</button>
+          <form data-year-form><label class="sr-only" for="history-year">Year</label>
+            <input id="history-year" class="scrub-year" type="number" min="${store.time.min}" max="${store.time.max}" step="1" required value="${state.scrubYear}" data-year data-year-entry aria-label="Year">
+          </form>
+          <button data-act="next-year" aria-label="Next year"${state.scrubYear >= store.time.max ? " disabled" : ""}>${icon("arrow-right")}</button>
+        </div>
+      </div>
       <input class="range" type="range" min="${store.time.min}" max="${store.time.max}" step="1" value="${state.scrubYear}" data-scrub aria-label="Year, ${store.time.min} to ${store.time.max}">
       ${boundaryDensity(store, state.scrubYear)}
       <div class="scrub-ticks"><span>${store.time.min}</span><span>1945</span><span>1989</span><span>${store.time.max}</span></div>
+      <div class="compare-caption" data-compare-caption${state.historyCompare ? "" : " hidden"}>
+        <span>Left: <b data-year>${state.scrubYear}</b> borders</span><span>Right: today's borders</span>
+      </div>
     </div>
-    ${mapTools()}
   </div>`;
 }
 
 export function patternsEvents(store, state) {
   const events = store.eventsByYear.get(state.scrubYear) || [];
   const activeEvent = events.find((event) => event.key === state.patternEventKey) || null;
-  const previousDisabled = state.scrubYear <= store.time.min ? " disabled" : "";
-  const nextDisabled = state.scrubYear >= store.time.max ? " disabled" : "";
   return `
-    ${warBrief(store, state.scrubYear, previousDisabled, nextDisabled)}
-    ${testimonyMoment(activeEvent, events)}`;
+    ${state.historyInfo ? countryInspector(state.historyInfo, state.scrubYear) : warBrief(store, state.scrubYear, state.historyRoutes)}
+    ${state.historyTestimony ? testimonyMoment(activeEvent, events) : ""}
+    <details class="history-sources">
+      <summary>Original maps and historical context ${icon("chevron")}</summary>
+      ${contextResources(state.scrubYear)}
+      <p class="history-method">The atlas samples the middle of each year. Flags appear only where the dated design has been verified.
+        OpenHistoricalMap coverage is incomplete and does not show every wartime front line.</p>
+    </details>`;
+}
+
+function countryInspector(country, year) {
+  const flag = country.flag;
+  return `<section class="country-inspector">
+    <button class="country-back" data-act="clear-country">${icon("arrow-right")} Back to ${year}</button>
+    <div class="country-heading">${flag ? `<img class="country-flag" src="${esc(flag.src)}" alt="${esc(flag.label)}" width="66" height="44">` : ""}
+      <div><h3 tabindex="-1">${esc(country.name)}</h3><p>Mapped in ${year}</p></div></div>
+    ${flag ? `<details class="flag-details"><summary>Flag dates and source ${icon("chevron")}</summary>
+      <p class="flag-note">${esc(readableFlagText(flag.note || ""))}
+      ${flag.start ? `<span class="flag-dates">The recorded use dates are ${esc(flag.start)}${flag.end ? ` to ${esc(flag.end)}` : " onward"}.</span>` : ""}
+      <a href="${esc(flag.sourceUrl)}" target="_blank" rel="noopener">Flag source and dates ${icon("external-link")}</a>
+      <span class="flag-credit">${esc(readableFlagText([flag.credit, flag.license].filter(Boolean).join(", ")))}</span></p></details>
+      <p class="flag-summary">${esc(readableFlagText(flag.label))}</p>`
+      : '<p class="flag-note">A flag design has not been verified for this administration at this date.</p>'}
+    <details class="country-areas"><summary>View ${country.count} mapped ${country.count === 1 ? "area" : "areas"} ${icon("chevron")}</summary>
+      <ul>${country.territories.map((territory) => `<li><strong>${esc(territory.name)}</strong>
+        <span>${esc(territory.dates)}${territory.kind ? `, ${esc(territory.kind.replaceAll("_", " "))}` : ""}</span></li>`).join("")}</ul>
+    </details>
+    <a class="archive-link" href="${esc(country.externalUrl)}" target="_blank" rel="noopener">Open this area in OldMapsOnline ${icon("external-link")}</a>
+    <p class="country-source">Territory records: <a href="https://www.openhistoricalmap.org/" target="_blank" rel="noopener">OpenHistoricalMap (CC0)</a>.</p>
+  </section>`;
+}
+
+function readableFlagText(text) {
+  return String(text).replace(/\s+\u2014\s+/g, ", ").replace(/\u2013/g, " to ");
+}
+
+function contextResources(year) {
+  const resources = resourcesForYear(year);
+  return `<ul class="context-resources">${resources.map((resource) => `<li>
+    <a href="${esc(resource.url)}" target="_blank" rel="noopener">${icon(resource.kind === "video" ? "play" : "external-link")}<span>${esc(resource.title)}</span></a>
+    <span class="resource-credit">${esc(resource.publisher)}${resource.publishedYear ? `, ${esc(resource.publishedYear)}` : ""}</span>
+    ${resource.note ? `<p>${esc(resource.note)}</p>` : ""}</li>`).join("")}</ul>
+    <a class="catalogue-link" href="https://www.oldmapsonline.org/en" target="_blank" rel="noopener">Search the scanned-map catalogue on OldMapsOnline ${icon("external-link")}</a>`;
 }
 
 // ---- ABOUT ------------------------------------------------------------------
@@ -374,7 +473,6 @@ export function about(store) {
   <div class="ov ov-about scroll">
     <div class="about-wrap">
       <header class="about-header">
-        <p class="kicker">Crestwood Oral History Project</p>
         <h1 class="display sm">About the map</h1>
         <p class="lede">Crestwood students have recorded interviews with Holocaust survivors,
         veterans, and community members for years. This map organizes the places named in
@@ -388,9 +486,9 @@ export function about(store) {
           <a class="archive-link" href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">Visit the original archive ${icon("external-link")}</a>
         </aside>
         <div class="about-grid">
-        <section><h2>Reading a recorded life</h2><p>Guided follows one person's places in sequence.
-          Explore lets you search the collection. Patterns puts dated accounts alongside
-          changing territories from 1914 to 2026.</p></section>
+        <section><h2>Reading a recorded life</h2><p>Explore brings each person's account, photographs,
+          interview chapters, and recorded places together. The historical atlas puts dated accounts
+          alongside changing territories from 1914 to 2026.</p></section>
         <section><h2>From testimony to map</h2><p>Each route uses places named on a public OHP
           page. Historical names are matched to current locations, so &quot;Lemberg&quot;
           resolves to Lviv. Dates determine the order when the source provides them.</p>
@@ -405,13 +503,24 @@ export function about(store) {
             <div><dt>Historical territories</dt><dd>OpenHistoricalMap (CC0)</dd></div>
             <div><dt>War participants</dt><dd>Correlates of War, Inter-State War Data v4.0</dd></div>
             <div><dt>Basemap</dt><dd>Natural Earth via world-atlas</dd></div>
+            <div><dt>Historical flags</dt><dd>Each flag uses a documented design, with its dates, source, and reuse terms available in the territory record.</dd></div>
+            <div><dt>Historical map reference</dt><dd><a href="https://www.oldmapsonline.org/en" target="_blank" rel="noopener">OldMapsOnline</a> is an external reference and scanned-map catalogue. Its catalogue is not reproduced here.</dd></div>
             <div><dt>Website code</dt><dd><a href="https://github.com/AlexDongzeyu/OHP-Map" target="_blank" rel="noopener">AlexDongzeyu/OHP-Map</a></dd></div>
           </dl>
+          <details class="flag-source-list">
+            <summary>Flag image credits and licences (${FLAG_SOURCES.length}) ${icon("chevron")}</summary>
+            <ul>${FLAG_SOURCES.map((source) => `<li>
+              <a href="${esc(source.sourceUrl)}" target="_blank" rel="noopener">${esc(readableFlagText(source.title))}</a>
+              <p>${esc(readableFlagText(source.credit))}</p>
+              <a href="${esc(source.licenseUrl)}" target="_blank" rel="noopener">${esc(source.license)}</a>
+              <p>${esc(readableFlagText(source.note))}</p>
+            </li>`).join("")}</ul>
+          </details>
         </section>
         </div>
       </div>
       <div class="cta-row">
-        <button class="btn btn-primary" data-act="follow">Begin with one story ${icon("arrow-right")}</button>
+        <button class="btn btn-primary" data-act="explore">Explore the collection ${icon("arrow-right")}</button>
         <button class="btn btn-ghost" data-act="home">Back to the start</button>
       </div>
     </div>
@@ -430,54 +539,38 @@ function haystack(j) {
 function wpMeta(w) {
   const yr = w.year ? (w.approx ? `c. ${w.year}` : `${w.year}`) : "date uncertain";
   const written = w.asWritten && w.asWritten.toLowerCase() !== (w.canonical || "").toLowerCase()
-    ? `. Listed as “${esc(w.asWritten)}”` : "";
+    ? `. Listed as "${w.asWritten}"` : "";
   return `${w.role}, ${yr}${written}`;
 }
-function metaLine(w) {
-  const yr = w.year ? (w.approx ? `around ${w.year}` : `${w.year}`) : "date uncertain";
-  const written = w.asWritten && w.asWritten.toLowerCase() !== (w.canonical || "").toLowerCase()
-    ? `. Listed as “${esc(w.asWritten)}”` : "";
-  return `${yr}${written}`;
-}
 function profileMeta(journey) {
-  if (journey.born && journey.hometown) return `Born ${journey.born} in ${esc(journey.hometown)}`;
-  if (journey.born) return `Born ${journey.born}`;
-  return esc(journey.hometown);
-}
-function serviceContext(store, journey) {
-  const context = store.warForJourney(journey);
-  if (!context) return "";
-  return `<div class="service-context">
-    <span class="micro-label">War context</span>
-    <strong>${esc(journey.serviceConflict)}</strong>
-    <span>${esc(context.coalition_label)} <b>against</b> ${esc(context.opposition_label)}</span>
-  </div>`;
+  const places = `${journey.waypoints.length} recorded ${journey.waypoints.length === 1 ? "place" : "places"}`;
+  return journey.born ? `Born ${journey.born}. ${places}.` : `${places}.`;
 }
 function recordingMeta(journey) {
   if (!journey.videoCount) return "";
   let captionText;
   if (journey.transcriptStatus === "pending") {
-    captionText = "caption status pending";
+    captionText = "Caption availability is being checked.";
   } else if (journey.transcriptStatus === "unavailable") {
-    captionText = "caption status unavailable";
+    captionText = "Vimeo did not expose caption information for these chapters.";
   } else if (journey.captionedVideoCount) {
-    captionText = `${journey.captionedVideoCount} with public captions`;
+    captionText = `Public captions are available for ${journey.captionedVideoCount} ${journey.captionedVideoCount === 1 ? "chapter" : "chapters"}.`;
   } else {
-    captionText = "no public captions";
+    captionText = "Vimeo does not provide public captions for these chapters.";
   }
   return `<p class="recording-meta">
-    <span>${journey.videoCount} interview ${journey.videoCount === 1 ? "chapter" : "chapters"}</span>
+    <span>This interview has ${journey.videoCount} ${journey.videoCount === 1 ? "chapter" : "chapters"}.</span>
     <span>${captionText}</span>
   </p>`;
 }
-function warBrief(store, year, previousDisabled, nextDisabled) {
+function warBrief(store, year, showRoutes = true) {
   const context = store.warAt(year);
   if (!context) return "";
   const boundary = store.historicalIndex.years.find((entry) => entry.year === year);
   const eraMap = year <= 1918 ? 1914 : (
     year <= 1945 ? 1944 : (year <= 1988 ? 1960 : (year <= 2000 ? 1991 : 2026))
   );
-  const corridors = context.archive_conflict
+  const corridors = showRoutes && context.archive_conflict
     ? (store.veteranCorridors.get(context.archive_conflict) || [])
       .filter((corridor) => corridor.count > 1)
       .slice(0, 8)
@@ -496,19 +589,8 @@ function warBrief(store, year, previousDisabled, nextDisabled) {
   return `<section class="war-brief" data-war-context>
     <img class="war-brief-map" src="assets/history/atlas-${eraMap}.svg" alt="" aria-hidden="true">
     <div class="war-brief-content">
-      <div class="war-brief-top">
-        <span class="micro-label">${esc(context.conflict)}</span>
-        <span class="war-stepper">
-          <button class="event-step prev" data-act="prev-year" aria-label="Previous year"${previousDisabled}>
-            ${icon("arrow-right")}
-          </button>
-          <b data-year>${year}</b>
-          <button class="event-step" data-act="next-year" aria-label="Next year"${nextDisabled}>
-            ${icon("arrow-right")}
-          </button>
-        </span>
-      </div>
       <strong>${esc(context.phase)}</strong>
+      <div class="war-brief-top"><span>${esc(context.conflict)}</span><b data-year>${year}</b></div>
       <p>${esc(context.summary)}</p>
       ${legend}
       <small>
@@ -533,8 +615,8 @@ function testimonyMoment(activeEvent, events) {
   }
   const portraits = activeEvent.people.filter((person) => person.portrait).slice(0, 5)
     .map((person) => `<img src="${esc(person.portrait)}" alt="" loading="lazy" decoding="async">`).join("");
-  const names = activeEvent.people.slice(0, 4).map((person) => person.name).join(", ");
-  const more = activeEvent.people.length > 4 ? ` +${activeEvent.people.length - 4}` : "";
+  const personLink = (person) => `<button class="event-person" data-survivor="${esc(person.id)}">${esc(person.name)}</button>`;
+  const names = activeEvent.people.slice(0, 4).map(personLink).join("");
   return `<div class="testimony-moment is-selected">
     <div class="moment-head">
       <span class="event-role">${esc(activeEvent.role)}</span>
@@ -547,8 +629,10 @@ function testimonyMoment(activeEvent, events) {
     <strong>${esc(activeEvent.place)}</strong>
     <span class="event-people">
       <span class="event-portraits">${portraits}</span>
-      <span class="event-names">${esc(names)}${more}</span>
+      <span class="event-names">${names}</span>
     </span>
+    ${activeEvent.people.length > 4 ? `<details class="more-event-people"><summary>Show all ${activeEvent.people.length} people ${icon("chevron")}</summary>
+      <div>${activeEvent.people.slice(4).map(personLink).join("")}</div></details>` : ""}
     <small>${activeEvent.count} ${activeEvent.count === 1 ? "interview" : "interviews"}${activeEvent.approximate ? ", some dates are approximate" : ""}</small>
   </div>`;
 }
@@ -562,7 +646,4 @@ function boundaryDensity(store, selectedYear) {
         style="--change-height:${height}%" title="${entry.year}: ${entry.changes} mapped boundary changes"></i>`;
     }).join("")}
   </div>`;
-}
-function trimQuote(q) {
-  return String(q).trim().replace(/\s+/g, " ");
 }

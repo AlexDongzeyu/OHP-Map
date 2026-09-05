@@ -23,13 +23,14 @@ def test_review_stage_labels_pending_vs_reviewed():
     staged = {s["survivor_id"]: s for s in review.stage(survivors)}
     assert staged["p"]["review_status"] == "pending"
     assert staged["r"]["review_status"] == "reviewed"
-    assert "empty" not in staged  # no placeable waypoints -> dropped
+    assert staged["empty"]["review_status"] == "pending"
 
 
 def test_review_stage_strict_drops_pending():
     survivors = [
         {"survivor_id": "p", "waypoints": [{"verified": False}]},
         {"survivor_id": "r", "waypoints": [{"verified": True}]},
+        {"survivor_id": "empty", "waypoints": []},
     ]
     ids = {s["survivor_id"] for s in review.stage(survivors, strict=True)}
     assert ids == {"r"}

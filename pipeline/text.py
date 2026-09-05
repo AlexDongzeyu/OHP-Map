@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 
-_SENTENCE_END = re.compile(r"""[.!?](?:["”’')\]]+)?(?=\s|$)""")
+_SENTENCE_END = re.compile(r"""[.!?](?:["”’')\]]+)?(?=\s|$)|(?<=\d{4})\.(?=[A-Z][a-z])""")
 _COMPLETE_END = re.compile(r"""[.!?](?:["”’')\]]+)?$""")
 _ABBREVIATIONS = {
     "adm", "apr", "assoc", "aug", "ave", "blvd", "brig", "ca", "capt",
@@ -32,6 +32,41 @@ def _sentence_endings(text: str) -> list[int]:
     return endings
 
 
+def source_sentence(text: str, start: int, end: int) -> str:
+    """Return the complete source sentence(s) containing a literal matched span."""
+    if not 0 <= start < end <= len(text):
+        raise ValueError("The source span must be inside the source text")
+    endings = _sentence_endings(text)
+    left = max((boundary for boundary in endings if boundary <= start), default=0)
+    right = next((boundary for boundary in endings if boundary >= end), len(text))
+    return text[left:right].strip()
+
+
+def repair_source_quote(waypoint: dict, text: str) -> dict:
+    """Expand an unreviewed supporting quotation without re-extracting its claims."""
+    if waypoint.get("verified") or not text:
+        return waypoint
+    quote = waypoint.get("source_quote") or ""
+    fragments = [part.strip() for part in re.split(r"\s*(?:…|\.{3})\s*", quote) if part.strip()]
+    spans, cursor = [], 0
+    for fragment in fragments:
+        match = re.search(re.escape(fragment), text[cursor:], re.I)
+        if not match:
+            spans = []
+            break
+        spans.append((cursor + match.start(), cursor + match.end()))
+        cursor += match.end()
+    if spans:
+        complete = source_sentence(text, spans[0][0], spans[-1][1])
+    else:
+        place = waypoint.get("as_written") or ""
+        matches = list(re.finditer(rf"\b{re.escape(place)}\b", text, re.I)) if place else []
+        if len(matches) != 1:
+            return waypoint  # An ambiguous mention cannot safely replace an old quotation.
+        complete = source_sentence(text, matches[0].start(), matches[0].end())
+    return {**waypoint, "source_quote": complete}
+
+
 def sentence_excerpt(text: str, limit: int = 520) -> str:
     """Return complete source sentences near the requested character limit."""
     clean = re.sub(r"\s+", " ", (text or "")).strip()
@@ -44,15 +79,12 @@ def sentence_excerpt(text: str, limit: int = 520) -> str:
             return clean
         if endings:
             return clean[:endings[-1]].strip()
-        return f"{clean.rstrip(' ,;:-')}."
+        return clean
 
     before = [end for end in endings if end <= limit]
     if before:
         return clean[:before[-1]].strip()
 
-    after = next((end for end in endings if end <= limit + 240), None)
-    if after:
-        return clean[:after].strip()
-
-    cut = clean[:limit].rsplit(" ", 1)[0].rstrip(" ,;:-")
-    return f"{cut}."
+    if endings:
+        return clean[:endings[0]].strip()
+    return clean

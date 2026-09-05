@@ -44,7 +44,11 @@ def _portrait_index(path=PORTRAIT_MANIFEST) -> dict[str, dict]:
 
 
 def _with_portrait(record: dict, portraits: dict[str, dict]) -> dict:
-    portrait = portraits.get(record.get("survivor_id"))
+    portrait = next((
+        portraits[key]
+        for key in [record.get("survivor_id"), *record.get("source_aliases", [])]
+        if key in portraits
+    ), None)
     return {**record, **portrait} if portrait else record
 
 
@@ -196,14 +200,17 @@ class CombinedSource(Source):
     def fetch(self) -> Iterable[dict]:
         seen = set()
         portraits = _portrait_index()
+        scraped = list(ScrapedSource(self.scraped).fetch())
+        source_by_id = {rec["survivor_id"]: rec for rec in scraped}
         if self.curated.exists():
             with open(self.curated, encoding="utf-8") as fh:
                 for rec in json.load(fh).get("survivors", []):
+                    rec = {**source_by_id.get(rec["survivor_id"], {}), **rec}
                     rec.setdefault("is_sample", False)
                     rec["featured"] = True
                     seen.add(rec["survivor_id"])
                     yield _with_portrait(rec, portraits)
-        for rec in ScrapedSource(self.scraped).fetch():
+        for rec in scraped:
             if rec["survivor_id"] not in seen:
                 yield _with_portrait(rec, portraits)
 
@@ -224,19 +231,21 @@ class AllSource(Source):
     def fetch(self) -> Iterable[dict]:
         seen = set()
         portraits = _portrait_index()
-        if self.curated.exists():
-            with open(self.curated, encoding="utf-8") as fh:
-                for rec in json.load(fh).get("survivors", []):
-                    rec.setdefault("is_sample", False)
-                    rec.setdefault("group", "Holocaust Survivors")
-                    rec.setdefault("conflicts", ["The Holocaust"])
-                    seen.add(rec["survivor_id"])
-                    yield _with_portrait(rec, portraits)
         if not self.all_path.exists():
             raise FileNotFoundError(
                 f"{self.all_path} not found — run `python -m pipeline.scrape_all` first.")
         with open(self.all_path, encoding="utf-8") as fh:
             doc = json.load(fh)
+        source_by_id = {rec["survivor_id"]: rec for rec in doc.get("people", [])}
+        if self.curated.exists():
+            with open(self.curated, encoding="utf-8") as fh:
+                for rec in json.load(fh).get("survivors", []):
+                    rec = {**source_by_id.get(rec["survivor_id"], {}), **rec}
+                    rec.setdefault("is_sample", False)
+                    rec.setdefault("group", "Holocaust Survivors")
+                    rec.setdefault("conflicts", ["The Holocaust"])
+                    seen.add(rec["survivor_id"])
+                    yield _with_portrait(rec, portraits)
         for rec in doc.get("people", []):
             if rec["survivor_id"] in seen:
                 continue

@@ -2,14 +2,23 @@
 // rotating batch of existing profiles. New data is auto-extracted and remains unverified.
 import gazetteer from "../data/gazetteer.json";
 import geocodeCache from "../data/geocode_cache.json";
-import { mergeMediaCoverage } from "./media.js";
+import otherMediaPages from "../data/source/ohp_media_pages.json";
+import {
+  decodeEntities,
+  mergeMediaCoverage,
+  mergeSeedMediaCoverage,
+  parseProfileMedia,
+  sourceBiography,
+  sourceInventory,
+  videoInventory,
+} from "./media.js";
 
 const BASE = "https://ohp.crestwood.on.ca";
 const UA = "CrestwoodOHP-Map-Worker/2.0 (+https://github.com/AlexDongzeyu/OHP-Map)";
 export const DATA_KEY = "survivors.geojson";
 export const STATUS_KEY = "ohp-sync-status.json";
 export const GAZETTEER_REVISION = gazetteer.revision;
-export const CONTENT_REVISION = "complete-excerpts-v3";
+export const CONTENT_REVISION = "reconciled-public-sources-v5";
 export const HISTORY_MIN_YEAR = 1914;
 export const HISTORY_MAX_YEAR = 2026;
 const SEEN_KEY = "ohp-seen-slugs.json";
@@ -17,10 +26,6 @@ const FAILURE_KEY = "ohp-fetch-failures.json";
 const CURSOR_KEY = "ohp-refresh-cursor";
 const DETAIL_BUDGET = 30;
 const RUN_LOCK_MINUTES = 15;
-const RIGHTS = (
-  "Reuse permission granted by the photograph author and project owner " +
-  "on 2026-09-02 for the OHP Map."
-);
 
 const CATEGORIES = [
   ["holocaust-survivors", "Holocaust Survivors"],
@@ -39,9 +44,10 @@ const GROUP_ORDER = [
 ];
 const RESETTLEMENT = new Set([
   "Toronto, Canada", "Canada", "Montreal, Canada", "Israel",
-  "New York, USA", "Vienna, Austria", "Switzerland", "Italy",
+  "New York, USA", "Vienna, Austria",
 ]);
 const ROLE_ORDER = { birthplace: 0, ghetto: 1, camp: 2, transit: 3, liberation: 4, resettlement: 5 };
+const NON_PROFILE_SLUGS = new Set(otherMediaPages.pages.map((page) => page.survivor_id));
 
 export async function syncSurvivors(env) {
   if (!env.OHP_DATA || !env.ASSETS) throw new Error("OHP_DATA and ASSETS bindings are required");
@@ -61,23 +67,31 @@ export async function syncSurvivors(env) {
       (current.features || []).map((feature) => [feature.properties.survivor_id, feature]),
     );
     const seenDoc = await env.OHP_DATA.get(SEEN_KEY, "json");
-    const seen = new Set(Array.isArray(seenDoc) ? seenDoc : featuresById.keys());
+    const seen = new Set([...(Array.isArray(seenDoc) ? seenDoc : []), ...featuresById.keys()]);
     const failures = (await env.OHP_DATA.get(FAILURE_KEY, "json")) || {};
-    const listed = await listArchiveEntries();
+    const aliases = new Map(current.features.flatMap((feature) => (
+      (feature.properties.source_aliases || []).map((alias) => [alias, feature.properties.survivor_id])
+    )));
+    const listed = [...new Map((await listArchiveEntries()).map((entry) => {
+      const slug = aliases.get(entry.slug) || entry.slug;
+      return [slug, { ...entry, slug }];
+    })).values()];
     const newlyListed = listed.filter((entry) => !seen.has(entry.slug));
-    const eligibleNew = newlyListed.filter((entry) => (
+    const retryEligible = (entry) => (
       !failures[entry.slug] ||
       Date.parse(failures[entry.slug].retry_after) <= Date.now()
-    ));
+    );
+    const eligibleNew = newlyListed.filter(retryEligible);
     const newBatch = eligibleNew.slice(0, DETAIL_BUDGET);
 
     const refreshable = listed.filter((entry) => (
       seen.has(entry.slug) &&
       featuresById.get(entry.slug)?.properties?.review_status !== "reviewed"
     ));
+    const eligibleRefresh = refreshable.filter(retryEligible);
     const cursor = Number(await env.OHP_DATA.get(CURSOR_KEY)) || 0;
     const refreshSlots = Math.max(0, DETAIL_BUDGET - newBatch.length);
-    const refreshBatch = circularSlice(refreshable, cursor, refreshSlots);
+    const refreshBatch = circularSlice(eligibleRefresh, cursor, refreshSlots);
     const batch = [...newBatch, ...refreshBatch];
 
     let added = 0;
@@ -92,18 +106,22 @@ export async function syncSurvivors(env) {
         failed++;
         continue;
       }
+      const record = parseEntry(entry.slug, html, entry.group);
+      if (record.protected) {
+        delete failures[entry.slug];
+        seen.add(entry.slug);
+        featuresById.delete(entry.slug);
+        continue;
+      }
+      if (!record.source_public) {
+        failures[entry.slug] = nextFailure(failures[entry.slug]);
+        failed++;
+        continue;
+      }
       delete failures[entry.slug];
       seen.add(entry.slug);
-      const record = parseEntry(entry.slug, html, entry.group);
-      if (!record.text) {
-        unplaced++;
-        continue;
-      }
       const fresh = toFeature(record);
-      if (!fresh) {
-        unplaced++;
-        continue;
-      }
+      if (!fresh.geometry) unplaced++;
 
       const existing = featuresById.get(entry.slug);
       if (!existing) {
@@ -119,8 +137,8 @@ export async function syncSurvivors(env) {
     }
 
     const features = [...featuresById.values()];
-    const nextCursor = refreshable.length
-      ? (cursor + refreshBatch.length) % refreshable.length
+    const nextCursor = eligibleRefresh.length
+      ? (cursor + refreshBatch.length) % eligibleRefresh.length
       : 0;
     const completedAt = new Date().toISOString();
     const groups = countGroups(features);
@@ -139,6 +157,8 @@ export async function syncSurvivors(env) {
         group_order: GROUP_ORDER,
         reviewed: features.filter((feature) => feature.properties.review_status === "reviewed").length,
         pending: features.filter((feature) => feature.properties.review_status !== "reviewed").length,
+        placed: features.filter((feature) => feature.properties.waypoints.length).length,
+        unplaced: features.filter((feature) => !feature.properties.waypoints.length).length,
         sample_data: false,
         refreshed_at: completedAt,
         notice:
@@ -155,7 +175,7 @@ export async function syncSurvivors(env) {
       profiles_listed: listed.length,
       profiles_checked: batch.length,
       newly_listed: newlyListed.length,
-      deferred_failures: newlyListed.length - eligibleNew.length,
+      deferred_failures: newlyListed.length - eligibleNew.length + refreshable.length - eligibleRefresh.length,
       added,
       updated,
       unplaced,
@@ -216,14 +236,15 @@ function mergeSeedPortraits(cached, seed) {
     ...cached,
     features: cached.features.map((feature) => {
       const seeded = seedById.get(feature.properties.survivor_id);
-      if (!seeded?.portrait || feature.properties.portrait) return feature;
+      if (!seeded) return feature;
       return {
         ...feature,
         properties: {
           ...feature.properties,
-          portrait: seeded.portrait,
-          portrait_rights: seeded.portrait_rights,
-          portrait_faces: seeded.portrait_faces || 0,
+          portrait: feature.properties.portrait || seeded.portrait || null,
+          portrait_rights: feature.properties.portrait_rights || seeded.portrait_rights || null,
+          portrait_faces: feature.properties.portrait_faces || seeded.portrait_faces || 0,
+          ...mergeSeedMediaCoverage(feature.properties, seeded),
         },
       };
     }),
@@ -258,6 +279,7 @@ export async function ensureCurrentData(env, cached) {
 }
 
 function migrateCachedData(cached, seed) {
+  const geographyChanged = cached.metadata?.gazetteer_revision !== GAZETTEER_REVISION;
   const cachedById = new Map(
     cached.features.map((feature) => [feature.properties.survivor_id, feature]),
   );
@@ -265,32 +287,47 @@ function migrateCachedData(cached, seed) {
   const features = seed.features.map((seedFeature) => {
     const id = seedFeature.properties.survivor_id;
     seedIds.add(id);
-    const existing = cachedById.get(id);
+    const aliases = seedFeature.properties.source_aliases || [];
+    for (const alias of aliases) seedIds.add(alias);
+    const candidates = [
+      ...aliases.map((alias) => cachedById.get(alias)), cachedById.get(id),
+    ].filter(Boolean);
+    const existing = candidates.find((feature) => (
+      feature.properties.review_status === "reviewed" ||
+      feature.properties.waypoints.some((waypoint) => waypoint.verified)
+    )) || candidates[0];
     if (!existing) return seedFeature;
-    if (existing.properties.review_status === "reviewed") return existing;
+    const identity = {
+      survivor_id: id,
+      archive_url: seedFeature.properties.archive_url || existing.properties.archive_url,
+      ...(aliases.length ? { source_aliases: aliases } : {}),
+    };
+    if (existing.properties.review_status === "reviewed") {
+      return {
+        ...existing,
+        properties: {
+          ...existing.properties,
+          ...identity,
+          ...mergeSeedMediaCoverage(existing.properties, seedFeature.properties),
+        },
+      };
+    }
+    const hasReviewedPlaces = existing.properties.waypoints.some((waypoint) => waypoint.verified);
+    const replaceGeography = geographyChanged && !hasReviewedPlaces;
+    const waypoints = replaceGeography
+      ? seedFeature.properties.waypoints
+      : mergeSeedQuotes(existing.properties.waypoints, seedFeature.properties.waypoints);
     return {
       ...existing,
-      geometry: seedFeature.geometry,
+      geometry: replaceGeography ? seedFeature.geometry : existing.geometry,
       properties: {
         ...seedFeature.properties,
         ...existing.properties,
+        ...identity,
         bio_excerpt: sentenceExcerpt(
           seedFeature.properties.bio_excerpt || existing.properties.bio_excerpt || "",
         ),
-        video_count:
-          seedFeature.properties.video_count ?? existing.properties.video_count ?? 0,
-        video_inventory:
-          seedFeature.properties.video_inventory ||
-          existing.properties.video_inventory ||
-          videoInventory([]),
-        captioned_video_count:
-          seedFeature.properties.captioned_video_count ??
-          existing.properties.captioned_video_count ??
-          0,
-        transcript_status:
-          seedFeature.properties.transcript_status ||
-          existing.properties.transcript_status ||
-          "none",
+        ...mergeSeedMediaCoverage(existing.properties, seedFeature.properties),
         featured: seedFeature.properties.featured || existing.properties.featured || false,
         media_url: existing.properties.media_url || seedFeature.properties.media_url || null,
         portrait: existing.properties.portrait || seedFeature.properties.portrait || null,
@@ -301,18 +338,28 @@ function migrateCachedData(cached, seed) {
         theme_tags: seedFeature.properties.theme_tags?.length
           ? seedFeature.properties.theme_tags
           : (existing.properties.theme_tags || []),
-        waypoints: seedFeature.properties.waypoints,
+        waypoints,
       },
     };
   });
 
   for (const feature of cached.features) {
-    if (seedIds.has(feature.properties.survivor_id)) continue;
+    if (seedIds.has(feature.properties.survivor_id) || NON_PROFILE_SLUGS.has(feature.properties.survivor_id)) continue;
     if (feature.properties.review_status === "reviewed") {
       features.push(feature);
       continue;
     }
-    const sanitized = sanitizeCachedFeature(feature);
+    const sanitized = geographyChanged
+      ? sanitizeCachedFeature(feature)
+      : {
+        ...feature,
+        properties: {
+          ...feature.properties,
+          waypoints: feature.properties.waypoints.map((waypoint) => (
+            repairSourceQuote(waypoint, feature.properties.bio_excerpt || "")
+          )),
+        },
+      };
     if (sanitized) features.push(sanitized);
   }
 
@@ -323,10 +370,13 @@ function migrateCachedData(cached, seed) {
     ...cached,
     metadata: {
       ...(cached.metadata || {}),
+      ...(seed.metadata?.archive_coverage ? { archive_coverage: seed.metadata.archive_coverage } : {}),
       count: features.length,
       groups: countGroups(features),
       reviewed,
       pending: features.length - reviewed,
+      placed: features.filter((feature) => feature.properties.waypoints.length).length,
+      unplaced: features.filter((feature) => !feature.properties.waypoints.length).length,
       gazetteer_revision: GAZETTEER_REVISION,
       content_revision: CONTENT_REVISION,
       time_min: HISTORY_MIN_YEAR,
@@ -337,7 +387,20 @@ function migrateCachedData(cached, seed) {
   };
 }
 
+function mergeSeedQuotes(existing, seeded) {
+  return existing.map((waypoint) => {
+    if (waypoint.verified) return waypoint;
+    const source = seeded.find((candidate) => (
+      candidate.canonical === waypoint.canonical && candidate.as_written === waypoint.as_written
+    ));
+    return source?.source_quote
+      ? { ...waypoint, source_quote: source.source_quote }
+      : waypoint;
+  });
+}
+
 function sanitizeCachedFeature(feature) {
+  if (feature.properties.waypoints.some((waypoint) => waypoint.verified)) return feature;
   const seen = new Set();
   const waypoints = [];
   const cachedWaypoints = feature.properties.waypoints || [];
@@ -356,17 +419,13 @@ function sanitizeCachedFeature(feature) {
       lng: round(coordinates.lng),
     });
   }
-  if (!waypoints.length) return null;
-  const explicitBirthplace = waypoints.find((waypoint) => (
-    !gazetteer.known_sites[waypoint.canonical] && hasBirthplaceContext(waypoint)
-  ));
   const retainedBirthplace = waypoints.find((waypoint) => (
     !gazetteer.known_sites[waypoint.canonical] && waypoint.role === "birthplace"
   ));
   const inferredBirthplace = waypoints.find((waypoint) => (
     !gazetteer.known_sites[waypoint.canonical] && !RESETTLEMENT.has(waypoint.canonical)
   ));
-  const birthplace = explicitBirthplace || retainedBirthplace || inferredBirthplace;
+  const birthplace = retainedBirthplace || inferredBirthplace;
   const rerolled = waypoints.map((waypoint) => {
     const siteRole = gazetteer.known_sites[waypoint.canonical];
     let role = waypoint.role;
@@ -380,7 +439,7 @@ function sanitizeCachedFeature(feature) {
   const home = ordered.find((waypoint) => waypoint.role === "birthplace") || ordered[0];
   return {
     ...feature,
-    geometry: { type: "Point", coordinates: [home.lng, home.lat] },
+    geometry: home ? { type: "Point", coordinates: [home.lng, home.lat] } : null,
     properties: {
       ...feature.properties,
       bio_excerpt: sentenceExcerpt(feature.properties.bio_excerpt || ""),
@@ -398,19 +457,15 @@ function isQualifiedCountryWaypoint(waypoint, canonical, candidates) {
   if (canonical.includes(",")) return false;
   const quote = waypoint.source_quote || "";
   const countryMatches = [
-    ...quote.matchAll(new RegExp(escapePattern(waypoint.as_written), "gi")),
+    ...quote.matchAll(new RegExp(`\\b${escapePattern(waypoint.as_written)}\\b`, "gi")),
   ];
   if (!countryMatches.length) return false;
-  const countryStart = countryMatches.reduce((closest, match) => (
-    Math.abs(match.index - 40) < Math.abs(closest - 40) ? match.index : closest
-  ), countryMatches[0].index);
-  const prefix = quote.slice(0, countryStart);
-  return candidates.some((candidate) => {
+  return countryMatches.every((match) => candidates.some((candidate) => {
     const cityCanonical = gazetteer.aliases[aliasKey(candidate.as_written)];
     if (!cityCanonical?.includes(",")) return false;
     const city = escapePattern(candidate.as_written);
-    return new RegExp(`\\b${city}\\s*,\\s*$`, "i").test(prefix);
-  });
+    return new RegExp(`\\b${city}\\s*,\\s*$`, "i").test(quote.slice(0, match.index));
+  }));
 }
 
 function escapePattern(value) {
@@ -452,15 +507,15 @@ async function fetchText(url) {
 function extractSlugs(html) {
   const protectedSlugs = new Set();
   const protectedPatterns = [
-    /<option[^>]+value=["'](?:https:\/\/ohp\.crestwood\.on\.ca)?\/ohp\/([a-z0-9-]+)\/?["'][^>]*>\s*Protected:/gi,
-    /<a[^>]+href=["'](?:https:\/\/ohp\.crestwood\.on\.ca)?\/ohp\/([a-z0-9-]+)\/?["'][^>]*>\s*Protected:/gi,
+    /<option[^>]+value=["'](?:https?:\/\/ohp\.crestwood\.on\.ca)?\/ohp\/([a-z0-9-]+)\/?["'][^>]*>\s*Protected:/gi,
+    /<a[^>]+href=["'](?:https?:\/\/ohp\.crestwood\.on\.ca)?\/ohp\/([a-z0-9-]+)\/?["'][^>]*>\s*Protected:/gi,
   ];
   for (const pattern of protectedPatterns) {
     for (const match of html.matchAll(pattern)) protectedSlugs.add(match[1]);
   }
-  const matches = html.matchAll(/href=["'](?:https:\/\/ohp\.crestwood\.on\.ca)?\/ohp\/([a-z0-9-]+)\/?["']/gi);
+  const matches = html.matchAll(/(?:href|value)=["'](?:https?:\/\/ohp\.crestwood\.on\.ca)?\/ohp\/([a-z0-9-]+)\/?["']/gi);
   return [...new Set([...matches].map((match) => match[1]))]
-    .filter((slug) => !protectedSlugs.has(slug))
+    .filter((slug) => !protectedSlugs.has(slug) && !NON_PROFILE_SLUGS.has(slug))
     .sort();
 }
 
@@ -484,18 +539,7 @@ function clean(fragment) {
   return decodeEntities(text).replace(/\s+/g, " ").trim();
 }
 
-function decodeEntities(value) {
-  return value
-    .replace(/&#8211;/g, "–").replace(/&#8217;/g, "’").replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&quot;/g, "\"").replace(/&#039;/g, "'");
-}
-
 function parseEntry(slug, html, group) {
-  const videoIds = new Set(
-    [...html.matchAll(/player\.vimeo\.com\/video\/(\d+)/gi)]
-      .map((match) => match[1]),
-  );
   const body = html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ");
@@ -506,17 +550,33 @@ function parseEntry(slug, html, group) {
     if (raw && !/welcome/i.test(raw)) name = formatName(raw);
   }
   const contentMatch = body.match(/class="[^"]*entry-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-  let text = contentMatch ? clean(contentMatch[1]) : "";
+  const excerpt = contentMatch
+    ? contentMatch[1].split(/<(?:div|section)\b[^>]*\bid=["']ohp-(?:video|photo)["']/i)[0]
+    : "";
+  let text = clean(excerpt);
   text = text.split(/\bVideos\b/i)[0].trim();
+  const protectedPage = /(?:post-password-form|name=["']post_password["'])/i.test(body);
+  if (protectedPage) text = "";
+  const archiveUrl = `${BASE}/ohp/${slug}/`;
+  const canonicalTag = body.match(/<link\b[^>]*\brel=["']canonical["'][^>]*>/i)?.[0] || "";
+  const canonicalUrl = decodeEntities(canonicalTag.match(/\bhref=["']([^"']+)["']/i)?.[1] || "");
+  const canonicalMatches = !canonicalUrl || canonicalUrl.replace(/^http:/, "https:").replace(/\/$/, "") === archiveUrl.replace(/\/$/, "");
+  const profileMedia = parseProfileMedia(body, archiveUrl, name);
   return {
     survivor_id: slug,
     name,
     group,
-    conflicts: deriveConflicts(group, text),
-    archive_url: `${BASE}/ohp/${slug}/`,
-    portrait: selectPortrait(body, name),
-    video_count: videoIds.size,
-    video_inventory: videoInventory([...videoIds]),
+    conflicts: text || group === "Holocaust Survivors" ? deriveConflicts(group, text) : [],
+    archive_url: archiveUrl,
+    portrait: selectPortrait(profileMedia.images, name),
+    portrait_rights: profileMedia.images[0]?.rights || null,
+    profile_media: profileMedia,
+    video_count: profileMedia.videos.length,
+    video_inventory: videoInventory(profileMedia.videos.map((video) => video.id)),
+    video_source_inventory: sourceInventory(profileMedia.videos),
+    protected: protectedPage,
+    source_public: !protectedPage && Boolean(contentMatch) && canonicalMatches,
+    quote_text: sourceBiography(body),
     text,
   };
 }
@@ -546,18 +606,14 @@ function deriveConflicts(group, text) {
   return found;
 }
 
-function selectPortrait(html, name) {
+function selectPortrait(images, name) {
   const nameTokens = new Set((name.toLowerCase().match(/[a-z]{3,}/g) || []));
   const candidates = [];
-  const imageTags = html.match(/<img\b[^>]*>/gi) || [];
-  for (let order = 0; order < imageTags.length; order++) {
-    const tag = imageTags[order];
-    const sourceMatch = tag.match(/\b(?:src|data-src)=["']([^"']+)["']/i);
-    if (!sourceMatch) continue;
-    const url = decodeEntities(sourceMatch[1]);
-    if (!url.includes("/wp-content/uploads/")) continue;
-    let score = /attachment-thumbnail/i.test(tag) ? 2 : 0;
-    const haystack = tag.toLowerCase();
+  for (let order = 0; order < images.length; order++) {
+    const image = images[order];
+    const url = image.url;
+    let score = 0;
+    const haystack = `${url} ${image.caption}`.toLowerCase();
     for (const token of nameTokens) if (haystack.includes(token)) score += 6;
     for (const token of ["portrait", "headshot", "profile", "solo"]) {
       if (haystack.includes(token)) score += 4;
@@ -612,18 +668,21 @@ function extract(text) {
       },
       confidence: 0.5,
       verified: false,
-      source_quote: context.trim(),
+      source_quote: sourceSentence(text, start, end),
+      _role_context: context,
     });
   }
   let firstAssigned = false;
   for (const waypoint of output) {
     const canonical = waypoint._canonical;
     delete waypoint._canonical;
+    const roleContext = { ...waypoint, source_quote: waypoint._role_context };
+    delete waypoint._role_context;
     const siteRole = gazetteer.known_sites[canonical];
     const isFirst = (
       !firstAssigned &&
       !siteRole &&
-      (!RESETTLEMENT.has(canonical) || hasBirthplaceContext(waypoint))
+      (!RESETTLEMENT.has(canonical) || hasBirthplaceContext(roleContext))
     );
     waypoint.role = siteRole || (
       isFirst ? "birthplace" : (RESETTLEMENT.has(canonical) ? "resettlement" : "transit")
@@ -674,20 +733,21 @@ function parseYear(value) {
 }
 
 function toFeature(record) {
+  if (record.protected || record.source_public === false) return null;
   const placed = [];
-  for (const waypoint of extract(record.text)) {
+  for (const extracted of extract(record.text)) {
+    const waypoint = repairSourceQuote(extracted, record.quote_text ?? record.text);
     const coordinates = geocodeCache[waypoint.canonical];
     if (coordinates && typeof coordinates.lat === "number") {
       placed.push({ ...waypoint, lat: round(coordinates.lat), lng: round(coordinates.lng) });
     }
   }
-  if (!placed.length) return null;
   const ordered = orderWaypoints(placed);
   const home = ordered.find((waypoint) => waypoint.role === "birthplace") || ordered[0];
   const birthMatch = record.text.match(/\bborn\b[^.]{0,100}\b(18\d\d|19\d\d|20\d\d)\b/i);
   return {
     type: "Feature",
-    geometry: { type: "Point", coordinates: [home.lng, home.lat] },
+    geometry: home ? { type: "Point", coordinates: [home.lng, home.lat] } : null,
     properties: {
       survivor_id: record.survivor_id,
       name: record.name,
@@ -696,15 +756,12 @@ function toFeature(record) {
       conflicts: record.conflicts,
       birth_year: birthMatch ? parseInt(birthMatch[1], 10) : null,
       review_status: "pending",
-      bio_excerpt: sentenceExcerpt(record.text),
+      bio_excerpt: sentenceExcerpt(record.quote_text ?? record.text),
       archive_url: record.archive_url,
       portrait: record.portrait || null,
-      portrait_rights: record.portrait ? RIGHTS : null,
+      portrait_rights: record.portrait ? record.portrait_rights : null,
       portrait_faces: 0,
-      video_count: record.video_count || 0,
-      video_inventory: record.video_inventory || videoInventory([]),
-      captioned_video_count: 0,
-      transcript_status: record.video_count ? "pending" : "none",
+      ...mergeMediaCoverage({}, record),
       theme_tags: [],
       waypoints: ordered,
     },
@@ -721,13 +778,16 @@ function mergeFeature(existing, fresh) {
       },
     };
   }
-  const waypoints = fresh.properties.waypoints || [];
+  const preserveReviewedPlaces = existing.properties.waypoints.some((waypoint) => waypoint.verified);
+  const waypoints = preserveReviewedPlaces
+    ? mergeSeedQuotes(existing.properties.waypoints, fresh.properties.waypoints)
+    : (fresh.properties.waypoints || []);
   const home = waypoints.find((waypoint) => waypoint.role === "birthplace") || waypoints[0];
   return {
     type: "Feature",
-    geometry: home
+    geometry: preserveReviewedPlaces ? existing.geometry : (home
       ? { type: "Point", coordinates: [home.lng, home.lat] }
-      : existing.geometry,
+      : null),
     properties: {
       ...existing.properties,
       ...fresh.properties,
@@ -763,14 +823,46 @@ function sentenceExcerpt(text, limit = 520) {
   if (clean.length <= limit) {
     if (/[.!?](?:["”’')\]]+)?$/.test(clean)) return clean;
     if (endings.length) return clean.slice(0, endings[endings.length - 1]).trim();
-    return `${clean.replace(/[ ,;:-]+$/, "")}.`;
+    return clean;
   }
   const before = endings.filter((end) => end <= limit);
   if (before.length) return clean.slice(0, before[before.length - 1]).trim();
-  const after = endings.find((end) => end <= limit + 240);
-  if (after) return clean.slice(0, after).trim();
-  const cut = clean.slice(0, limit).replace(/\s+\S*$/, "").replace(/[ ,;:-]+$/, "");
-  return `${cut}.`;
+  return endings.length ? clean.slice(0, endings[0]).trim() : clean;
+}
+
+function sourceSentence(text, start, end) {
+  if (!(start >= 0 && start < end && end <= text.length)) {
+    throw new Error("The source span must be inside the source text");
+  }
+  const endings = sentenceEndings(text);
+  const left = Math.max(0, ...endings.filter((boundary) => boundary <= start));
+  const right = endings.find((boundary) => boundary >= end) ?? text.length;
+  return text.slice(left, right).trim();
+}
+
+function repairSourceQuote(waypoint, text) {
+  if (waypoint.verified || !text) return waypoint;
+  const fragments = (waypoint.source_quote || "").split(/\s*(?:…|\.{3})\s*/).map((part) => part.trim()).filter(Boolean);
+  const spans = [];
+  let cursor = 0;
+  for (const fragment of fragments) {
+    const match = text.slice(cursor).match(new RegExp(escapePattern(fragment), "i"));
+    if (!match) {
+      spans.length = 0;
+      break;
+    }
+    spans.push([cursor + match.index, cursor + match.index + match[0].length]);
+    cursor += match.index + match[0].length;
+  }
+  if (spans.length) {
+    return { ...waypoint, source_quote: sourceSentence(text, spans[0][0], spans[spans.length - 1][1]) };
+  }
+  const matches = waypoint.as_written
+    ? [...text.matchAll(new RegExp(`\\b${escapePattern(waypoint.as_written)}\\b`, "gi"))] : [];
+  return matches.length === 1 ? {
+    ...waypoint,
+    source_quote: sourceSentence(text, matches[0].index, matches[0].index + matches[0][0].length),
+  } : waypoint;
 }
 
 const SENTENCE_ABBREVIATIONS = new Set([
@@ -784,7 +876,7 @@ const SENTENCE_ABBREVIATIONS = new Set([
 
 function sentenceEndings(text) {
   const endings = [];
-  for (const match of text.matchAll(/[.!?](?:["”’')\]]+)?(?=\s|$)/g)) {
+  for (const match of text.matchAll(/[.!?](?:["”’')\]]+)?(?=\s|$)|(?<=\d{4})\.(?=[A-Z][a-z])/g)) {
     const end = match.index + match[0].length;
     if (match[0].startsWith(".") && end < text.length) {
       const tokenMatch = text.slice(0, end).match(/([A-Za-z][A-Za-z.]*)\.$/);
@@ -796,16 +888,6 @@ function sentenceEndings(text) {
     endings.push(end);
   }
   return endings;
-}
-
-function videoInventory(videoIds) {
-  const joined = [...videoIds].sort().join(",");
-  let hash = 2166136261;
-  for (const character of joined) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `${videoIds.length}:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 function round(value) {

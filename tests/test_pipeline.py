@@ -37,3 +37,36 @@ def test_connections_reference_real_survivors_and_are_verified():
         assert c["verified"] is True
         assert c["survivorA"] in survivors and c["survivorB"] in survivors
         assert c["survivorA"] != c["survivorB"]
+
+
+def test_public_unplaced_profiles_are_published_without_invented_coordinates(monkeypatch):
+    class Source:
+        def fetch(self):
+            return [
+                {
+                    "survivor_id": "public-unplaced-test", "name": "Public profile",
+                    "archive_url": "https://ohp.crestwood.on.ca/ohp/public-unplaced-test/",
+                    "text": "This public summary describes teaching and family memories.",
+                    "group": "Community Members",
+                },
+                {
+                    "survivor_id": "protected-test", "name": "Protected",
+                    "archive_url": "https://ohp.crestwood.on.ca/ohp/protected-test/",
+                    "text": "Enter a password.", "protected": True,
+                },
+            ]
+
+    monkeypatch.setattr(build.ingest, "get_source", lambda name: Source())
+    monkeypatch.setattr(build.review, "emit_review_queue", lambda records: 0)
+    monkeypatch.setattr(build, "_write", lambda path, data: None)
+    document = build.build(source_name="all")
+    assert document["metadata"]["count"] == 1
+    assert document["metadata"]["unplaced"] == 1
+    feature = document["features"][0]
+    assert feature["geometry"] is None
+    assert feature["properties"]["waypoints"] == []
+    assert feature["properties"]["review_status"] == "pending"
+    assert feature["properties"]["bio_excerpt"].endswith(".")
+    assert validate.validate_geojson(document) == []
+    feature["geometry"] = {"type": "Point", "coordinates": [0, 0]}
+    assert validate.validate_geojson(document)

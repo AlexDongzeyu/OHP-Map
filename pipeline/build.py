@@ -3,7 +3,9 @@
     ingest -> extract -> normalize -> review gate -> geocode -> validate -> emit
 
 Run it:
-    python -m pipeline.build                      # offline sample build (default)
+    python -m pipeline.media                      # snapshot public source references
+    python -m pipeline.vimeo_transcripts          # audit all groups; private VTT cache
+    python -m pipeline.build --source all          # whole-archive offline build
     python -m pipeline.build --source wordpress --extractor anthropic --allow-network
     python -m pipeline.build --discover           # just probe the WP REST API
 
@@ -15,8 +17,8 @@ import argparse
 import json
 import sys
 
-from . import config, derive, extract, gazetteer, geocode, ingest, review, transcript_index, validate
-from .text import sentence_excerpt
+from . import config, derive, extract, gazetteer, geocode, ingest, media, review, transcript_index, validate
+from .text import repair_source_quote, sentence_excerpt
 
 
 def _normalize_waypoint(wp: dict) -> dict:
@@ -30,14 +32,26 @@ def _normalize_waypoint(wp: dict) -> dict:
 
 def _record_to_survivor(rec: dict, extractor) -> dict:
     """Produce a survivor dict with normalized, ordered waypoints (pre-geocode)."""
+    quote_text = media.source_text_for(rec)
     if rec.get("waypoints"):
-        waypoints = [_normalize_waypoint(wp) for wp in rec["waypoints"]]
+        waypoints = [
+            _normalize_waypoint(
+                repair_source_quote(wp, quote_text)
+                if rec.get("review_status") != "reviewed" else wp
+            )
+            for wp in rec["waypoints"]
+        ]
     else:  # raw testimony text -> run the extractor
-        waypoints = [_normalize_waypoint(wp) for wp in extractor.extract(rec.get("text", ""))]
+        waypoints = [
+            _normalize_waypoint(repair_source_quote(wp, quote_text))
+            for wp in extractor.extract(rec.get("text", ""))
+        ]
     waypoints = derive.order_waypoints(waypoints)
-    media_coverage = transcript_index.coverage(rec["survivor_id"])
+    profile_media = media.profile_media(rec, transcript_index.entry_for(rec["survivor_id"]))
+    media_coverage = transcript_index.coverage(rec["survivor_id"], profile_media["videos"])
     return {
         "survivor_id": rec["survivor_id"],
+        **({"source_aliases": rec["source_aliases"]} if rec.get("source_aliases") else {}),
         "name": rec.get("name", ""),
         "is_sample": rec.get("is_sample", False),
         "featured": rec.get("featured", False),
@@ -45,7 +59,7 @@ def _record_to_survivor(rec: dict, extractor) -> dict:
         "conflicts": rec.get("conflicts", []),
         "birth_year": rec.get("birth_year"),
         "bio_excerpt": sentence_excerpt(
-            rec.get("bio_excerpt", "") or rec.get("text", ""),
+            rec.get("bio_excerpt", "") or quote_text,
         ),
         "archive_url": rec.get("archive_url", ""),
         "media_url": rec.get("media_url"),
@@ -53,6 +67,7 @@ def _record_to_survivor(rec: dict, extractor) -> dict:
         "portrait_rights": rec.get("portrait_rights"),
         "portrait_faces": rec.get("portrait_faces", 0),
         "theme_tags": rec.get("theme_tags", []),
+        "profile_media": profile_media,
         **media_coverage,
         "waypoints": waypoints,
     }
@@ -77,12 +92,15 @@ def _geocode_survivor(s: dict, cache: dict, allow_network: bool, warnings: list)
 
 
 def _to_feature(s: dict) -> dict:
-    """Point geometry at the hometown (birthplace, else first waypoint)."""
-    home = next((wp for wp in s["waypoints"] if wp["role"] == "birthplace"), s["waypoints"][0])
+    """Unplaced public profiles remain discoverable without invented coordinates."""
+    home = next(
+        (wp for wp in s["waypoints"] if wp["role"] == "birthplace"),
+        s["waypoints"][0] if s["waypoints"] else None,
+    )
     props = {k: v for k, v in s.items()}
     return {
         "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": [home["lng"], home["lat"]]},
+        "geometry": {"type": "Point", "coordinates": [home["lng"], home["lat"]]} if home else None,
         "properties": props,
     }
 
@@ -90,19 +108,23 @@ def _to_feature(s: dict) -> dict:
 def build(source_name="local", extractor_name="offline", allow_network=False,
           strict=False, featured=None) -> dict:
     warnings: list[str] = []
+    transcript_index._load.cache_clear()
     source = ingest.get_source(source_name)
     extractor = extract.get_extractor(extractor_name)
     cache = geocode.load_cache()
     featured = set(featured or [])
 
-    survivors = [_record_to_survivor(rec, extractor) for rec in source.fetch()]
+    survivors = [
+        _record_to_survivor(rec, extractor)
+        for rec in source.fetch() if not media.is_protected(rec)
+        and transcript_index.entry_for(rec["survivor_id"]).get("source_status") != "protected"
+    ]
 
     # Human-review gate: queue everything unverified for a person to confirm.
     queued = review.emit_review_queue(survivors)
 
     # Geocode (cache-only unless --allow-network), dropping any waypoint we can't place.
     survivors = [_geocode_survivor(s, cache, allow_network, warnings) for s in survivors]
-    survivors = [s for s in survivors if s["waypoints"]]
     if allow_network:
         geocode.save_cache(cache)
 
@@ -130,6 +152,8 @@ def build(source_name="local", extractor_name="offline", allow_network=False,
             "count": len(features),
             "reviewed": reviewed,
             "pending": pending,
+            "placed": sum(bool(s["waypoints"]) for s in survivors),
+            "unplaced": sum(not s["waypoints"] for s in survivors),
             "groups": group_counts,
             "time_min": config.TIME_MIN,
             "time_max": config.TIME_MAX,
@@ -142,6 +166,18 @@ def build(source_name="local", extractor_name="offline", allow_network=False,
         },
         "features": features,
     }
+    if source_name == "all" and config.OHP_RECONCILIATION.exists():
+        reconciliation = json.loads(config.OHP_RECONCILIATION.read_text(encoding="utf-8"))
+        doc["metadata"]["archive_coverage"] = {
+            "checked_at": reconciliation["checked_at"],
+            "category_pages_checked": sum(len(value["urls"]) for value in reconciliation["categories"].values()),
+            "listed_pages": reconciliation["listed_pages"],
+            "listed_public_profiles": reconciliation["listed_public_pages"] - len(reconciliation["other_pages"]),
+            "protected_listing_entries": reconciliation["listed_protected_pages"],
+            "unlisted_public_profiles": len(reconciliation["unlisted_public_profiles"]),
+            "unresolved_public_profiles": len(reconciliation["unresolved"]),
+            "profile_aliases": len(reconciliation["aliases"]),
+        }
 
     validate.assert_valid(doc)  # raises on any invalid record — bad data can't deploy
 

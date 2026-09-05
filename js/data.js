@@ -4,6 +4,7 @@
 // per-waypoint year/uncertainty, theme facets, origin-country counts (for the density
 // choropleth), and the shared persecution sites. As-written place names are preserved.
 import { ROLE_LABEL, GROUPS, parseYear, initials, slug, TIME } from "./config.js";
+import { normalizeProfileMedia } from "./media.js";
 
 const BASE = "data";
 const COUNTRY_ALIAS = { Czechoslovakia: "Czechia", Galicia: "Poland" };
@@ -16,9 +17,9 @@ const EVENT_ROLE_ORDER = {
   birthplace: 5,
 };
 const SERVICE_WINDOWS = {
-  "First World War": { start: 1914, end: 1918, fallback: 1917 },
-  "Second World War": { start: 1939, end: 1945, fallback: 1944 },
-  "Korean War": { start: 1950, end: 1953, fallback: 1951 },
+  "First World War": { start: 1914, end: 1918 },
+  "Second World War": { start: 1939, end: 1945 },
+  "Korean War": { start: 1950, end: 1953 },
 };
 
 async function getJSON(name) {
@@ -155,16 +156,20 @@ function toJourney(props) {
       quote: w.source_quote || null,
     };
   });
-  const home = wps.find((w) => w.roleKey === "birthplace") || wps[0] || null;
+  const home = wps.find((w) => w.roleKey === "birthplace") || null;
+  const routeStart = wps[0] || null;
   const j = {
     id: props.survivor_id,
+    sourceAliases: Array.isArray(props.source_aliases) ? props.source_aliases : [],
     name: props.name,
     surname: surnameOf(props.name),
     group,
     conflicts: props.conflicts || [],
-    born: props.birth_year || (home && home.year) || null,
+    born: props.birth_year || null,
     hometown: home ? (home.canonical || home.asWritten) : "",
-    originCountry: home ? countryOf(home.canonical) : null,
+    originCountry: routeStart ? countryOf(routeStart.canonical) : null,
+    birthplace: home,
+    routeStart,
     initials: initials(props.name),
     themes: props.theme_tags || [],
     bio: completeExcerpt(props.bio_excerpt),
@@ -175,17 +180,22 @@ function toJourney(props) {
     videoCount: props.video_count || 0,
     captionedVideoCount: props.captioned_video_count || 0,
     transcriptStatus: props.transcript_status || "none",
+    media: normalizeProfileMedia(props.profile_media),
     reviewStatus: props.review_status || "pending",
     waypoints: wps,
   };
-  j.serviceConflicts = j.conflicts.filter((conflict) => SERVICE_WINDOWS[conflict]);
+  const datedServicePlaces = wps.filter((point) => !["birthplace", "resettlement"].includes(point.roleKey) && point.year);
+  j.serviceConflicts = j.group === "Military Veterans" ? j.conflicts.filter((conflict) => {
+    const window = SERVICE_WINDOWS[conflict];
+    return window && datedServicePlaces.some((point) => point.year >= window.start && point.year <= window.end);
+  }) : [];
   j.serviceConflict = j.serviceConflicts[0] || null;
   if (j.serviceConflict) {
     const window = SERVICE_WINDOWS[j.serviceConflict];
-    const serviceYears = wps.map((waypoint) => waypoint.year)
+    const serviceYears = datedServicePlaces.map((waypoint) => waypoint.year)
       .filter((year) => year >= window.start && year <= window.end)
       .sort((a, b) => a - b);
-    j.serviceYear = serviceYears[Math.floor(serviceYears.length / 2)] || window.fallback;
+    j.serviceYear = serviceYears[Math.floor(serviceYears.length / 2)];
   } else {
     j.serviceYear = null;
   }
@@ -205,6 +215,9 @@ export async function loadData() {
   const journeys = geojson.features.map((f) => toJourney(f.properties));
   journeys.sort((a, b) => a.surname.localeCompare(b.surname) || a.name.localeCompare(b.name));
   const byId = new Map(journeys.map((j) => [j.id, j]));
+  for (const journey of journeys) {
+    for (const alias of journey.sourceAliases) if (!byId.has(alias)) byId.set(alias, journey);
+  }
   const events = buildEvents(journeys);
   const veteranCorridors = buildVeteranCorridors(journeys);
   const eventsByYear = new Map();
@@ -238,10 +251,6 @@ export async function loadData() {
     for (const w of j.waypoints) places.add(w.canonical);
   }
 
-  // Default guided person: a survivor with a rich, dated journey (the clearest arc).
-  const richDefault = journeys.find((j) => j.group === "Holocaust Survivors" && j.waypoints.length >= 4)
-    || journeys.find((j) => j.waypoints.length >= 4) || journeys[0];
-
   const meta = geojson.metadata || {};
   const warAt = (year) => warContext.periods.find(
     (period) => year >= period.start && year <= period.end,
@@ -268,7 +277,6 @@ export async function loadData() {
     originCounts,
     placeCount: places.size,
     shared: sharedPlaces(journeys),
-    defaultGuidedId: richDefault ? richDefault.id : (journeys[0] && journeys[0].id),
     time: {
       min: Math.min(meta.time_min || TIME.min, historicalIndex.min_year),
       max: Math.max(meta.time_max || TIME.max, historicalIndex.max_year),

@@ -24,6 +24,13 @@ def test_place_index_groups_survivors_by_place():
     assert idx["Krakow"] == ["c"]
 
 
+def test_unplaced_profiles_never_create_places_or_connections():
+    feature = _feature("unplaced", [])
+    feature["geometry"] = None
+    assert derive.build_place_index([feature]) == {}
+    assert derive.build_connections([feature]) == []
+
+
 # Connections only form at real persecution sites listed in the gazetteer.
 AUSCHWITZ = "Auschwitz (Oswiecim), Poland"
 

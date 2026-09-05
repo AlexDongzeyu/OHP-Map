@@ -97,15 +97,9 @@ export function animateOverlay(view, changes) {
 
   stopMosaic();
 
-  if (view === "guided" && (changes.viewChanged || changes.storyChanged)) {
-    reveal(".narr", mobile ? { autoAlpha: 0, y: 16 } : { autoAlpha: 0, x: -16 });
-    reveal(".narr-nav", { autoAlpha: 0 }, { duration: .3 });
-    return;
-  }
-
   if (view === "explore") {
     if (changes.viewChanged) {
-      reveal(".rail", mobile ? { autoAlpha: 0, y: 16 } : { autoAlpha: 0, x: -12 });
+      reveal(".rail", mobile ? { opacity: .55, y: 16 } : { opacity: .55, x: -12 });
     }
     if (changes.selectionChanged && document.querySelector(".panel")) {
       reveal(".panel", mobile ? { opacity: 0, y: 16 } : { opacity: 0, x: 16 });
@@ -119,10 +113,10 @@ export function animateOverlay(view, changes) {
       ".patterns-intro > .legend, .patterns-intro > .cross-note, " +
       ".patterns-intro > .origin-list, .patterns-intro > .cross-sub, " +
       ".patterns-map-head, .history-dossier",
-      { autoAlpha: 0, y: 8 },
+      { opacity: .55, y: 8 },
       { stagger: .035 },
     );
-    reveal(".scrubber", { autoAlpha: 0, y: 16 }, { delay: .08 });
+    reveal(".scrubber", { opacity: .55, y: 8 }, { delay: .04 });
     return;
   }
 
@@ -134,17 +128,6 @@ export function animateOverlay(view, changes) {
       stagger: .04,
     });
   }
-}
-
-export function animateChapter(section) {
-  if (!canAnimate() || !section) return;
-  reveal(section.querySelectorAll(".ch-head, .ch-title, .ch-sub, blockquote"), {
-    opacity: .75,
-    y: 6,
-  }, {
-    duration: .35,
-    stagger: .025,
-  });
 }
 
 export function animatePatternEvent() {

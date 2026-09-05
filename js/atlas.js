@@ -11,13 +11,14 @@
 // reduced-motion fallback. People are coloured quietly by archive group — equal, never
 // a hierarchy (doc 13 §4.3).
 import { C, GROUP_COLOR, motionEnabled } from "./config.js";
+import { flagFor } from "./historical-context.js";
 
 const d3 = window.d3;
 const topojson = window.topojson;
 
 export function createAtlas(container) {
   let world = null;
-  let svg, globeG, camera, countriesG, historicalG, historicalLabelsG, overlayG, countrySel = null;
+  let svg, globeG, camera, countriesG, historicalG, historicalLabelsG, historicalFlagsG, overlayG, comparisonRect, countrySel = null;
   let projection, path, gProjection, gPath;
   let size = { w: 0, h: 0 }, currentK = 1;
   let mapFrame = null;
@@ -30,6 +31,10 @@ export function createAtlas(container) {
   let currentTerritoryPeriod = null;
   let currentBoundaryYear = null;
   let hoveredController = null, pinnedController = null;
+  let controllerHandler = null;
+  let historyDisplay = { compare: false, split: 50, opacity: 1 };
+  let flagsVisible = true, labelsVisible = true;
+  let visibleTerritories = [];
   const api = {};
 
   api.ready = (async function init() {
@@ -54,6 +59,8 @@ export function createAtlas(container) {
     occupiedPattern.append("rect").attr("width", 7).attr("height", 7).attr("fill", C.warOccupied);
     occupiedPattern.append("line").attr("x1", 0).attr("y1", 0).attr("x2", 0).attr("y2", 7)
       .attr("stroke", C.paperSoft).attr("stroke-width", 2).attr("opacity", 0.38);
+    comparisonRect = svg.select("defs").append("clipPath").attr("id", "history-comparison-clip")
+      .attr("clipPathUnits", "userSpaceOnUse").append("rect");
     svg.append("rect").attr("class", "atlas-bg")
       .attr("width", "100%").attr("height", "100%").attr("fill", C.ocean);
     globeG = svg.append("g").attr("class", "globe").style("display", "none");
@@ -62,12 +69,24 @@ export function createAtlas(container) {
     historicalG = camera.append("g").attr("class", "historical-territories").style("display", "none");
     historicalLabelsG = camera.append("g").attr("class", "historical-labels")
       .style("display", "none").style("pointer-events", "none");
+    historicalFlagsG = camera.append("g").attr("class", "historical-flags").style("display", "none");
     overlayG = camera.append("g");
 
     const interruptCamera = () => svg.interrupt().interrupt("camera");
     zoom = d3.zoom().scaleExtent([1, 14])
-      .on("start", (ev) => { if (ev.sourceEvent) interruptCamera(); })
-      .on("zoom", (ev) => { currentK = ev.transform.k; camera.attr("transform", ev.transform.toString()); rescale(); });
+      .on("start", (ev) => {
+        if (ev.sourceEvent) {
+          interruptCamera();
+          if (api.onUserCameraChange) api.onUserCameraChange();
+        }
+      })
+      .on("zoom", (ev) => { currentK = ev.transform.k; camera.attr("transform", ev.transform.toString()); rescale(); })
+      .on("end", () => {
+        if (view === "patterns" && currentBoundaryYear != null) {
+          const labelled = renderHistoricalFlags(visibleTerritories, currentBoundaryYear);
+          renderHistoricalLabels(visibleTerritories, labelled);
+        }
+      });
     svg.call(zoom)
       .on("dblclick.zoom", null)
       .on("wheel.camera-interrupt", interruptCamera, { capture: true, passive: true })
@@ -81,6 +100,130 @@ export function createAtlas(container) {
     overlayG.selectAll("[data-y0]").attr("y", function () {
       return +this.getAttribute("data-y0") - (+this.getAttribute("data-dy")) / currentK;
     });
+    historicalFlagsG.selectAll(".historical-flag")
+      .attr("transform", (datum) => `translate(${datum.x},${datum.y}) scale(${1 / currentK})`);
+    applyHistoryDisplay();
+  }
+
+  function applyHistoryDisplay() {
+    if (!svg || !mapFrame) return;
+    const transform = d3.zoomTransform(svg.node());
+    const divider = mapFrame[0] + (mapFrame[2] - mapFrame[0]) * historyDisplay.split / 100;
+    comparisonRect.attr("x", transform.invertX(0)).attr("y", transform.invertY(0))
+      .attr("width", divider / transform.k).attr("height", size.h / transform.k);
+    const clip = historyDisplay.compare ? "url(#history-comparison-clip)" : null;
+    historicalG.attr("clip-path", clip).style("opacity", historyDisplay.opacity);
+    historicalLabelsG.attr("clip-path", clip);
+    historicalFlagsG.attr("clip-path", clip);
+    container.dataset.comparing = String(historyDisplay.compare);
+    container.style.setProperty("--comparison-x", `${divider}px`);
+    container.style.setProperty("--comparison-top", `${mapFrame[1]}px`);
+    container.style.setProperty("--comparison-height", `${mapFrame[3] - mapFrame[1]}px`);
+  }
+  api.setHistoryDisplay = (settings) => {
+    if (!Number.isFinite(settings.split) || !Number.isFinite(settings.opacity)) {
+      console.warn("Map comparison values must be numeric.");
+      return;
+    }
+    historyDisplay = {
+      compare: Boolean(settings.compare),
+      split: Math.max(0, Math.min(100, settings.split)),
+      opacity: Math.max(.2, Math.min(1, settings.opacity)),
+    };
+    applyHistoryDisplay();
+  };
+  api.historyLoaded = () => Boolean(historicalFeatures);
+
+  function activeTerritories(year) {
+    const instant = year + .5;
+    return (historicalFeatures || []).filter((feature) => (
+      feature.properties.start <= instant &&
+      (feature.properties.end == null || feature.properties.end > instant)
+    ));
+  }
+  function normalizeLocation(value) {
+    return String(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  }
+  function administrationLabel(controller, features) {
+    return controller === "Russia" && features.some((feature) => (
+      feature.properties.controller === "Russia" && feature.properties.name === "Soviet Union"
+    )) ? "Soviet Union" : controller;
+  }
+  api.searchLocations = (query, year) => {
+    const locations = new Map();
+    const features = activeTerritories(year);
+    for (const feature of features) {
+      const controller = feature.properties.controller || feature.properties.name;
+      const name = administrationLabel(controller, features);
+      if (name) locations.set(`country:${controller}`, { name, controller, kind: "country" });
+    }
+    for (const journey of store?.journeys || []) {
+      for (const place of journey.waypoints) {
+        if (place.canonical && Number.isFinite(place.lng) && Number.isFinite(place.lat)) {
+          locations.set(`place:${place.canonical}`, { name: place.canonical, kind: "place", lng: place.lng, lat: place.lat });
+        }
+      }
+    }
+    const aliases = { uk: "united kingdom", usa: "united states", us: "united states", ussr: "soviet union" };
+    const term = aliases[normalizeLocation(query)] || normalizeLocation(query);
+    return [...locations.values()]
+      .filter((entry) => !term || normalizeLocation(entry.name).includes(term) || normalizeLocation(entry.controller || "").includes(term))
+      .sort((a, b) => Number(normalizeLocation(b.name) === term) - Number(normalizeLocation(a.name) === term) ||
+        Number(b.kind === "country") - Number(a.kind === "country") || a.name.localeCompare(b.name));
+  };
+  api.countryInfo = (name, year) => {
+    const active = activeTerritories(year);
+    const controller = name === "Soviet Union" && administrationLabel("Russia", active) === name ? "Russia" : name;
+    const features = active.filter((feature) => (
+      (feature.properties.controller || feature.properties.name) === controller
+    ));
+    if (!features.length) return null;
+    const territories = [...new Map(features.map((feature) => [
+      `${feature.properties.name}|${territoryYears(feature)}`,
+      { name: feature.properties.name, dates: territoryYears(feature), kind: feature.properties.kind },
+    ])).values()].sort((a, b) => a.name.localeCompare(b.name));
+    const largest = [...features].sort((a, b) => (b.properties.area_km2 || 0) - (a.properties.area_km2 || 0))[0];
+    const [lng, lat] = d3.geoCentroid(largest);
+    const referencePosition = Number.isFinite(lng) && Number.isFinite(lat)
+      ? `position=3/${lat.toFixed(4)}/${lng.toFixed(4)}&` : "";
+    return {
+      name: administrationLabel(controller, active), controller,
+      count: territories.length, territories, flag: flagFor(administrationLabel(controller, active), year),
+      externalUrl: `https://www.oldmapsonline.org/en/history/regions#${referencePosition}year=${year}`,
+    };
+  };
+  api.cameraPosition = () => {
+    if (!projection || !mapFrame) return null;
+    const transform = d3.zoomTransform(svg.node());
+    const center = [(mapFrame[0] + mapFrame[2]) / 2, (mapFrame[1] + mapFrame[3]) / 2];
+    const position = projection.invert(transform.invert(center));
+    if (!position?.every(Number.isFinite) || Math.abs(position[1]) > 90) return null;
+    return { lng: ((position[0] + 180) % 360 + 360) % 360 - 180, lat: position[1], zoom: transform.k };
+  };
+  api.focusCoordinates = (lng, lat, scale = 4, animate = motionEnabled()) => {
+    const point = projection([lng, lat]);
+    if (!point?.every(Number.isFinite)) {
+      console.warn("The requested map location could not be projected.");
+      return;
+    }
+    moveCamera({ x: point[0], y: point[1] }, scale, animate);
+  };
+  function focusController(name, year) {
+    const features = activeTerritories(year).filter((feature) => (
+      (feature.properties.controller || feature.properties.name) === name
+    ));
+    if (!features.length) return;
+    const [[x0, y0], [x1, y1]] = path.bounds({ type: "FeatureCollection", features });
+    if (![x0, y0, x1, y1].every(Number.isFinite)) {
+      console.warn("This administration has no projectable boundary geometry.");
+      return;
+    }
+    const padding = Math.min(40, (mapFrame[3] - mapFrame[1]) * .2);
+    const scale = Math.min(7, Math.max(1, Math.min(
+      (mapFrame[2] - mapFrame[0] - padding) / Math.max(1, x1 - x0),
+      (mapFrame[3] - mapFrame[1] - padding) / Math.max(1, y1 - y0),
+    )));
+    moveCamera({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, scale);
   }
 
   function availableMapFrame() {
@@ -98,11 +241,11 @@ export function createAtlas(container) {
       }
       return { left: x, top: y, right: x + element.offsetWidth, bottom: y + element.offsetHeight };
     };
-    if (view === "guided" || view === "explore") {
-      const sheet = bounds(view === "guided" ? ".narr" : ".rail");
-      const profile = view === "explore" ? bounds(".panel-host:has(.panel)") : null;
+    if (view === "explore") {
+      const sheet = bounds(".rail");
+      const profile = bounds(".panel-host:has(.panel)");
       if (mobile) {
-        top = header + (view === "explore" ? (profile ? 68 : 84) : 16);
+        top = header + (profile ? 68 : 84);
         if (profile || sheet) bottom = (profile || sheet).top - 16;
       } else {
         if (sheet) left = sheet.right + 24;
@@ -131,11 +274,14 @@ export function createAtlas(container) {
 
   // Fit the world to the exposed map, not the area covered by a reading panel.
   function layout(redraw) {
-    if (!container) return;
+    if (!container) return false;
     const w = container.clientWidth, h = container.clientHeight;
-    if (!w || !h) return;
+    if (!w || !h) return false;
+    const sameSize = size.w === w && size.h === h;
     size = { w, h };
-    mapFrame = availableMapFrame();
+    const frame = availableMapFrame();
+    if (redraw && projection && sameSize && mapFrame && frame.every((value, index) => value === mapFrame[index])) return false;
+    mapFrame = frame;
     projection = d3.geoEqualEarth().fitExtent([[mapFrame[0], mapFrame[1]], [mapFrame[2], mapFrame[3]]],
       { type: "Sphere" });
     path = d3.geoPath(projection);
@@ -153,8 +299,13 @@ export function createAtlas(container) {
       svg.interrupt("camera").call(zoom.transform, d3.zoomIdentity);
       api._last(true);
     }
+    return true;
   }
-  api.resize = () => layout(true);
+  api.resize = () => {
+    const position = view === "patterns" ? api.cameraPosition() : null;
+    const changed = layout(true);
+    if (position && changed) api.focusCoordinates(position.lng, position.lat, position.zoom, false);
+  };
 
   function layoutGlobe() {
     const { w, h } = size;
@@ -201,38 +352,6 @@ export function createAtlas(container) {
     return distinct.length > 1 ? journeyLine(distinct) : null;
   }
 
-  function closestPathLength(pathNode, target) {
-    const total = pathNode.getTotalLength();
-    const samples = 120;
-    let bestLength = 0;
-    let bestDistance = Infinity;
-    for (let index = 0; index <= samples; index++) {
-      const length = total * index / samples;
-      const point = pathNode.getPointAtLength(length);
-      const distance = Math.hypot(point.x - target.x, point.y - target.y);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestLength = length;
-      }
-    }
-    let radius = total / samples;
-    for (let iteration = 0; iteration < 5; iteration++) {
-      const start = Math.max(0, bestLength - radius);
-      const end = Math.min(total, bestLength + radius);
-      for (let index = 0; index <= 12; index++) {
-        const length = start + (end - start) * index / 12;
-        const point = pathNode.getPointAtLength(length);
-        const distance = Math.hypot(point.x - target.x, point.y - target.y);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          bestLength = length;
-        }
-      }
-      radius /= 4;
-    }
-    return bestLength;
-  }
-
   api.pointAtYear = function (j, year) {
     const wps = j.waypoints.filter((w) => w.year != null && w.px != null);
     if (!wps.length) return null;
@@ -251,7 +370,7 @@ export function createAtlas(container) {
 
   // ---- draw primitives -------------------------------------------------------
   function clearOverlay() {
-    overlayG.selectAll("*").interrupt().interrupt("guided-reveal").remove();
+    overlayG.selectAll("*").interrupt().remove();
   }
   function dot(g, x, y, o = {}) {
     const r = o.r || 4;
@@ -289,14 +408,14 @@ export function createAtlas(container) {
       .attr("vector-effect", "non-scaling-stroke").text(text);
   }
 
-  function moveCamera(target, k) {
+  function moveCamera(target, k, animate = motionEnabled()) {
     const centerX = (mapFrame[0] + mapFrame[2]) / 2;
     const centerY = (mapFrame[1] + mapFrame[3]) / 2;
     const t = target
       ? d3.zoomIdentity.translate(centerX - k * target.x, centerY - k * target.y).scale(k)
       : d3.zoomIdentity;
     svg.interrupt("camera");
-    const sel = motionEnabled() ? svg.transition("camera").duration(850).ease(d3.easeCubicInOut) : svg;
+    const sel = animate ? svg.transition("camera").duration(850).ease(d3.easeCubicInOut) : svg;
     sel.call(zoom.transform, t);
   }
   api.resetCamera = () => moveCamera(null, 1);
@@ -396,7 +515,8 @@ export function createAtlas(container) {
         }
         historicalFeatures = topojson.feature(topology, topology.objects.territories).features;
         document.documentElement.dataset.historicalBoundaries = "ready";
-        if (api._last) api._last();
+        if (api._last) api._last(true);
+        if (api.onHistoryReady) api.onHistoryReady();
         return historicalFeatures;
       })
       .catch((error) => {
@@ -471,14 +591,15 @@ export function createAtlas(container) {
       ));
   }
 
-  function renderHistoricalLabels(features) {
+  function renderHistoricalLabels(features, flaggedNames = new Set()) {
     const byName = new Map();
     for (const feature of features) {
       const name = feature.properties.name;
+      if (flaggedNames.has(name)) continue;
       const area = Number(feature.properties.area_km2) || d3.geoArea(feature);
       if (!byName.has(name) || area > byName.get(name).area) byName.set(name, { feature, area });
     }
-    const limit = size.w <= 820 ? 0 : 8;
+    const limit = labelsVisible && size.w > 820 ? 8 : 0;
     const labels = [...byName.values()]
       .filter((entry) => entry.area > 120000)
       .sort((a, b) => b.area - a.area)
@@ -514,6 +635,70 @@ export function createAtlas(container) {
       });
   }
 
+  function renderHistoricalFlags(features, year) {
+    const controllers = new Map();
+    for (const feature of features) {
+      const controller = feature.properties.controller || feature.properties.name;
+      const name = administrationLabel(controller, features);
+      const flag = flagFor(name, year);
+      if (!flag) continue;
+      const entity = feature.properties.name.replace(/\s*\([^)]*\)\s*$/, "");
+      const core = entity === name || flagFor(entity, year)?.src === flag.src;
+      const area = Number(feature.properties.area_km2) || d3.geoArea(feature) * 6371 ** 2;
+      const previous = controllers.get(controller);
+      if (previous && ((previous.core && !core) || (previous.core === core && previous.area >= area))) continue;
+      const [x, y] = path.centroid(feature);
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        controllers.set(controller, { name, controller, entity: feature.properties.name, flag, core, area, x, y });
+      }
+    }
+    const placed = [];
+    const transform = d3.zoomTransform(svg.node());
+    if (flagsVisible) {
+      for (const entry of [...controllers.values()].sort((a, b) => (
+        Number(b.controller === pinnedController) - Number(a.controller === pinnedController) || b.area - a.area
+      ))) {
+        if (placed.length >= (size.w <= 820 ? 4 : 8)) break;
+        const [screenX, screenY] = transform.apply([entry.x, entry.y]);
+        if (screenX < mapFrame[0] || screenX > mapFrame[2] || screenY < mapFrame[1] || screenY > mapFrame[3]) continue;
+        if (placed.some((other) => (
+          Math.abs(other.x - entry.x) * currentK < Math.max(40, Math.min(100, (other.name.length + entry.name.length) * 2.8)) &&
+          Math.abs(other.y - entry.y) * currentK < 38
+        ))) continue;
+        placed.push(entry);
+      }
+    }
+    const groups = historicalFlagsG.selectAll(".historical-flag").data(placed, (entry) => entry.name)
+      .join((enter) => {
+        const group = enter.append("g").attr("class", "historical-flag")
+          .attr("role", "button").attr("tabindex", 0).style("cursor", "pointer")
+          .on("click", (event, entry) => {
+            event.stopPropagation();
+            if (controllerHandler) controllerHandler(entry.controller);
+          })
+          .on("keydown", (event, entry) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              if (controllerHandler) controllerHandler(entry.controller);
+            }
+          });
+        group.append("rect").attr("x", -16).attr("y", -30).attr("width", 32).attr("height", 23)
+          .attr("rx", 2).attr("fill", C.paperSoft).attr("stroke", C.rule);
+        group.append("image").attr("x", -14).attr("y", -28).attr("width", 28).attr("height", 19);
+        group.append("text").attr("y", 5).attr("text-anchor", "middle")
+          .attr("font-family", "'Public Sans',sans-serif").attr("font-size", 9)
+          .attr("fill", C.ink).attr("stroke", C.paperSoft).attr("stroke-width", 3).attr("paint-order", "stroke");
+        group.append("title");
+        return group;
+      });
+    groups.attr("aria-label", (entry) => `Inspect ${entry.name} in ${year}`)
+      .attr("transform", (entry) => `translate(${entry.x},${entry.y}) scale(${1 / currentK})`);
+    groups.select("image").attr("href", (entry) => entry.flag.src);
+    groups.select("text").text((entry) => labelsVisible ? entry.name : "");
+    groups.select("title").text((entry) => `${entry.name}, ${year}. ${entry.flag.label}`);
+    return new Set(placed.map((entry) => entry.entity));
+  }
+
   function showHistoricalBoundaries(year, period) {
     currentTerritoryPeriod = period;
     currentBoundaryYear = year;
@@ -524,17 +709,14 @@ export function createAtlas(container) {
       ensureHistoricalBoundaries();
       return false;
     }
-    const instant = year + 0.5;
-    const active = historicalFeatures
-      .filter((feature) => (
-        feature.properties.start <= instant &&
-        (feature.properties.end == null || feature.properties.end > instant)
-      ))
+    const active = activeTerritories(year)
       .sort((a, b) => Number(a.properties.kind === "occupation") - Number(b.properties.kind === "occupation"));
+    visibleTerritories = active;
     document.documentElement.dataset.historicalBoundaries = "ready";
-    countriesG.style("display", "none");
+    countriesG.style("display", null);
     historicalG.style("display", null);
     historicalLabelsG.style("display", null);
+    historicalFlagsG.style("display", view === "patterns" ? null : "none");
     historicalG.selectAll(".historical-territory").data(active, (feature) => feature.properties.id).join(
       (enter) => enter.append("path")
         .attr("class", "historical-territory")
@@ -554,9 +736,8 @@ export function createAtlas(container) {
         .on("click.territory", (event, feature) => {
           event.stopPropagation();
           const controller = feature.properties.controller;
-          pinnedController = pinnedController === controller ? null : controller;
-          emphasizeTerritories();
-          showTip(event, territoryDescription(feature));
+          if (controllerHandler) controllerHandler(pinnedController === controller ? null : controller);
+          else showTip(event, territoryDescription(feature));
         }),
       (update) => update,
       (exit) => exit.remove(),
@@ -569,7 +750,9 @@ export function createAtlas(container) {
       .attr("data-new-territory", (feature) => Math.floor(feature.properties.start) === year ? "true" : null)
       .attr("data-war-side", (feature) => territoryStatus(feature, period));
     emphasizeTerritories();
-    renderHistoricalLabels(active);
+    const flaggedNames = renderHistoricalFlags(active, year);
+    renderHistoricalLabels(active, flaggedNames);
+    applyHistoryDisplay();
     return true;
   }
 
@@ -578,8 +761,10 @@ export function createAtlas(container) {
     currentBoundaryYear = null;
     hoveredController = null;
     pinnedController = null;
+    visibleTerritories = [];
     historicalG.style("display", "none");
     historicalLabelsG.style("display", "none");
+    historicalFlagsG.style("display", "none");
     countriesG.style("display", null);
     document.documentElement.dataset.historicalBoundaries =
       historicalFeatures ? "inactive" : (historicalPromise ? "loading" : "idle");
@@ -766,9 +951,23 @@ export function createAtlas(container) {
 
   // ---- per-view rendering ----------------------------------------------------
   api.render = function (v, ctx, reframe = false) {
-    api._last = (forceFrame = false) => api.render(v, ctx, forceFrame);
+    api._last = (forceFrame = false) => api.render(v, {
+      ...ctx,
+      historyCompare: historyDisplay.compare,
+      historyOpacity: historyDisplay.opacity,
+      historySplit: historyDisplay.split,
+    }, forceFrame);
     if (!overlayG) return;
     const changed = v !== view; view = v;
+    controllerHandler = v === "patterns" ? ctx.onController : null;
+    const nextController = v === "patterns" && ctx.patternsLayer !== "origins" ? ctx.historyCountry : null;
+    const controllerChanged = pinnedController !== nextController;
+    pinnedController = nextController || null;
+    flagsVisible = v === "patterns" && ctx.historyFlags !== false;
+    labelsVisible = ctx.historyLabels !== false;
+    historyDisplay = v === "patterns" && ctx.patternsLayer !== "origins"
+      ? { compare: Boolean(ctx.historyCompare), split: ctx.historySplit ?? 50, opacity: ctx.historyOpacity ?? 1 }
+      : { compare: false, split: 50, opacity: 1 };
     const frame = availableMapFrame();
     const frameChanged = !mapFrame || frame.some((value, index) => value !== mapFrame[index]);
     if (frameChanged) layout();
@@ -792,14 +991,14 @@ export function createAtlas(container) {
     } else {
       paintChoropleth(false);
     }
-    if (v === "guided") {
-      if (changed || frameChanged || reframe) clearOverlay();
-      drawGuided(frameChanged || reframe ? { ...ctx, prevIndex: null } : ctx);
-    } else if (v === "explore") {
+    if (v === "explore") {
       clearOverlay();
       drawExplore(ctx);
-      if (changed || frameChanged || reframe || selectedJourney !== ctx.selectedId) {
-        const journey = store.byId.get(ctx.selectedId);
+      const journey = store.byId.get(ctx.selectedId);
+      const place = journey?.waypoints[ctx.activePlaceIndex];
+      if (place && Number.isFinite(place.px) && Number.isFinite(place.py)) {
+        moveCamera({ x: place.px, y: place.py }, 4);
+      } else if (changed || frameChanged || reframe || selectedJourney !== ctx.selectedId) {
         if (journey) focusJourney(journey);
         else api.resetCamera();
       }
@@ -807,92 +1006,11 @@ export function createAtlas(container) {
     } else if (v === "patterns") {
       clearOverlay();
       drawPatterns(ctx);
-      if ((changed || frameChanged || reframe) && !ctx.activePatternEvent) api.resetCamera();
+      if (pinnedController && (controllerChanged || changed || frameChanged || reframe)) {
+        focusController(pinnedController, ctx.scrubYear);
+      } else if ((changed || frameChanged || reframe) && !ctx.activePatternEvent) api.resetCamera();
     }
   };
-
-  function drawGuided(ctx) {
-    const j = store.byId.get(ctx.guidedId) || store.journeys[0];
-    if (!j) return;
-    const wp = j.waypoints.filter((w) => w.px != null);
-    const idx = Math.min(ctx.guidedIndex || 0, wp.length - 1);
-    const g = overlayG;
-    const col = GROUP_COLOR[j.group] || C.accent;
-
-    const visible = wp.slice(0, idx + 1);
-    const routes = g.selectAll(".guided-route").data(
-      visible.length > 1 ? [{ key: j.id, points: visible }] : [],
-      (datum) => datum.key,
-    );
-    const previousNode = routes.empty() ? null : routes.node();
-    const previousLength = previousNode ? previousNode.getTotalLength() : 0;
-    const previousOffset = previousNode
-      ? Number(d3.select(previousNode).attr("stroke-dashoffset")) || 0
-      : 0;
-    const previousVisibleLength = Math.max(0, Math.min(
-      previousLength,
-      previousLength - previousOffset,
-    ));
-    const previousVisiblePoint = previousNode
-      ? previousNode.getPointAtLength(previousVisibleLength)
-      : null;
-    routes.exit().interrupt("guided-reveal").remove();
-    const enteredRoutes = routes.enter().append("path")
-      .attr("class", "guided-route")
-      .attr("fill", "none")
-      .attr("vector-effect", "non-scaling-stroke")
-      .attr("stroke-linecap", "round")
-      .attr("stroke-linejoin", "round");
-    enteredRoutes.merge(routes).each(function (datum) {
-      const selection = d3.select(this).interrupt("guided-reveal")
-        .attr("stroke-dasharray", null)
-        .attr("stroke-dashoffset", null)
-        .attr("d", journeyPath(datum.points))
-      .attr("stroke", col)
-      .attr("stroke-width", 2.4)
-      .attr("opacity", 0.92);
-      const animate = ctx.prevIndex != null && ctx.prevIndex < idx && motionEnabled();
-      if (!animate) return;
-      const length = this.getTotalLength();
-      const revealed = previousVisiblePoint
-        ? closestPathLength(this, previousVisiblePoint)
-        : 0;
-      selection.attr("stroke-dasharray", length).attr("stroke-dashoffset", length - revealed)
-        .transition("guided-reveal").duration(900).ease(d3.easeCubicInOut)
-        .attr("stroke-dashoffset", 0)
-        .on("end", () => selection.attr("stroke-dasharray", null).attr("stroke-dashoffset", null));
-    });
-
-    const ring = wp[idx] ? [{ ...wp[idx], key: `${j.id}-${idx}` }] : [];
-    g.selectAll(".guided-ring").data(ring, (d) => d.key).join(
-      (enter) => enter.append("circle").attr("class", "guided-ring")
-        .attr("fill", "none").attr("vector-effect", "non-scaling-stroke"),
-      (update) => update,
-      (exit) => exit.remove(),
-    )
-      .attr("cx", (d) => d.px).attr("cy", (d) => d.py)
-      .attr("data-r", 9).attr("r", 9 / currentK)
-      .attr("stroke", col).attr("stroke-width", 1.5).attr("opacity", 0.4);
-
-    const points = wp.map((point, i) => ({
-      ...point,
-      key: `${j.id}-${i}`,
-      active: i === idx,
-      visited: i <= idx,
-    }));
-    g.selectAll(".guided-point").data(points, (d) => d.key).join(
-      (enter) => enter.append("circle").attr("class", "guided-point"),
-      (update) => update,
-      (exit) => exit.remove(),
-    )
-      .attr("cx", (d) => d.px).attr("cy", (d) => d.py)
-      .attr("data-r", (d) => d.active ? 5 : 3.4)
-      .attr("r", (d) => (d.active ? 5 : 3.4) / currentK)
-      .attr("fill", (d) => d.visited ? col : C.dotIdle)
-      .attr("opacity", (d) => d.visited ? 0.85 : 0.55);
-
-    if (wp[idx]) moveCamera({ x: wp[idx].px, y: wp[idx].py }, 3.2);
-  }
 
   function drawExplore(ctx) {
     const g = overlayG;
@@ -906,12 +1024,17 @@ export function createAtlas(container) {
         color: col,
         width: 2.2,
         op: 0.9,
-        animate: true,
+        animate: ctx.selectedId !== selectedJourney,
       });
       wp.forEach((w) => {
         dot(g, w.px, w.py, { r: 3.6, fill: col });
         if (w.liberation || w.newLife) dot(g, w.px, w.py, { r: 8, fill: "none", stroke: col, sw: 1.2, op: 0.35 });
       });
+      const active = sel.waypoints[ctx.activePlaceIndex];
+      if (active && Number.isFinite(active.px) && Number.isFinite(active.py)) {
+        dot(g, active.px, active.py, { r: 9, fill: C.paperSoft, stroke: col, sw: 2 })
+          .attr("class", "selected-place-ring");
+      }
     }
     for (const j of store.journeys) {
       const home = j.waypoints[0];
@@ -933,11 +1056,11 @@ export function createAtlas(container) {
   function drawPatterns(ctx) {
     const g = overlayG;
     if (ctx.patternsLayer === "origins") { drawOrigins(g); return; }
-    const activeEvent = ctx.activePatternEvent;
+    const activeEvent = ctx.historyTestimony === false ? null : ctx.activePatternEvent;
     const activeIds = new Set(activeEvent?.people.slice(0, 4).map((person) => person.id) || []);
     const activeConflict = ctx.warPeriod?.archive_conflict;
 
-    const corridors = activeConflict
+    const corridors = activeConflict && ctx.historyRoutes !== false
       ? (store.veteranCorridors.get(activeConflict) || []).filter((corridor) => corridor.count > 1).slice(0, 8)
       : [];
     const maximumCorridor = Math.max(1, ...corridors.map((corridor) => corridor.count));
@@ -983,7 +1106,7 @@ export function createAtlas(container) {
     }
 
     let activePoint = null;
-    const rankedEvents = [...(ctx.patternEvents || [])]
+    const rankedEvents = [...(ctx.historyTestimony === false ? [] : (ctx.patternEvents || []))]
       .sort((a, b) => b.count - a.count || a.place.localeCompare(b.place));
     const visibleEvents = rankedEvents.slice(0, size.w <= 820 ? 9 : 14);
     if (activeEvent && !visibleEvents.some((event) => event.key === activeEvent.key)) {
@@ -1039,7 +1162,7 @@ export function createAtlas(container) {
   function drawOrigins(g) {
     const placed = new Map();
     for (const j of store.journeys) {
-      const home = j.waypoints[0]; if (!home || home.px == null || !j.originCountry) continue;
+      const home = j.routeStart; if (!home || home.px == null || !j.originCountry) continue;
       if (!placed.has(j.originCountry)) placed.set(j.originCountry, { x: 0, y: 0, n: 0 });
       const e = placed.get(j.originCountry); e.x += home.px; e.y += home.py; e.n++;
     }

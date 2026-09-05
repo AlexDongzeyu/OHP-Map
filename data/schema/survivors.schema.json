@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Crestwood OHP survivors.geojson",
-  "description": "GeoJSON FeatureCollection, one Feature per survivor. The build FAILS if any record is invalid (doc 02 section 7). GeoJSON coordinate order is [lng, lat].",
+  "description": "One feature per public profile. Unplaced profiles use null geometry and empty waypoints; coordinate order is [lng, lat].",
   "type": "object",
   "required": ["type", "features"],
   "properties": {
@@ -19,7 +19,7 @@
       "properties": {
         "type": { "const": "Feature" },
         "geometry": {
-          "type": "object",
+          "type": ["object", "null"],
           "required": ["type", "coordinates"],
           "properties": {
             "type": { "const": "Point" },
@@ -36,6 +36,10 @@
           "required": ["survivor_id", "name", "archive_url", "theme_tags", "waypoints"],
           "properties": {
             "survivor_id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+            "source_aliases": {
+              "type": "array", "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[a-z0-9-]+$" }
+            },
             "name": { "type": "string", "minLength": 1 },
             "is_sample": { "type": "boolean" },
             "birth_year": { "type": ["integer", "null"] },
@@ -47,20 +51,89 @@
             "portrait_faces": { "type": "integer", "minimum": 0 },
             "video_count": { "type": "integer", "minimum": 0 },
             "video_inventory": { "type": "string", "pattern": "^[0-9]+:[0-9a-f]{8}$" },
+            "video_source_inventory": { "type": "string", "pattern": "^[0-9]+:[0-9a-f]{8}$" },
             "captioned_video_count": { "type": "integer", "minimum": 0 },
             "transcript_status": {
               "type": "string",
               "enum": ["complete", "partial", "none", "unavailable", "pending"]
             },
             "theme_tags": { "type": "array", "items": { "type": "string" } },
+            "profile_media": { "$ref": "#/definitions/profile_media" },
             "waypoints": {
               "type": "array",
-              "minItems": 1,
               "items": { "$ref": "#/definitions/waypoint" }
             }
           },
           "additionalProperties": true
         }
+      },
+      "allOf": [{
+        "if": {
+          "properties": {
+            "properties": { "properties": { "waypoints": { "maxItems": 0 } } }
+          }
+        },
+        "then": { "properties": { "geometry": { "type": "null" } } },
+        "else": { "properties": { "geometry": { "type": "object" } } }
+      }]
+    },
+    "profile_media": {
+      "type": "object",
+      "required": ["images", "videos"],
+      "additionalProperties": false,
+      "properties": {
+        "images": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/profile_image" }
+        },
+        "videos": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/profile_video" }
+        }
+      }
+    },
+    "profile_image": {
+      "type": "object",
+      "required": ["url", "source_url", "caption", "credit", "rights"],
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^(?:assets/portraits/[a-z0-9-]+\\.webp|https://ohp\\.crestwood\\.on\\.ca/wp-content/uploads/[^?#]+)$"
+        },
+        "source_url": {
+          "type": "string",
+          "pattern": "^https://ohp\\.crestwood\\.on\\.ca/wp-content/uploads/[^?#]+$"
+        },
+        "full_url": {
+          "type": "string",
+          "pattern": "^https://ohp\\.crestwood\\.on\\.ca/wp-content/uploads/[^?#]+$"
+        },
+        "caption": { "type": "string", "minLength": 1 },
+        "credit": { "type": "string", "minLength": 1 },
+        "rights": { "type": "string", "minLength": 1 },
+        "primary": { "type": "boolean" }
+      }
+    },
+    "profile_video": {
+      "type": "object",
+      "required": ["id", "url", "embed_url", "title", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[0-9]+$" },
+        "url": {
+          "type": "string",
+          "pattern": "^https://player\\.vimeo\\.com/video/[0-9]+(?:\\?[^#]*)?$"
+        },
+        "embed_url": {
+          "type": "string",
+          "pattern": "^https://player\\.vimeo\\.com/video/[0-9]+(?:\\?[^#]*)?$"
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "status": {
+          "enum": ["captioned", "no-public-captions", "unavailable", "caption-track-unavailable", "pending", "error"]
+        },
+        "language": { "type": "string" }
       }
     },
     "waypoint": {

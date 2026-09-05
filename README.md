@@ -2,22 +2,19 @@
 
 An interactive memorial map of the whole **Crestwood Oral History Project**
 (`ohp.crestwood.on.ca`) — the life journeys of **Holocaust survivors, war veterans,
-community members, and others** whom Crestwood students have interviewed. It turns
-hundreds of testimonies that are stored alphabetically — and so hide their own patterns —
-into one living map: a **Guided** scrollytelling story, a free **Explore** map (search,
-filter by community, click anyone), and a **Patterns** view with year-by-year historical
-territories from 1914–2026, wartime alignment, testimony journeys, and birthplace density.
+community members, and others** whom Crestwood students have interviewed. **Explore**
+brings each person's account, photographs, interview chapters, and recorded places
+together. **History** shows dated territories from 1914 to 2026, documented flags,
+wartime alignment, recorded accounts, and mapped route origins.
 
-**Live data:** the map is populated with **real people across the archive's six
+**Live data:** the map is populated with **real people across the archive's
 categories**, scraped from the public OHP listings and auto-extracted from each public
 bio, then drawn on a quiet **world map** (D3 + TopoJSON) that spans Europe, Canada, and
 the Pacific. **Live site:** https://ohpmap.alexdong0414.workers.dev/
 
-A first-time visitor lands on a slowly-rotating **3D globe** with a one-sentence purpose
-("Crestwood students have interviewed Holocaust survivors and war veterans — this map
-follows their journeys…"), a live sense of scale, and one clear action (*Begin with one
-story*). Everyone is presented **equally** — grouped by the archive's own categories, no
-"featured" hierarchy — each with a brief one-line introduction.
+A first-time visitor lands on a slowly rotating globe and enters the collection through
+**Explore**. Accounts follow the archive's own categories and alphabetical ordering.
+There is no separate Guided page; its old URL redirects to Explore.
 
 > ### ⚠️ Read this: the data is *pending review*, not authoritative
 > The `ohp` WordPress post type is **not** exposed over the REST API (`/wp-json/wp/v2/ohp`
@@ -38,15 +35,14 @@ the handoff: how it works, how to run it, how to extend it.
 
 ## The one-paragraph version
 
-A first-time visitor lands in a **guided** walk through one survivor's journey (Martin
-Baranek: Starachowice → Auschwitz → Gunskirchen → Canada) — the map pans and the route
-draws itself as they scroll. They then enter **Explore**: every survivor is a clustered
-dot at their hometown on a quiet CARTO Positron basemap; click one for a side panel (bio,
-journey, the place names *as the archive wrote them*, a link back to the entry); click a
-place and everyone connected to it lights up; a filter bar replaces the archive's broken
-search. **Patterns** shows the aggregate — flow lines, origin density, and the **candidate
-connection layer**. WordPress stays the content backend; the dataset rebuilds from it
-automatically (GitHub Actions *or* a Cloudflare Worker), with no manual work.
+Search for a person or place in Explore, filter by community, and open an account.
+The profile includes a readable summary, source photographs where available, genuine
+interview-chapter links, and complete source passages beside mapped places. Selecting a
+place focuses the map without opening another page. Public profiles without mapped places
+remain readable in the collection rather than receiving invented coordinates. History
+supports country/place search, dated administration details and flags, layer controls,
+historical/current comparison, year playback, and shareable views. WordPress remains
+the source; the Cloudflare Worker keeps the public inventory current.
 
 ---
 
@@ -74,7 +70,7 @@ python -m pipeline.build --strict         # publish only human-reviewed records
 python -m pipeline.build --discover       # probe the WP REST API and exit
 ```
 
-Run the tests with `python -m pytest -q` (32 tests). A headless browser smoke test is in
+Run the tests with `python -m pytest -q`. A headless browser smoke test is in
 `tools/smoke.cjs` (`node tools/smoke.cjs` against a running server; puppeteer-core + Edge).
 
 ---
@@ -96,7 +92,7 @@ WordPress (ohp.crestwood.on.ca)         ← source of truth, never written to
 ┌───────────────────────────────────────────────┐
 │  Static front end (index.html + js/ + vendor/) │
 │  D3 + TopoJSON vector atlas of Europe          │
-│  Guided / Explore / Patterns + time scrubber   │
+│  Explore / History + media and year controls  │
 └───────────────────────────────────────────────┘
         │  GitHub Actions (CI)  ─and─  Cloudflare Worker (deploy + cron + KV)
         ▼
@@ -138,46 +134,52 @@ overlaps as **candidates**.
 
 Vanilla ES modules, no bundler. Libraries are **vendored and pinned** in `vendor/` (no
 fragile CDNs). D3 owns the cartography while GSAP owns the restrained interface
-orchestration. The map is a **custom D3 + TopoJSON vector atlas of Europe** drawn as a
-single full-bleed stage — paper-toned countries, curved journey arcs that draw
-themselves, a CSS-transform camera that pans and zooms cinematically, and an off-map
-"new life across the Atlantic" anchor. Each view is an overlay over that one persistent
-map.
+orchestration. The Equal Earth world map remains mounted as the visitor moves between
+the collection and historical atlas. Routes use one continuous curve, and the camera fits
+the visible area around the reading and context panels. The landing page uses an
+orthographic globe.
 
 | File | Responsibility |
 |------|----------------|
 | `js/config.js` | The restrained palette, role vocabulary, time range, helpers |
-| `js/data.js` | Loads the three JSON artifacts; reshapes them into the journey model (initials, themes, hometown, per-waypoint year/uncertainty) |
-| `js/atlas.js` | The vector-map engine: projection, country rendering, camera, curved self-drawing arcs, off-map anchor, `pointAtYear` for the scrubber, mini-routes, tooltip |
-| `js/ui.js` | The overlay panels (landing, guided, explore, patterns, about) as class-based markup |
-| `js/motion.js` | Reduced-motion-aware GSAP orchestration for view sheets and narrative focus |
-| `js/app.js` | The state machine: view switching, the guided scroll observer, hash deep links, event delegation |
+| `js/data.js` | Loads profile, place and historical metadata into the journey and media models |
+| `js/atlas.js` | Projections, continuous routes, camera, territory inspection, dated flags and historical/current comparison |
+| `js/ui.js` | Collection profiles, media, historical controls and source panels |
+| `js/media.js` | Trusted media URLs, public Vimeo embed references and caption-status wording |
+| `js/historical-context.js` | Dated flag assets, per-file source/rights records and historical context links |
+| `js/motion.js` | Reduced-motion-aware GSAP orchestration |
+| `js/app.js` | View switching, media playback, place focus, historical navigation and sharing |
 | `tools/build_atlas.cjs` | Build step: trims the vendored world-atlas TopoJSON to a compact ~51 KB Europe GeoJSON (`data/atlas-europe.json`) |
 
-**Deep links:** `#/guided`, `#/explore`, `#/patterns`, `#/about`, `#/survivor/<id>`,
-`#/place/<slug>`.
+**Deep links:** `#/explore`, `#/patterns/<year>`, `#/about`, `#/survivor/<id>`,
+`#/place/<slug>`. Historical links can retain a controller, layer choices, opacity,
+comparison split, and map position. Legacy `#/guided` links redirect to Explore.
 
 **Visual craft:** the archive reading-room design pairs mineral paper, dark blue-green
 binding ink, Spectral names and reading text, and Public Sans controls. Real photographs
 provide the archival character without sepia filters, imitation stamps, or repeated glass
-cards. Landing is an album cover; Explore is a photographic collection index; Guided is a
-reading column; Patterns is a historical atlas; About includes a collection ledger and
+cards. Landing is an album cover; Explore combines a collection index with source material;
+History is a dated atlas; About includes a collection ledger and
 source list. Fonts and GSAP remain self-hosted.
 
 Explore has expandable community filters, a recoverable empty-search state, and profile
 actions beside the account's identity. Closing a profile restores the collection's scroll
-position and keyboard focus. Guided supports both scrolling and previous/next place
-buttons. The map fits the exposed area beside desktop panels or above mobile sheets;
-visible zoom and fit controls supplement mouse and touch navigation. Patterns opens at
-1944 and keeps the year, historical territories, war context, and testimony synchronized.
-Birthplace labels prioritize legibility rather than overlapping every country count.
+position and keyboard focus. Profiles use ordinary document spacing, not tall scrolling
+chapters. Photographs and interview lists appear alongside the account; video players load
+only after a chapter is selected. Complete place passages retain their source wording.
+The map fits the exposed area beside desktop panels or above mobile sheets. History opens
+at 1944 and keeps its year, territories, flags, and accounts synchronized. Its mobile context
+panel folds away to leave room for the map. Route-origin counts describe mapped starting
+places rather than asserting that inferred locations are confirmed birthplaces. Explore
+uses today's neutral basemap until the reader selects a dated place; a mention of a war in
+childhood or family history does not assign that war to the person's service.
 
 The landing retains six slow portrait belts, softened behind the globe and away from the
 reading area. Each tile changes every 8–13.6 seconds; the globe follows five real journeys
 at a time. GSAP coordinates short, non-blocking entrances and the Archive Register count-up.
 Reduced-motion visitors receive final counter values and still photographs and globe.
 Without GSAP, the interface and its final counter values remain available. The decorative
-mosaic and enlarged Guided photographs use only rights-cleared, face-validated OHP assets.
+mosaic uses only rights-cleared, face-validated OHP assets.
 Compact collection/profile photographs also retain rights-cleared detector false negatives;
 records without an image keep their initials.
 
@@ -205,11 +207,24 @@ geometry at the hometown (coordinate order **`[lng, lat]`**). Each waypoint keep
 `war_context.json` supplies the sourced 1914–2026 belligerent and historical phase context.
 `historical_boundaries.json` contains compact, dated OpenHistoricalMap territory polygons;
 `historical_boundary_index.json` drives the change-density strip beneath the timeline.
-The reproducible builder lives in `tools/historical-boundaries/`.
+The reproducible builder lives in `tools/historical-boundaries/`. Public accounts that have
+no geocoded places have null geometry and empty waypoints, but retain their source and media.
+`profile_media` contains credited image references and ordered Vimeo chapter metadata.
 `data/source/vimeo_caption_index.json` records public caption availability for every Vimeo
-clip linked from a military-veteran page. Full VTT tracks stay in the ignored
-`data/source/transcript_cache/`; the published dataset contains only chapter counts and
-caption coverage, never full transcripts.
+clip linked from public OHP pages across all groups. Full VTT tracks stay in the ignored
+`data/source/transcript_cache/`. The published dataset contains chapter references and
+caption coverage, not full transcripts or signed caption URLs. Public embed hashes are
+retained when the original OHP page supplies them. An inaccessible recording is not
+reported as a confirmed captionless recording.
+
+Historical flags use the same mid-year sample as territory geometry. A design change
+after that sample appears in the following year. Unverified designs are omitted rather
+than replaced with a modern flag. Each displayed flag links to its dated source and rights
+information. The comparison control compares dated vector boundaries with today's basemap;
+it is not a georeferenced scanned-map overlay. OldMapsOnline is a functional reference and
+external catalogue link, not a copied dataset. Its broader historical catalogue, battle and
+ruler database, map-upload/georeferencing service, accounts, and commercial features remain
+on the original service.
 `geocode_cache.json` + `data/source/ohp_scraped.json` are committed so rebuilds are
 reproducible and offline. Validated against `data/schema/survivors.schema.json`.
 
@@ -296,9 +311,9 @@ docs/        the planning dossier (00–12) + audit/evaluation/improvement-plan
 | F1–F3 | Ingest (scrape), extract, normalize + geocode | `pipeline/scrape_ohp,extract,gazetteer,geocode` |
 | F4–F6 | Dots, survivor panel, click-a-place | `js/atlas.js`, `js/ui.js`, `place_index.json` |
 | F7 | Filter bar (theme chips) | `js/ui.js` (explore) |
-| F8 | Guided scrollytelling | `js/ui.js` + `js/app.js` scroll observer + `js/atlas.js` camera |
+| F8 | Accounts, source media and direct place navigation | `js/ui.js`, `js/media.js`, `js/app.js`, `js/atlas.js` |
 | F9 | Patterns: all journeys + shared-place rings + connections | `js/atlas.js`, `connections.json` |
-| F10 | Time scrubber 1933–1950 | `js/atlas.js` `pointAtYear` + `js/ui.js` scrubber |
+| F10 | Historical atlas, 1914 to 2026 | `js/atlas.js`, `js/historical-context.js`, `js/ui.js` |
 | F11 | Deep links | `js/app.js` |
 | F12 | Automated rebuild | `.github/workflows/build.yml` + `worker/` |
 | N1–N6 | a11y, perf (clustering), mobile, reproducibility, maintainability, resilience | front end + committed cache + CI/Worker validation |
@@ -308,7 +323,7 @@ docs/        the planning dossier (00–12) + audit/evaluation/improvement-plan
 
 ## Credits & licenses
 
-A student project. The guided-storymap idea is indebted to HandsOnDataViz
+A student project. Story-map inspiration includes HandsOnDataViz
 [*Leaflet Storymaps with Google Sheets*](https://github.com/HandsOnDataViz/leaflet-storymaps-with-google-sheets)
 by **Ilya Ilyankou & Jack Dougherty**; the visual direction is informed by the Arolsen
 Archives' *Transnational Remembrance* map. The vector-atlas front end and the

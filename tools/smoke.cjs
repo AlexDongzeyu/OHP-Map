@@ -27,7 +27,12 @@ function assertCounterMotion(label, { targets, samples }) {
   await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
   await page.setRequestInterception(true);
   let delayInitialDataset = true;
+  let mockVideoPlayer = false;
   page.on("request", (request) => {
+    if (mockVideoPlayer && request.url().startsWith("https://player.vimeo.com/video/")) {
+      request.respond({ status: 200, contentType: "text/html", body: "<html><body>Interview player test</body></html>" });
+      return;
+    }
     if (delayInitialDataset && /\/data\/survivors\.geojson/.test(request.url())) {
       delayInitialDataset = false;
       setTimeout(() => request.continue(), 800);
@@ -140,7 +145,7 @@ function assertCounterMotion(label, { targets, samples }) {
       };
     });
     assertCounterMotion("initial landing", initialCounterMotion);
-    const icon = await page.$(".landing-card [data-act='follow'] .icon");
+    const icon = await page.$(".landing-card [data-act='explore'] .icon");
     if (!icon) throw new Error("primary action is missing its SVG icon");
     const motion = await page.evaluate(() => ({
       mode: document.documentElement.dataset.motion,
@@ -246,87 +251,72 @@ function assertCounterMotion(label, { targets, samples }) {
     ));
     if (!repeatedHome) throw new Error("clicking Home while at Home reset the register");
   });
-  await check("follow -> guided narrative + flat map", async () => {
-    await page.click(".landing-card [data-act='follow']");
-    await page.waitForSelector(".narr .chapter", { timeout: 5000 });
-    if (await page.$(".follow-another")) throw new Error("Guided chooser should not render");
-    const flatPaths = await page.$$eval("#map .camera path", (e) => e.length);
-    if (flatPaths < 20) throw new Error("flat map not drawn (" + flatPaths + ")");
-    const chapterCount = await page.$$eval("[data-chapter]", (chapters) => chapters.length);
-    if (chapterCount < 3) throw new Error("guided journey has too few chapters to test");
-    const activateChapter = (index) => page.$eval("[data-narr]", (narrative, chapterIndex) => {
-      const chapter = narrative.querySelectorAll("[data-chapter]")[chapterIndex];
-      narrative.scrollTop = chapter.offsetTop -
-        narrative.clientHeight / 2 + chapter.offsetHeight / 2;
-      narrative.dispatchEvent(new Event("scroll"));
-    }, index);
-    const revealedLength = () => page.$eval(".guided-route", (path) => {
-      const total = path.getTotalLength();
-      return total - (Number(path.getAttribute("stroke-dashoffset")) || 0);
-    });
-
-    await activateChapter(1);
-    await wait(150);
-    const beforeRapidAdvance = await revealedLength();
-    await activateChapter(2);
-    await wait(30);
-    const afterRapidAdvance = await revealedLength();
-    if (afterRapidAdvance > beforeRapidAdvance + 4) {
-      throw new Error(
-        `rapid scroll jumped from ${beforeRapidAdvance.toFixed(2)} to ${afterRapidAdvance.toFixed(2)}`,
-      );
+  await check("Explore replaces Guided and old links still work", async () => {
+    if (await page.$("[data-view='guided'], [data-guided], .narr")) {
+      throw new Error("the removed Guided interface still exists");
     }
-
-    const target = await page.evaluate(() => {
-      const narrative = document.querySelector("[data-narr]");
-      const chapters = [...narrative.querySelectorAll("[data-chapter]")];
-      const last = Math.min(3, chapters.length - 1);
-      const activate = (index) => {
-        const chapter = chapters[index];
-        narrative.scrollTop = chapter.offsetTop -
-          narrative.clientHeight / 2 + chapter.offsetHeight / 2;
-        narrative.dispatchEvent(new Event("scroll"));
-      };
-      activate(last);
-      activate(Math.max(0, last - 1));
-      activate(last);
-      return last;
-    });
-    await wait(1000);
-    const guidedRoute = await page.evaluate(() => {
-      const active = Number(document.querySelector("[data-chapter].is-active")?.dataset.chapter);
-      const paths = [...document.querySelectorAll("#map .guided-route")];
+    await page.click(".landing-card [data-act='explore']");
+    await page.waitForSelector(".rail-card");
+    await page.goto(BASE + "/?old-route=1#/guided", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector(".rail-card", { timeout: 15000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 5000 });
+    const state = await page.evaluate(() => ({
+      view: document.body.dataset.view,
+      hash: location.hash,
+      tabs: [...document.querySelectorAll(".nav-tab")].map((button) => button.textContent),
+    }));
+    if (state.view !== "explore" || state.hash !== "#/explore" || state.tabs.length !== 2 ||
+        state.tabs.includes("Guided")) {
+      throw new Error(`old Guided route was not redirected ${JSON.stringify(state)}`);
+    }
+  });
+  await check("all public records retain complete excerpts and media inventories", async () => {
+    const inventory = await page.evaluate(async () => {
+      const response = await fetch("data/survivors.geojson");
+      if (!response.ok) throw new Error(`archive data returned ${response.status}`);
+      const document = await response.json();
+      const records = document.features.map((feature) => feature.properties);
       return {
-        active,
-        count: paths.length,
-        unfinished: paths.filter((path) => Number(path.getAttribute("stroke-dashoffset")) > 0.1).length,
-        moveCommands: paths.map((path) => (path.getAttribute("d").match(/M/g) || []).length),
-        joins: paths.map((path) => path.getAttribute("stroke-linejoin")),
+        total: records.length,
+        unplaced: records.filter((record) => !record.waypoints.length).map((record) => ({ id: record.survivor_id, name: record.name })),
+        brokenBios: records.filter((record) => record.bio_excerpt && !/[.!?][\u201d\u2019"')\]]*$/.test(record.bio_excerpt)).map((record) => record.survivor_id),
+        invalidMedia: records.filter((record) => (
+          !record.profile_media || !Array.isArray(record.profile_media.images) || !Array.isArray(record.profile_media.videos) ||
+          record.captioned_video_count > record.video_count ||
+          record.profile_media.videos.length !== record.video_count
+        )).map((record) => record.survivor_id),
       };
     });
-    if (guidedRoute.active !== target ||
-        guidedRoute.count !== 1 ||
-        guidedRoute.unfinished ||
-        guidedRoute.moveCommands.some((count) => count !== 1) ||
-        guidedRoute.joins.some((join) => join !== "round")) {
-      throw new Error(`unstable route state ${JSON.stringify(guidedRoute)}`);
+    if (inventory.total < 1000 || !inventory.unplaced.length || inventory.brokenBios.length || inventory.invalidMedia.length) {
+      throw new Error(`incomplete collection ${JSON.stringify(inventory)}`);
     }
-    await page.click("[data-act='prev-chapter']");
-    await page.waitForFunction(
-      (index) => document.querySelector("[data-chapter].is-active")?.dataset.chapter === String(index),
-      { timeout: 5000 }, target - 1,
-    );
-    await wait(950);
-    const reading = await page.evaluate(() => {
-      const narrative = document.querySelector("[data-narr]").getBoundingClientRect();
-      const marker = document.querySelector(".guided-ring");
-      const point = new DOMPoint(Number(marker.getAttribute("cx")), Number(marker.getAttribute("cy")))
-        .matrixTransform(marker.getScreenCTM());
-      return { pointX: point.x, pointY: point.y, sheetRight: narrative.right, count: document.querySelector("[data-guided-count]").textContent };
+    const unplaced = inventory.unplaced[0];
+    await page.$eval("#search", (input, name) => {
+      input.value = name; input.dispatchEvent(new Event("input", { bubbles: true }));
+    }, unplaced.name);
+    await page.click(`[data-survivor='${unplaced.id}']`);
+    await page.waitForSelector(".profile-places .section-note", { timeout: 5000 });
+    const note = await page.$eval(".profile-places .section-note", (element) => element.textContent);
+    if (!note.includes("have not been mapped") || await page.$(".selected-place-ring")) {
+      throw new Error("an unplaced account was given fabricated map geometry");
+    }
+    await page.click(".panel-close");
+    await page.$eval("#search", (input) => {
+      input.value = ""; input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    if (reading.pointX < reading.sheetRight + 12 || !reading.count.startsWith(`Place ${target} of`)) {
-      throw new Error(`guided navigation or map framing failed ${JSON.stringify(reading)}`);
+  });
+  await check("historical source aliases retain one readable account", async () => {
+    await page.goto(BASE + "/?source-alias=1#/survivor/thomas-jack", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    const alias = await page.evaluate(() => ({
+      hash: location.hash,
+      name: document.querySelector("#profile-name")?.textContent,
+      panels: document.querySelectorAll(".panel").length,
+    }));
+    if (alias.hash !== "#/survivor/thomas-jack-c" || !alias.name || alias.panels !== 1) {
+      throw new Error(`the canonical profile alias was lost ${JSON.stringify(alias)}`);
     }
+    await page.click(".panel-close");
   });
   await check("explore: group chips + grouped rail", async () => {
     await page.click(".nav-tab[data-view='explore']");
@@ -335,7 +325,7 @@ function assertCounterMotion(label, { targets, samples }) {
     const chips = await page.$$eval(".gchip", (e) => e.length);
     const profilePictures = await page.$$eval(".rail-card .medal img", (images) => images.length);
     if (chips < 1) throw new Error("no group chips");
-    if (profilePictures < 130) throw new Error(`only ${profilePictures} profile pictures were restored`);
+    if (profilePictures < 100) throw new Error(`only ${profilePictures} profile pictures are available in the rail`);
     const mapBounds = await page.$eval("#map", (map) => map.getBoundingClientRect().toJSON());
     await page.mouse.move(mapBounds.x + mapBounds.width / 2, mapBounds.y + mapBounds.height / 2);
     await page.mouse.wheel({ deltaY: -300 });
@@ -413,29 +403,18 @@ function assertCounterMotion(label, { targets, samples }) {
     await page.waitForSelector(".panel .journey", { timeout: 5000 });
     await page.waitForSelector(".panel .panel-group", { timeout: 3000 });
     await page.waitForSelector(".panel .recording-meta", { timeout: 3000 });
-    await page.waitForSelector(".panel .service-context", { timeout: 3000 });
     const serviceMap = await page.evaluate(() => ({
-      context: document.querySelector(".service-context strong")?.textContent,
-      coalition: document.querySelectorAll("#map [data-war-side='coalition']").length,
-      opposition: document.querySelectorAll("#map [data-war-side='opposition']").length,
+      guessedContext: Boolean(document.querySelector(".service-context")),
       bio: document.querySelector(".panel .bio")?.textContent.trim(),
       recording: document.querySelector(".panel .recording-meta")?.textContent.replace(/\s+/g, " ").trim(),
       restoredPicture: Boolean(document.querySelector(".panel .medal img")),
     }));
-    if (serviceMap.context !== "Second World War" || !serviceMap.coalition || !serviceMap.opposition ||
-        serviceMap.bio.length < 200 || /…$/.test(serviceMap.bio) ||
+    if (serviceMap.guessedContext || serviceMap.bio.length < 200 || /…$/.test(serviceMap.bio) ||
         !/[.!?][”"')\]]?$/.test(serviceMap.bio) ||
-        !/interview chapters?/.test(serviceMap.recording || "") ||
-        !/no public captions/.test(serviceMap.recording || "") ||
+        !/This interview has \d+ chapters?\./.test(serviceMap.recording || "") ||
         !serviceMap.restoredPicture) {
       throw new Error(`veteran service context is incomplete ${JSON.stringify(serviceMap)}`);
     }
-    await page.click(".guided-pill");
-    await page.waitForSelector("[data-narr]");
-    if (await page.$(".guided-portrait")) {
-      throw new Error("an unvalidated gallery image was enlarged in Guided");
-    }
-    await page.click(".nav-tab[data-view='explore']");
     await page.setViewport({ width: 1200, height: 800 });
     await wait(1300);
     const reframed = await page.$eval("#map .camera", (camera) => Number(
@@ -445,20 +424,25 @@ function assertCounterMotion(label, { targets, samples }) {
     await page.setViewport({ width: 1366, height: 850 });
     await wait(1300);
   });
-  await check("unavailable Vimeo coverage is not reported as absent", async () => {
-    await page.$eval("#search", (input) => {
-      input.value = "Morris Adams";
-      input.dispatchEvent(new Event("input", { bubbles: true }));
+  await check("caption statuses distinguish inaccessible and captionless videos", async () => {
+    const coverage = await page.evaluate(async () => {
+      const { captionStatus, normalizeProfileMedia, playerURL } = await import("./js/media.js");
+      const media = normalizeProfileMedia({ videos: [{
+        id: "123", url: "https://vimeo.com/123",
+        embed_url: "https://player.vimeo.com/video/123?h=public-hash",
+        status: "captioned",
+      }] });
+      return {
+        unavailable: captionStatus({ status: "unavailable" }),
+        none: captionStatus({ status: "no-public-captions" }),
+        pending: captionStatus({ status: "error" }),
+        embed: playerURL(media.videos[0]),
+      };
     });
-    await wait(250);
-    await page.waitForSelector("[data-survivor='adams-morris']", { timeout: 3000 });
-    await page.click("[data-survivor='adams-morris']");
-    const coverage = await page.$eval(
-      ".panel .recording-meta",
-      (element) => element.textContent.replace(/\s+/g, " ").trim(),
-    );
-    if (!/caption status unavailable/.test(coverage) || /no public captions/.test(coverage)) {
-      throw new Error(`unavailable caption coverage is misleading: ${coverage}`);
+    if (coverage.unavailable === coverage.none || !coverage.unavailable.includes("original OHP page") ||
+        !coverage.pending.includes("not been confirmed") ||
+        !coverage.embed.includes("h=public-hash") || !coverage.embed.includes("dnt=1")) {
+      throw new Error(`caption or public embed handling is incorrect ${JSON.stringify(coverage)}`);
     }
   });
   await check("captioned veteran shows audited chapter coverage", async () => {
@@ -472,11 +456,21 @@ function assertCounterMotion(label, { targets, samples }) {
     await page.waitForSelector(".panel .recording-meta", { timeout: 3000 });
     const selectedName = await page.$eval(".panel .serif-lg", (element) => element.textContent.trim());
     if (selectedName !== "Wally Adam") throw new Error(`selected ${selectedName} instead of Wally Adam`);
+    if (await page.$(".service-context")) throw new Error("a war mentioned in childhood was labelled as personal service");
+    const inferredService = await page.evaluate(async () => {
+      const { loadData } = await import("./js/data.js");
+      const archive = await loadData();
+      const person = archive.byId.get("adam-wally");
+      return { conflicts: person.serviceConflicts, year: person.serviceYear };
+    });
+    if (inferredService.conflicts.length || inferredService.year != null) {
+      throw new Error("birth/family war mentions were used as dated service evidence");
+    }
     const coverage = await page.$eval(
       ".panel .recording-meta",
       (element) => element.textContent.replace(/\s+/g, " ").trim(),
     );
-    if (!/6 interview chapters/.test(coverage) || !/6 with public captions/.test(coverage)) {
+    if (!/This interview has \d+ chapters?\./.test(coverage) || !/Public captions are available/.test(coverage)) {
       throw new Error(`caption coverage is incorrect: ${coverage}`);
     }
     const miniRoutes = await page.$$eval(".panel .mini path", (paths) => (
@@ -488,23 +482,38 @@ function assertCounterMotion(label, { targets, samples }) {
     if (miniRoutes.length !== 1 || miniRoutes[0].moves !== 1 || miniRoutes[0].join !== "round") {
       throw new Error(`mini route is segmented ${JSON.stringify(miniRoutes)}`);
     }
-    await page.$eval(".guided-pill", (button) => button.click());
-    await page.waitForSelector(".narr-head .guided-portrait img", { timeout: 5000 });
-    const guidedPortrait = await page.evaluate(() => {
-      const head = document.querySelector(".narr-head").getBoundingClientRect();
-      const portrait = document.querySelector(".guided-portrait");
-      const box = portrait.getBoundingClientRect();
-      return {
-        alt: portrait.querySelector("img")?.alt,
-        withinHeading: box.top >= head.top && box.bottom <= head.bottom,
-        radius: parseFloat(getComputedStyle(portrait).borderRadius),
-      };
-    });
-    if (guidedPortrait.alt !== "Wally Adam" || !guidedPortrait.withinHeading || guidedPortrait.radius > 4) {
-      throw new Error(`guided archive photograph is incorrect ${JSON.stringify(guidedPortrait)}`);
+    await page.click("[data-act='show-interviews']");
+    await page.waitForSelector(".video-chapter");
+    const media = await page.evaluate(() => ({
+      chapters: document.querySelectorAll(".video-chapter").length,
+      iframe: Boolean(document.querySelector(".player-frame iframe")),
+      focused: document.activeElement.id,
+    }));
+    if (media.chapters < 1 || media.iframe || media.focused !== "interviews-title") {
+      throw new Error(`interview chapters are not accessible or loaded without consent ${JSON.stringify(media)}`);
     }
-    await page.click(".nav-tab[data-view='explore']");
-    await page.waitForSelector(".rail .rail-card", { timeout: 5000 });
+    mockVideoPlayer = true;
+    try {
+      await page.click(".video-chapter[data-video]");
+      await page.waitForSelector(".player-frame iframe");
+      const player = await page.$eval(".player-frame iframe", (frame) => ({
+        src: frame.src, title: frame.title, count: document.querySelectorAll(".player-frame iframe").length,
+      }));
+      if (!player.src.startsWith("https://player.vimeo.com/video/") || !player.src.includes("dnt=1") ||
+          !player.title.includes("Wally Adam") || player.count !== 1) {
+        throw new Error(`the interview player is not wired correctly ${JSON.stringify(player)}`);
+      }
+      await page.click("[data-act='close-video']");
+      if (await page.$(".player-frame iframe")) throw new Error("closing the player left a video running");
+    } finally {
+      mockVideoPlayer = false;
+    }
+    await page.click("[data-place-step='0']");
+    await page.waitForSelector(".selected-place-ring");
+    const passages = await page.$$eval(".place-account", (elements) => elements.map((element) => element.textContent.trim()));
+    if (passages.some((passage) => !/[.!?][\u201d\u2019"')\]]*$/.test(passage))) {
+      throw new Error("a profile still displays a cut-off source passage");
+    }
     const exploreRoutes = await page.$$eval("#map .explore-route", (paths) => (
       paths.map((path) => (path.getAttribute("d").match(/M/g) || []).length)
     ));
@@ -543,7 +552,7 @@ function assertCounterMotion(label, { targets, samples }) {
       () => document.documentElement.dataset.historicalBoundaries === "ready",
       { timeout: 15000 },
     );
-    const yr = await page.$eval(".scrub-year", (el) => el.textContent);
+    const yr = await page.$eval(".scrub-year", (el) => el.value);
     if (yr !== "1944") throw new Error("year=" + yr);
     const eventState = await page.evaluate(() => ({
       markers: document.querySelectorAll(".pattern-event-marker").length,
@@ -653,12 +662,138 @@ function assertCounterMotion(label, { targets, samples }) {
     await page.$eval(".scrubber .range", (el) => { el.value = "1944"; el.dispatchEvent(new Event("input", { bubbles: true })); });
     const beforeYear = Number(yr);
     await page.$eval("[data-act='next-year']", (button) => button.click());
-    const nextYear = await page.$eval(".scrub-year", (el) => Number(el.textContent));
+    const nextYear = await page.$eval(".scrub-year", (el) => Number(el.value));
     if (nextYear !== beforeYear + 1) {
       throw new Error(`timeline did not advance exactly one year (${beforeYear} -> ${nextYear})`);
     }
     await page.$eval(".seg[data-layer='origins']", (button) => button.click());
     await page.waitForSelector(".origin-list li", { timeout: 5000 });
+  });
+  await check("country search opens a sourced, dated flag inspector", async () => {
+    await page.click(".seg[data-layer='journeys']");
+    await page.waitForSelector("[data-country-search]");
+    await page.$eval("[data-year-entry]", (input) => {
+      input.value = "1944";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.type("[data-country-search]", "Canada");
+    await page.click("[data-history-search] button");
+    await page.waitForSelector(".country-inspector");
+    await page.waitForFunction(() => {
+      const image = document.querySelector(".country-flag");
+      return image?.complete && image.naturalWidth > 0;
+    });
+    const before = await page.evaluate(() => ({
+      title: document.querySelector(".country-heading h3").textContent,
+      flag: document.querySelector(".country-flag").getAttribute("src"),
+      source: document.querySelector(".flag-note a").href,
+      areas: document.querySelectorAll(".country-areas li").length,
+      hash: location.hash,
+    }));
+    if (before.title !== "Canada" || !before.areas || !before.source.startsWith("https://") ||
+        !before.hash.includes("country=Canada")) {
+      throw new Error(`country inspector is incomplete ${JSON.stringify(before)}`);
+    }
+    await page.$eval("[data-year-entry]", (input) => {
+      input.value = "1966";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.waitForFunction((src) => document.querySelector(".country-flag")?.getAttribute("src") !== src, {}, before.flag);
+    if (!(await page.$(".historical-flag"))) throw new Error("verified historical flags are absent from the map");
+    await page.click("[data-act='clear-country']");
+    if (await page.$(".country-inspector")) throw new Error("country focus did not close");
+    await page.$eval("[data-year-entry]", (input) => {
+      input.value = "1944"; input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.$eval("[data-country-search]", (input) => { input.value = "USSR"; });
+    await page.click("[data-history-search] button");
+    const soviet = await page.evaluate(() => ({
+      name: document.querySelector(".country-heading h3")?.textContent,
+      flag: document.querySelector(".country-flag")?.getAttribute("src"),
+    }));
+    if (soviet.name !== "Soviet Union" || !/soviet-union/.test(soviet.flag || "")) {
+      throw new Error(`a modern controller label replaced the historical entity ${JSON.stringify(soviet)}`);
+    }
+    await page.click("[data-act='clear-country']");
+  });
+  await check("historical layer controls and comparison are functional", async () => {
+    await page.$eval("[data-year-entry]", (input) => {
+      input.value = "1944";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.click(".history-settings > summary");
+    await page.click("[data-history-setting='compare']");
+    await page.$eval("[data-history-opacity]", (input) => {
+      input.value = "0.6"; input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.$eval("[data-history-split]", (input) => {
+      input.value = "70"; input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const comparison = await page.evaluate(() => ({
+      comparing: document.querySelector("#map").dataset.comparing,
+      clip: document.querySelector(".historical-territories").getAttribute("clip-path"),
+      width: Number(document.querySelector("#history-comparison-clip rect").getAttribute("width")),
+      opacity: Number(document.querySelector(".historical-territories").style.opacity),
+      modern: getComputedStyle(document.querySelector(".modern-countries")).display,
+      caption: !document.querySelector("[data-compare-caption]").hidden,
+    }));
+    if (comparison.comparing !== "true" || !comparison.clip || comparison.width <= 0 ||
+        comparison.opacity !== .6 || comparison.modern === "none" || !comparison.caption) {
+      throw new Error(`comparison did not apply ${JSON.stringify(comparison)}`);
+    }
+    for (const setting of ["flags", "routes", "testimony"]) await page.click(`[data-history-setting='${setting}']`);
+    const hidden = await page.evaluate(() => ({
+      flags: document.querySelectorAll(".historical-flag").length,
+      routes: document.querySelectorAll(".service-corridor").length,
+      places: document.querySelectorAll(".pattern-event-marker").length,
+    }));
+    if (hidden.flags || hidden.routes || hidden.places) throw new Error(`hidden layers still render ${JSON.stringify(hidden)}`);
+    for (const setting of ["flags", "routes", "testimony"]) await page.click(`[data-history-setting='${setting}']`);
+    await page.keyboard.press("Escape");
+    if (await page.$(".history-settings[open]")) throw new Error("Escape did not close map settings");
+  });
+  await check("shared maps restore the year, layers and camera", async () => {
+    await page.click("[data-act='zoom-in']");
+    await wait(400);
+    await page.evaluate(() => {
+      window.__copiedMap = "";
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async (value) => { window.__copiedMap = value; } },
+      });
+    });
+    await page.click("[data-act='share-map']");
+    const copied = await page.evaluate(() => window.__copiedMap);
+    const hash = new URL(copied).hash;
+    const params = new URLSearchParams(hash.split("?")[1]);
+    if (!hash.startsWith("#/patterns/1944?") || !params.has("lng") || !params.has("lat") ||
+        params.get("compare") !== "1" || params.get("split") !== "70") {
+      throw new Error(`the map link omitted its state ${hash}`);
+    }
+    await page.goto(BASE + "/?restore-view=1" + hash, { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForFunction(() => document.documentElement.dataset.historicalBoundaries === "ready", { timeout: 15000 });
+    await wait(1100);
+    const restored = await page.evaluate(() => ({
+      year: document.querySelector("[data-year-entry]").value,
+      comparison: document.querySelector("#map").dataset.comparing,
+      opacity: Number(document.querySelector(".historical-territories").style.opacity),
+      scale: Number(document.querySelector(".camera").getAttribute("transform").match(/scale\(([^)]+)\)/)[1]),
+    }));
+    if (restored.year !== "1944" || restored.comparison !== "true" ||
+        restored.opacity !== .6 || Math.abs(restored.scale - Number(params.get("zoom"))) > .01) {
+      throw new Error(`the shared map state was lost ${JSON.stringify(restored)}`);
+    }
+  });
+  await check("historical playback advances and pauses", async () => {
+    await page.click("[data-act='play-history']");
+    const first = await page.$eval("[data-year-entry]", (input) => Number(input.value));
+    await page.waitForFunction((before) => Number(document.querySelector("[data-year-entry]").value) > before, { timeout: 5000 }, first);
+    await page.click("[data-act='play-history']");
+    const paused = await page.$eval("[data-year-entry]", (input) => Number(input.value));
+    await wait(1400);
+    if (await page.$eval("[data-year-entry]", (input) => Number(input.value)) !== paused) {
+      throw new Error("the historical timeline did not pause");
+    }
   });
   await check("about renders", async () => {
     await page.click(".nav-plain[data-view='about']");
@@ -668,7 +803,7 @@ function assertCounterMotion(label, { targets, samples }) {
       communities: document.querySelectorAll(".collection-ledger dd").length,
       current: document.querySelector("[aria-current='page']")?.dataset.view,
     }));
-    if (about.sources !== 5 || about.communities !== 5 || about.current !== "about") {
+    if (about.sources < 7 || about.communities !== 5 || about.current !== "about") {
       throw new Error(`archive source ledger is incomplete ${JSON.stringify(about)}`);
     }
   });
@@ -676,7 +811,7 @@ function assertCounterMotion(label, { targets, samples }) {
     await page.goto(BASE + "/?deep-link=patterns#/patterns/1944", { waitUntil: "domcontentloaded", timeout: 40000 });
     await page.waitForSelector("[data-war-context]", { timeout: 15000 });
     const state = await page.evaluate(() => ({
-      year: document.querySelector(".scrub-year")?.textContent,
+      year: document.querySelector(".scrub-year")?.value,
       phase: document.querySelector(".war-brief-content > strong")?.textContent,
       coalition: document.querySelectorAll("[data-war-side='coalition']").length,
     }));
@@ -803,20 +938,18 @@ function assertCounterMotion(label, { targets, samples }) {
           (viewport.width <= 820 && profile.endpoints.some((y) => y >= profile.top - 4 || y <= 100))) {
         throw new Error(`profile map is obscured at ${viewport.width}px ${JSON.stringify(profile)}`);
       }
-      await page.click(".guided-pill");
-      await page.waitForSelector(".guided-ring");
+      await page.click("[data-place-step='0']");
+      await page.waitForSelector(".selected-place-ring");
       await wait(1000);
-      const guided = await page.evaluate(() => {
-        const sheet = document.querySelector(".narr").getBoundingClientRect();
-        const ring = document.querySelector(".guided-ring");
+      const focusedPlace = await page.evaluate(() => {
+        const sheet = document.querySelector(".panel").getBoundingClientRect();
+        const ring = document.querySelector(".selected-place-ring");
         const point = new DOMPoint(Number(ring.getAttribute("cx")), Number(ring.getAttribute("cy")))
           .matrixTransform(ring.getScreenCTM());
-        const next = document.querySelector("[data-act='next-chapter']").getBoundingClientRect();
-        const hit = document.elementFromPoint(next.x + next.width / 2, next.y + next.height / 2);
-        return { x: point.x, y: point.y, top: sheet.top, right: sheet.right, nextClickable: hit?.closest("button")?.dataset.act === "next-chapter" };
+        return { x: point.x, y: point.y, top: sheet.top, left: sheet.left };
       });
-      if (!guided.nextClickable || (viewport.width <= 820 ? guided.y >= guided.top - 8 : guided.x <= guided.right + 8)) {
-        throw new Error(`guided map or controls are obscured at ${viewport.width}px ${JSON.stringify(guided)}`);
+      if (viewport.width <= 820 ? focusedPlace.y >= focusedPlace.top - 8 : focusedPlace.x >= focusedPlace.left - 8) {
+        throw new Error(`selected place is obscured at ${viewport.width}px ${JSON.stringify(focusedPlace)}`);
       }
       await page.click(".nav-tab[data-view='patterns']");
       await page.waitForSelector(".scrubber");

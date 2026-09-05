@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 
-from . import config
+from . import config, media
 
 _FINAL_VIDEO_STATUSES = {
     "captioned",
@@ -17,25 +17,23 @@ _FINAL_VIDEO_STATUSES = {
 @lru_cache(maxsize=1)
 def _load() -> dict:
     if not config.VIMEO_CAPTION_INDEX.exists():
-        return {"veterans": {}}
+        return {"profiles": {}}
     return json.loads(config.VIMEO_CAPTION_INDEX.read_text(encoding="utf-8"))
 
 
 def _coverage(entry: dict) -> dict:
     video_count = int(entry.get("video_count", 0))
-    captioned = int(entry.get("captioned_video_count", 0))
-    available = int(entry.get("available_video_count", 0))
     videos = entry.get("videos", {})
+    captioned = sum(video.get("status") == "captioned" for video in videos.values())
+    available = sum(
+        video.get("status") in {"captioned", "no-public-captions", "caption-track-unavailable"}
+        for video in videos.values()
+    )
     audited = sum(
         video.get("status") in _FINAL_VIDEO_STATUSES
         for video in videos.values()
     )
-    video_ids = sorted(videos)
-    inventory_hash = 2166136261
-    for character in ",".join(video_ids):
-        inventory_hash ^= ord(character)
-        inventory_hash = (inventory_hash * 16777619) & 0xFFFFFFFF
-    if audited < video_count:
+    if audited < video_count or entry.get("source_status", "public") != "public":
         status = "pending"
     elif captioned == video_count and video_count:
         status = "complete"
@@ -49,12 +47,24 @@ def _coverage(entry: dict) -> dict:
         status = "none"
     return {
         "video_count": video_count,
-        "video_inventory": f"{len(video_ids)}:{inventory_hash:08x}",
+        "video_inventory": media.video_inventory(list(videos)),
+        "video_source_inventory": entry.get("source_inventory", media.source_inventory([])),
         "captioned_video_count": captioned,
         "transcript_status": status,
     }
 
 
-def coverage(slug: str) -> dict:
-    entry = _load().get("veterans", {}).get(slug, {})
+def entry_for(slug: str) -> dict:
+    document = _load()
+    return document.get("profiles", document.get("veterans", {})).get(slug, {})
+
+
+def coverage(slug: str, videos: list[dict] | None = None) -> dict:
+    entry = entry_for(slug)
+    if videos is not None:
+        entry = {
+            **entry, "video_count": len(videos),
+            "source_inventory": media.source_inventory(videos),
+            "videos": {video["id"]: video for video in videos},
+        }
     return _coverage(entry)

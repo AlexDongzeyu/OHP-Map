@@ -1,0 +1,308 @@
+{
+  "_about": "Fresh public category reconciliation. Protected entries contain only public listing identifiers, never restricted biography or media text.",
+  "checked_at": "2026-09-05T06:34:58.774437+00:00",
+  "categories": {
+    "holocaust-survivors": {
+      "urls": [
+        "https://ohp.crestwood.on.ca/ohp-type/holocaust-survivors/"
+      ],
+      "listed": 227,
+      "public": 226,
+      "protected": 1
+    },
+    "military-veterans-al": {
+      "urls": [
+        "https://ohp.crestwood.on.ca/ohp-type/military-veterans-al/"
+      ],
+      "listed": 446,
+      "public": 415,
+      "protected": 31
+    },
+    "military-veterans-mz": {
+      "urls": [
+        "https://ohp.crestwood.on.ca/ohp-type/military-veterans-mz/"
+      ],
+      "listed": 356,
+      "public": 330,
+      "protected": 26
+    },
+    "community-members": {
+      "urls": [
+        "https://ohp.crestwood.on.ca/ohp-type/community-members/"
+      ],
+      "listed": 127,
+      "public": 126,
+      "protected": 1
+    },
+    "first-nations": {
+      "urls": [
+        "https://ohp.crestwood.on.ca/ohp-type/first-nations/"
+      ],
+      "listed": 22,
+      "public": 21,
+      "protected": 1
+    },
+    "crestwood-families": {
+      "urls": [
+        "https://ohp.crestwood.on.ca/ohp-type/crestwood-families/"
+      ],
+      "listed": 61,
+      "public": 59,
+      "protected": 2
+    }
+  },
+  "listed_pages": 1239,
+  "listed_public_pages": 1177,
+  "listed_protected_pages": 62,
+  "protected": [
+    "beaton-robert",
+    "boyd-small-luke",
+    "buchanan-peg",
+    "burnell-shirley",
+    "butcher-noel",
+    "campsall-bill",
+    "carniol-ben",
+    "charles-george",
+    "chase-bryce",
+    "cho-shin-hee",
+    "constantineau-oriette",
+    "cooper-fred",
+    "cox-bruce",
+    "dolbel-donald",
+    "durocher-thomas",
+    "edwards-jaye",
+    "fitzgerald-james",
+    "fontaine-theodore",
+    "freeman-eleanor",
+    "gates-lloyd",
+    "gerrard-horace",
+    "gidilevich-bud",
+    "gingras-bernard",
+    "hare-roy",
+    "heald-ralph",
+    "horne-jim",
+    "jackson-hank",
+    "janicki-nick",
+    "johnson-kaare-allan",
+    "justason-chris",
+    "kahrel-albert",
+    "kaye-russell",
+    "kelley-george",
+    "krepps-frank",
+    "latowski-victor",
+    "magan-aaron",
+    "mcgregor-andy",
+    "mcintyre-bernice",
+    "mcknight-marian",
+    "methot-doris",
+    "miklos-jim",
+    "nelson-del-budd",
+    "odonnell-robert",
+    "parfitt-bill",
+    "parker-jervis-noel",
+    "parker-winston",
+    "plowman-herbert",
+    "robinson-nancy",
+    "shafai-roshan",
+    "silver-bill",
+    "smith-brit",
+    "sutherland-fred",
+    "swinton-brenda",
+    "taylor-merle",
+    "todd-allan",
+    "turner-eugenie",
+    "vaughn-ted",
+    "ward-agnes",
+    "webster-arthur",
+    "whetung-murray",
+    "wong-hank",
+    "wong-tommy"
+  ],
+  "other_pages": [
+    "remembrance-day-2024"
+  ],
+  "aliases": {
+    "thomas-jack": "thomas-jack-c"
+  },
+  "detail_checks": {
+    "becigneul-gerry": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/becigneul-gerry/",
+      "canonical_id": "becigneul-gerry"
+    },
+    "cottingham-donald": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/cottingham-donald/",
+      "canonical_id": "cottingham-donald"
+    },
+    "dettling-george": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/dettling-george/",
+      "canonical_id": "dettling-george"
+    },
+    "einstein-jack": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/einstein-jack/",
+      "canonical_id": "einstein-jack"
+    },
+    "fuller-joan": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/fuller-joan/",
+      "canonical_id": "fuller-joan"
+    },
+    "gavin-frank": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/gavin-frank/",
+      "canonical_id": "gavin-frank"
+    },
+    "gross-kathy": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/gross-kathy/",
+      "canonical_id": "gross-kathy"
+    },
+    "hill-terry": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/hill-terry/",
+      "canonical_id": "hill-terry"
+    },
+    "inlow-richard": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/inlow-richard/",
+      "canonical_id": "inlow-richard"
+    },
+    "lalonde-roland": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/lalonde-roland/",
+      "canonical_id": "lalonde-roland"
+    },
+    "levit-sydney": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/levit-sydney/",
+      "canonical_id": "levit-sydney"
+    },
+    "mcglennon-mike": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/mcglennon-mike/",
+      "canonical_id": "mcglennon-mike"
+    },
+    "mcgregor-william": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/mcgregor-william/",
+      "canonical_id": "mcgregor-william"
+    },
+    "meador-ross": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/meador-ross/",
+      "canonical_id": "meador-ross"
+    },
+    "miley-hanna": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/miley-hanna/",
+      "canonical_id": "miley-hanna"
+    },
+    "norton-bruce": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/norton-bruce/",
+      "canonical_id": "norton-bruce"
+    },
+    "nungesser-fred": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/nungesser-fred/",
+      "canonical_id": "nungesser-fred"
+    },
+    "phillips-frank": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/phillips-frank/",
+      "canonical_id": "phillips-frank"
+    },
+    "rose-charlie": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/rose-charlie/",
+      "canonical_id": "rose-charlie"
+    },
+    "steigmann-sami": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/steigmann-sami/",
+      "canonical_id": "steigmann-sami"
+    },
+    "sullivan-steve": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/sullivan-steve/",
+      "canonical_id": "sullivan-steve"
+    },
+    "thomas-jack": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/thomas-jack-c/",
+      "canonical_id": "thomas-jack-c"
+    },
+    "thomas-jack-c": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/thomas-jack-c/",
+      "canonical_id": "thomas-jack-c"
+    },
+    "warren-marie": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/warren-marie/",
+      "canonical_id": "warren-marie"
+    },
+    "zellner-bob": {
+      "status": "public",
+      "archive_url": "https://ohp.crestwood.on.ca/ohp/zellner-bob/",
+      "canonical_id": "zellner-bob"
+    }
+  },
+  "unavailable": {},
+  "unresolved": {},
+  "added": [
+    "becigneul-gerry",
+    "cottingham-donald",
+    "dettling-george",
+    "einstein-jack",
+    "fuller-joan",
+    "gavin-frank",
+    "gross-kathy",
+    "hill-terry",
+    "inlow-richard",
+    "lalonde-roland",
+    "levit-sydney",
+    "mcglennon-mike",
+    "mcgregor-william",
+    "meador-ross",
+    "miley-hanna",
+    "norton-bruce",
+    "nungesser-fred",
+    "phillips-frank",
+    "rose-charlie",
+    "steigmann-sami",
+    "sullivan-steve",
+    "warren-marie",
+    "zellner-bob"
+  ],
+  "unlisted_public_profiles": [],
+  "missing_public_profiles": [],
+  "published_profiles": 1176,
+  "requested_ids": [
+    "becigneul-gerry",
+    "cottingham-donald",
+    "dettling-george",
+    "einstein-jack",
+    "fuller-joan",
+    "gavin-frank",
+    "gross-kathy",
+    "hill-terry",
+    "inlow-richard",
+    "lalonde-roland",
+    "levit-sydney",
+    "mcglennon-mike",
+    "mcgregor-william",
+    "meador-ross",
+    "miley-hanna",
+    "nungesser-fred",
+    "phillips-frank",
+    "rose-charlie",
+    "steigmann-sami",
+    "thomas-jack-c",
+    "warren-marie",
+    "zellner-bob"
+  ]
+}
