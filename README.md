@@ -81,6 +81,22 @@ year and layers, so sharing a view or returning from an account restores its con
 Unsupported community filters and dated-place/year combinations receive an explicit
 link-recovery view instead of silently changing the selection.
 Browser tab and bookmark titles identify the account, search, or historical place/year.
+
+### Keeping and citing accounts
+
+Use the bookmark beside a name or **Save account** in the reader to build a private
+reading list. **Saved** in the collection opens that browser's list; search and community
+filters also work there. Saved IDs stay in local storage, not on the server, and update
+across tabs. A saved-view URL refers to the receiving browser's own list, not the sender's.
+Blocked storage is reported without pretending a save succeeded. Clearing the list
+requires confirmation and does not change the public archive.
+
+**Share & cite** supplies a clean account link and a plain-text citation for the original
+OHP page, including an access date. It does not invent interview dates or claim that a
+summary is a transcript. Both fields remain selectable when clipboard access is denied.
+**Previous** and **Next** follow the same community/surname order as the filtered
+collection, including saved accounts; browsing onward loads further results when needed.
+
 Changes to the system's reduced-motion preference apply immediately without a reload.
 Counters and route drawing settle to their readable final state, ambient motion pauses,
 and ongoing history playback stops. Escape closes an open interview player before

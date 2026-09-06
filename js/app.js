@@ -1,11 +1,14 @@
 // app.js — orchestration. Owns the state machine, renders the persistent atlas
 // (atlas.js) + the per-view overlay (ui.js), and wires collection, media and history controls.
-import { loadData, journeyFilter } from "./data.js";
+import { loadData, journeyFilter, collectionResults } from "./data.js";
 import { createAtlas } from "./atlas.js";
 import * as ui from "./ui.js";
 import * as motion from "./motion.js";
 import { motionEnabled, onMotionPreferenceChange, slug } from "./config.js";
 import { playerURL } from "./media.js";
+import {
+  SAVED_ACCOUNTS_KEY, readSavedAccounts, updateSavedAccount, isSavedAccountsFailure, copyText,
+} from "./research-tools.js";
 
 const VIEWS = ["landing", "explore", "patterns", "about", "not-found"];
 const RAIL_PAGE = 140;
@@ -21,6 +24,10 @@ const state = {
   query: "",
   groupFilter: new Set(),        // populated from the data (all on by default)
   originCountry: null,
+  savedIds: new Set(),
+  savedOnly: false,
+  savedError: "",
+  citationDate: new Date(),
   railLimit: RAIL_PAGE,
   scrubYear: 1944,
   patternsLayer: "journeys",
@@ -63,6 +70,7 @@ async function main() {
     console.error(err); return;
   }
   loadingEl.querySelector(".loading-status").textContent = "Opening the map";
+  loadSavedList();
 
   state.patternEventKey = null;
   store.groups.forEach((g) => state.groupFilter.add(g.name));
@@ -277,7 +285,7 @@ function go(view) {
   setHash(hash);
   render();
 }
-function selectSurvivor(id) {
+function selectSurvivor(id, keepPresentation = false) {
   stopHistoryPlayback();
   syncHistoryAddress(true);
   if (state.view !== "explore") {
@@ -285,11 +293,112 @@ function selectSurvivor(id) {
     state.originCountry = null;
     state.groupFilter = new Set(store.groups.map((group) => group.name));
     state.railLimit = RAIL_PAGE;
+    state.savedOnly = false;
   }
   state.selectedId = id; state.activePlaceIndex = null;
-  state.explorePresentation = "auto";
+  if (!keepPresentation) state.explorePresentation = "auto";
   state.view = "explore"; setHash(accountHash(id)); render(true);
   document.getElementById("profile-name")?.focus({ preventScroll: true });
+}
+
+function navigateAccount(direction) {
+  const results = collectionResults(store, state);
+  const index = results.findIndex((journey) => journey.id === state.selectedId);
+  const next = index >= 0 ? results[index + direction] : null;
+  if (!next) {
+    console.warn("There is no account in that direction within the current results.");
+    return;
+  }
+  state.railLimit = Math.max(state.railLimit, Math.ceil((index + direction + 1) / RAIL_PAGE) * RAIL_PAGE);
+  selectSurvivor(next.id, true);
+}
+
+function loadSavedList() {
+  try {
+    state.savedIds = readSavedAccounts(window.localStorage, store.byId);
+    state.savedError = "";
+  } catch (error) {
+    if (!isSavedAccountsFailure(error)) throw error;
+    state.savedError = "Saved accounts could not be read. Browser storage may be blocked or the list may be damaged.";
+    console.warn("Unable to read saved accounts:", error.message);
+  }
+}
+
+function refreshResearchTools(message = "") {
+  for (const button of document.querySelectorAll("[data-save-id]")) {
+    const journey = store.byId.get(button.dataset.saveId);
+    const saved = state.savedIds.has(journey.id);
+    const label = saved ? `Remove ${journey.name} from saved accounts` : `Save ${journey.name} for later`;
+    button.setAttribute("aria-pressed", String(saved));
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    const text = button.querySelector("span");
+    if (text) text.textContent = saved ? "Saved account" : "Save account";
+  }
+  const savedView = document.querySelector(".saved-view");
+  if (savedView) {
+    savedView.innerHTML = ui.savedViewLabel(store, state);
+    document.querySelector("[data-collection-title]").textContent = state.savedOnly ? "Saved accounts" : "The collection";
+    document.querySelector("[data-saved-privacy]").hidden = !state.savedOnly;
+  }
+  for (const feedback of document.querySelectorAll("[data-saved-feedback], [data-account-saved-feedback]")) {
+    feedback.textContent = state.savedError || message;
+    feedback.hidden = !feedback.textContent;
+  }
+  document.querySelectorAll("[data-result-navigation]").forEach((navigation) => {
+    navigation.innerHTML = ui.resultNavigation(store, state);
+  });
+}
+
+function toggleSavedAccount(id) {
+  const saved = !state.savedIds.has(id);
+  const source = document.activeElement;
+  const fromPanel = Boolean(source.closest(".panel"));
+  let message = "";
+  try {
+    state.savedIds = updateSavedAccount(window.localStorage, store.byId, id, saved);
+    state.savedError = "";
+    message = saved ? "Saved on this browser for later." : "Removed from this browser's saved accounts.";
+  } catch (error) {
+    if (!isSavedAccountsFailure(error)) throw error;
+    state.savedError = "The saved list could not be changed. Allow browser storage or copy the account link instead.";
+    console.warn("Unable to change saved accounts:", error.message);
+  }
+  const list = document.querySelector("[data-rail-list]");
+  const scroll = list?.scrollTop || 0;
+  if (state.savedOnly) refreshRail();
+  if (list) list.scrollTop = scroll;
+  refreshResearchTools(message);
+  atlas.render("explore", atlasCtx());
+  const selector = `${fromPanel ? ".panel" : ".rail"} [data-save-id="${CSS.escape(id)}"]`;
+  (document.querySelector(selector) || document.querySelector(".saved-view"))?.focus({ preventScroll: true });
+}
+
+function toggleSavedView() {
+  loadSavedList();
+  state.savedOnly = !state.savedOnly;
+  state.query = "";
+  state.originCountry = null;
+  state.groupFilter = new Set(store.groups.map((group) => group.name));
+  state.railLimit = RAIL_PAGE;
+  document.querySelector(".collection-filters").open = false;
+  refreshCollection();
+  document.querySelector(".saved-view").focus({ preventScroll: true });
+}
+
+function resetSavedList() {
+  if (!window.confirm("Remove this browser's saved-account list? This cannot be undone.")) return;
+  try {
+    window.localStorage.removeItem(SAVED_ACCOUNTS_KEY);
+    state.savedIds = new Set();
+    state.savedError = "";
+  } catch (error) {
+    if (!isSavedAccountsFailure(error)) throw error;
+    state.savedError = "The saved list could not be reset. Browser storage is unavailable.";
+    console.warn("Unable to reset saved accounts:", error.message);
+  }
+  refreshCollection();
+  document.querySelector(".saved-view").focus({ preventScroll: true });
 }
 function clearSel() {
   const id = state.selectedId;
@@ -323,6 +432,7 @@ function setGroups(all) {
 }
 
 function resetSearch() {
+  if (state.savedOnly && !store.journeys.some((journey) => state.savedIds.has(journey.id))) state.savedOnly = false;
   state.query = "";
   state.originCountry = null;
   state.groupFilter = new Set(store.groups.map((group) => group.name));
@@ -346,6 +456,7 @@ function refreshCollection() {
     state.groupFilter.size === store.groups.length;
   document.querySelector("[data-origin-filter]").hidden = !state.originCountry;
   document.querySelector("[data-origin-name]").textContent = state.originCountry || "";
+  refreshResearchTools();
   atlas.render("explore", atlasCtx());
   updateBoundaryNotice();
   syncCollectionAddress();
@@ -359,6 +470,7 @@ function collectionAddress(prefix) {
       .map((group) => slug(group.name)).join(","));
   }
   if (state.originCountry) params.set("origin", state.originCountry);
+  if (state.savedOnly) params.set("saved", "1");
   if (state.railLimit > RAIL_PAGE) params.set("limit", Math.min(state.railLimit, store.journeys.length));
   const query = params.toString();
   return `${prefix}${query ? `?${query}` : ""}`;
@@ -382,9 +494,11 @@ function restoreCollectionAddress(params) {
   if (requested.some((group) => !groups.has(group)) || !Number.isSafeInteger(limit) || limit < RAIL_PAGE) {
     return false;
   }
+  if (params.has("saved") && params.get("saved") !== "1") return false;
   state.query = (params.get("q") || "").trim();
   state.groupFilter = new Set(requested.map((group) => groups.get(group)));
   state.originCountry = (params.get("origin") || "").trim() || null;
+  state.savedOnly = params.get("saved") === "1";
   state.railLimit = Math.max(RAIL_PAGE, Math.min(limit, store.journeys.length));
   return true;
 }
@@ -396,6 +510,7 @@ function openOrigin(name) {
   }
   stopHistoryPlayback();
   state.originCountry = name;
+  state.savedOnly = false;
   state.query = "";
   state.groupFilter = new Set(store.groups.map((group) => group.name));
   state.railLimit = RAIL_PAGE;
@@ -441,7 +556,7 @@ function inspectAccountPlace(index) {
   scrollProfileTo(target.closest(".recorded-place"), target);
 }
 
-function scrollProfileTo(section, focusTarget = section) {
+function scrollProfileTo(section, focusTarget = section, animate = motionEnabled()) {
   const panel = document.querySelector(".panel");
   if (!section || !panel?.contains(section)) {
     console.warn("This section is not available in the selected account.");
@@ -451,7 +566,7 @@ function scrollProfileTo(section, focusTarget = section) {
   panel.scrollTo({
     top: section.getBoundingClientRect().top - panel.getBoundingClientRect().top +
       panel.scrollTop - toolbar.offsetHeight - 12,
-    behavior: motionEnabled() ? "smooth" : "auto",
+    behavior: animate ? "smooth" : "auto",
   });
   focusTarget.focus({ preventScroll: true });
 }
@@ -873,7 +988,7 @@ function updateDocumentTitle() {
   let label = "";
   if (state.view === "explore") {
     label = store.byId.get(state.selectedId)?.name ||
-      (state.query.trim() ? `Search: ${state.query.trim()}` : state.originCountry
+      (state.query.trim() ? `Search: ${state.query.trim()}` : state.savedOnly ? "Saved accounts" : state.originCountry
         ? `Routes starting in ${state.originCountry}` : state.groupFilter.size === 1
           ? [...state.groupFilter][0] : "The collection");
   } else if (state.view === "patterns") {
@@ -943,21 +1058,44 @@ async function shareMap() {
   status.textContent = "Copying the map link.";
   fallback.hidden = true;
   fallback.value = address;
-  if (!navigator.clipboard) {
-    fallback.hidden = false;
-    fallback.select();
-    status.textContent = "Copy this link to share the current map view.";
-    return;
-  }
-  try {
-    await navigator.clipboard.writeText(address);
+  const copied = await copyText(address, navigator.clipboard);
+  if (!status.isConnected) return;
+  if (copied) {
     fallback.hidden = true;
     status.textContent = "The map link has been copied.";
-  } catch (error) {
-    if (!(error instanceof DOMException)) throw error;
+  } else {
     fallback.hidden = false;
     fallback.select();
     status.textContent = "Clipboard access was blocked. You can copy this link.";
+  }
+}
+
+function toggleAccountReference(open) {
+  const reference = document.getElementById("account-reference");
+  if (!reference) {
+    console.warn("Reference tools are not available without a selected account.");
+    return;
+  }
+  const show = open ?? reference.hidden;
+  reference.hidden = !show;
+  const trigger = document.querySelector("[data-act='toggle-account-reference']");
+  trigger.setAttribute("aria-expanded", String(show));
+  if (show) scrollProfileTo(reference, document.getElementById("account-link"));
+  else scrollProfileTo(trigger.closest(".account-tool-row"), trigger, false);
+}
+
+async function copyAccountReference(kind) {
+  const field = document.getElementById(kind === "citation" ? "account-citation" : "account-link");
+  const status = document.querySelector("[data-account-copy-status]");
+  const label = kind === "citation" ? "citation" : "account link";
+  status.textContent = `Copying the ${label}.`;
+  const copied = await copyText(field.value, navigator.clipboard);
+  if (!status.isConnected) return;
+  status.textContent = copied ? `The ${label} has been copied.` : `Clipboard access is unavailable. Select and copy the ${label} below.`;
+  if (!copied) {
+    field.focus();
+    field.select();
+    status.textContent = `Clipboard access is unavailable. The ${label} is selected for you to copy.`;
   }
 }
 
@@ -971,6 +1109,20 @@ function closeShare(restoreFocus = true) {
 
 // ---- event wiring ------------------------------------------------------------
 function wireGlobal() {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== SAVED_ACCOUNTS_KEY && event.key !== null) return;
+    loadSavedList();
+    if (state.view === "explore") {
+      const focused = document.activeElement;
+      const savedId = focused.dataset.saveId;
+      const accountId = focused.dataset.survivor;
+      if (state.savedOnly) refreshCollection();
+      else refreshResearchTools();
+      const target = savedId ? document.querySelector(`[data-save-id="${CSS.escape(savedId)}"]`)
+        : accountId ? document.querySelector(`[data-survivor="${CSS.escape(accountId)}"]`) : null;
+      if (savedId || accountId) (target || document.querySelector(".saved-view"))?.focus({ preventScroll: true });
+    }
+  });
   onMotionPreferenceChange((reduced) => {
     motion.syncPreference();
     atlas.syncMotion();
@@ -1018,6 +1170,7 @@ function wireGlobal() {
       else if (state.view === "patterns" && state.historyCountry) selectCountry(null, { openContext: false });
       else if (state.view === "about") go("explore");
       else if (state.view === "explore" && document.querySelector("[data-player]:not([hidden])")) closeVideo();
+      else if (state.view === "explore" && document.querySelector("#account-reference:not([hidden])")) toggleAccountReference(false);
       else if (state.view === "explore" && state.selectedId) clearSel();
     }
   });
@@ -1098,11 +1251,13 @@ function wireOverlay() {
   });
 }
 function onActivate(e) {
-  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match]");
+  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match],[data-save-id],[data-copy-account]");
   if (!t || !e.currentTarget.contains(t)) return;
   if (t.dataset.view) return go(t.dataset.view);
   if (t.dataset.layer) return setLayer(t.dataset.layer);
   if (t.dataset.survivor != null) return selectSurvivor(t.dataset.survivor);
+  if (t.dataset.saveId) return toggleSavedAccount(t.dataset.saveId);
+  if (t.dataset.copyAccount) return copyAccountReference(t.dataset.copyAccount);
   if (t.dataset.profileSection) return scrollProfileTo(document.getElementById(t.dataset.profileSection));
   if (t.dataset.origin) return openOrigin(t.dataset.origin);
   if (t.dataset.historyMatch != null) {
@@ -1121,6 +1276,12 @@ function onActivate(e) {
     case "clear": return clearSel();
     case "more": return showMore();
     case "reset-search": return resetSearch();
+    case "toggle-saved-view": return toggleSavedView();
+    case "reset-saved-list": return resetSavedList();
+    case "toggle-account-reference": return toggleAccountReference();
+    case "close-account-reference": return toggleAccountReference(false);
+    case "previous-account": return navigateAccount(-1);
+    case "next-account": return navigateAccount(1);
     case "all-groups": return setGroups(true);
     case "no-groups": return setGroups(false);
     case "close-filters":

@@ -26,14 +26,21 @@ const SERVICE_WINDOWS = {
   "Korean War": { start: 1950, end: 1953 },
 };
 
-export function journeyFilter({ query, groupFilter, originCountry }) {
+export function journeyFilter({ query, groupFilter, originCountry, savedOnly = false, savedIds = new Set() }) {
   const term = normalizeSearch(query);
   return (journey) => groupFilter.has(journey.group) &&
     (!originCountry || journey.originCountry === originCountry) &&
+    (!savedOnly || savedIds.has(journey.id)) &&
     (!term || normalizeSearch([
       journey.name, journey.hometown, journey.group, ...journey.conflicts, ...journey.themes,
       ...journey.waypoints.flatMap((place) => [place.canonical, place.asWritten]),
     ].join(" ")).includes(term));
+}
+
+export function collectionResults(store, state) {
+  const matches = store.journeys.filter(journeyFilter(state));
+  const order = new Map(store.groups.map((group, index) => [group.name, index]));
+  return matches.sort((a, b) => order.get(a.group) - order.get(b.group));
 }
 
 async function getJSON(name, onRetry, mayRetry = true) {

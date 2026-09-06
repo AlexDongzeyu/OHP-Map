@@ -2038,6 +2038,266 @@ function assertCounterMotion(label, { targets, samples }) {
     }
   });
 
+  await check("saved accounts persist locally, filter the map and synchronize across tabs", async () => {
+    const context = await browser.createBrowserContext();
+    const savedPage = await context.newPage();
+    savedPage.on("pageerror", (error) => errors.push("saved accounts: " + error.message));
+    try {
+      await savedPage.setViewport({ width: 1366, height: 850 });
+      await savedPage.goto(BASE + "/?saved-tools=1#/explore?q=Wally+Adam", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await savedPage.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await savedPage.click(".rail-save");
+      const firstSave = await savedPage.evaluate(() => ({
+        saved: JSON.parse(localStorage.getItem("ohp-map.saved-accounts.v1")),
+        panel: Boolean(document.querySelector(".panel")),
+        pressed: document.querySelector(".rail-save").getAttribute("aria-pressed"),
+      }));
+      if (firstSave.panel || firstSave.pressed !== "true" || firstSave.saved.ids.join() !== "adam-wally") {
+        throw new Error(`saving opened a profile or did not persist ${JSON.stringify(firstSave)}`);
+      }
+      await savedPage.$eval("#search", (input) => {
+        input.value = "Norman Baker"; input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await savedPage.click(".rail-save");
+      await savedPage.click(".saved-view");
+      const saved = await savedPage.evaluate(() => ({
+        ids: [...document.querySelectorAll(".rail-card")].map((card) => card.dataset.survivor),
+        markers: [...document.querySelectorAll("#map [data-person]")].map((marker) => marker.dataset.person),
+        count: document.querySelector("[data-rail-count]").textContent,
+        privacy: document.querySelector("[data-saved-privacy]").innerText,
+      }));
+      if (saved.ids.join() !== "adam-wally,baker-norman" || saved.markers.sort().join() !== "adam-wally,baker-norman" ||
+          saved.count !== "2 of 2 shown" || !saved.privacy.includes("only in this browser")) {
+        throw new Error(`saved filtering is not exact or private ${JSON.stringify(saved)}`);
+      }
+      await savedPage.click(".rail-card");
+      await savedPage.click(".result-navigation:not(.result-navigation-end) [data-act='next-account']");
+      if (await savedPage.$eval("#profile-name", (heading) => heading.textContent) !== "Norman Baker") {
+        throw new Error("Next did not stay within saved results");
+      }
+      if (!await savedPage.$eval(".result-navigation [data-act='next-account']", (button) => button.disabled)) {
+        throw new Error("the final saved result did not disable Next");
+      }
+      await savedPage.click(".panel-close");
+      const secondTab = await context.newPage();
+      await secondTab.goto(BASE + "/?saved-second-tab=1#/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await secondTab.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await secondTab.click(".account-save");
+      await savedPage.bringToFront();
+      await savedPage.waitForFunction(() => document.querySelector("[data-rail-count]").textContent === "1 of 1 shown");
+      await savedPage.reload({ waitUntil: "domcontentloaded" });
+      await savedPage.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      const reloaded = await savedPage.$$eval(".rail-card", (cards) => cards.map((card) => card.dataset.survivor));
+      if (reloaded.join() !== "baker-norman") throw new Error("saved changes did not survive reload");
+      savedPage.once("dialog", (dialog) => dialog.dismiss());
+      await savedPage.click("[data-act='reset-saved-list']");
+      if (!await savedPage.$(".rail-card")) throw new Error("cancelling Clear saved list removed accounts");
+      savedPage.once("dialog", (dialog) => dialog.accept());
+      await savedPage.click("[data-act='reset-saved-list']");
+      if (await savedPage.$(".rail-card") || !await savedPage.$eval(".rail-empty", (empty) => empty.innerText.includes("Keep an account for later"))) {
+        throw new Error("clearing the saved list did not show a useful empty state");
+      }
+    } finally {
+      await context.close();
+    }
+  });
+  await check("storage failures preserve existing data and never claim a successful save", async () => {
+    for (const mode of ["blocked", "corrupt"]) {
+      const context = await browser.createBrowserContext();
+      const storagePage = await context.newPage();
+      storagePage.on("pageerror", (error) => errors.push("storage recovery: " + error.message));
+      try {
+        await storagePage.evaluateOnNewDocument((mode) => {
+          if (mode === "corrupt") localStorage.setItem("ohp-map.saved-accounts.v1", '{"version":2,"ids":["adam-wally"]}');
+          else {
+            const original = Storage.prototype.setItem;
+            Storage.prototype.setItem = function (key, value) {
+              if (key === "ohp-map.saved-accounts.v1") throw new DOMException("Denied", "QuotaExceededError");
+              return original.call(this, key, value);
+            };
+          }
+        }, mode);
+        await storagePage.goto(BASE + `/?storage-tools=${mode}#/survivor/adam-wally`, { waitUntil: "domcontentloaded", timeout: 40000 });
+        await storagePage.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+        await storagePage.click(".account-save");
+        const result = await storagePage.evaluate(() => ({
+          saved: document.querySelector(".account-save").getAttribute("aria-pressed"),
+          error: document.querySelector("[data-account-saved-feedback]").textContent,
+          stored: localStorage.getItem("ohp-map.saved-accounts.v1"),
+        }));
+        if (result.saved !== "false" || !result.error.includes("could not be changed") ||
+            (mode === "corrupt" ? JSON.parse(result.stored).version !== 2 : result.stored !== null)) {
+          throw new Error(`storage failure was hidden or overwrote data ${JSON.stringify(result)}`);
+        }
+        await storagePage.click(".panel-close");
+        await storagePage.click(".saved-view");
+        if (mode === "corrupt") {
+          storagePage.once("dialog", (dialog) => dialog.accept());
+          await storagePage.click("[data-act='reset-saved-list']");
+          if (await storagePage.evaluate(() => localStorage.getItem("ohp-map.saved-accounts.v1")) !== null) {
+            throw new Error("explicit reset did not recover a damaged list");
+          }
+        }
+      } finally {
+        await context.close();
+      }
+    }
+  });
+  await check("account links and source citations are selectable and copy without private filters", async () => {
+    const referencePage = await browser.newPage();
+    referencePage.on("pageerror", (error) => errors.push("account references: " + error.message));
+    try {
+      await referencePage.setViewport({ width: 390, height: 844 });
+      await referencePage.goto(BASE + "/?reference-tools=1#/survivor/adam-wally?q=Private+query&groups=military-veterans&saved=1", {
+        waitUntil: "domcontentloaded", timeout: 40000,
+      });
+      await referencePage.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await referencePage.evaluate(() => {
+        window.__accountCopies = [];
+        Object.defineProperty(navigator, "clipboard", { configurable: true,
+          value: { writeText: async (text) => window.__accountCopies.push(text) } });
+      });
+      await referencePage.click("[data-act='toggle-account-reference']");
+      await wait(650);
+      await referencePage.click("[data-copy-account='link']");
+      const link = await referencePage.evaluate(() => window.__accountCopies[0]);
+      if (link !== new URL("/#/survivor/adam-wally", BASE).href || /private|saved=|reference-tools/i.test(link)) {
+        throw new Error(`account sharing leaked local filters ${link}`);
+      }
+      await referencePage.click("[data-copy-account='citation']");
+      const reference = await referencePage.evaluate(() => ({
+        citation: document.getElementById("account-citation").value,
+        copies: window.__accountCopies,
+        source: document.querySelector(".archive-pill").href,
+      }));
+      if (reference.copies[1] !== reference.citation || !reference.citation.includes(reference.source) ||
+          !reference.citation.includes('"Wally Adam."') || !reference.citation.includes("Accessed ")) {
+        throw new Error(`the source citation is incomplete ${JSON.stringify(reference)}`);
+      }
+      await referencePage.evaluate(() => {
+        Object.defineProperty(navigator, "clipboard", { configurable: true,
+          value: { writeText: async () => { throw new DOMException("Denied", "NotAllowedError"); } } });
+      });
+      await referencePage.click("[data-copy-account='citation']");
+      const blocked = await referencePage.$eval("#account-citation", (field) => ({
+        focused: document.activeElement === field,
+        selected: field.selectionStart === 0 && field.selectionEnd === field.value.length,
+        status: document.querySelector("[data-account-copy-status]").textContent,
+        expanded: document.querySelector("[data-act='toggle-account-reference']").getAttribute("aria-expanded"),
+      }));
+      if (!blocked.focused || !blocked.selected || !blocked.status.includes("selected for you") || blocked.expanded !== "true") {
+        throw new Error(`blocked clipboard has no usable fallback ${JSON.stringify(blocked)}`);
+      }
+      await referencePage.keyboard.press("Escape");
+      const closed = await referencePage.evaluate(() => ({
+        hidden: document.getElementById("account-reference").hidden,
+        name: document.getElementById("profile-name").textContent,
+        focus: document.activeElement.dataset.act,
+      }));
+      if (!closed.hidden || closed.name !== "Wally Adam" || closed.focus !== "toggle-account-reference") {
+        throw new Error(`closing reference tools lost the account ${JSON.stringify(closed)}`);
+      }
+    } finally {
+      await referencePage.close();
+    }
+  });
+  await check("reader navigation follows stable results beyond the loaded page", async () => {
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+    await page.setViewport({ width: 1366, height: 850 });
+    await page.goto(BASE + "/?reader-order=1#/explore", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    const expected = await page.evaluate(async () => {
+      const { loadData, collectionResults } = await import("./js/data.js");
+      const store = await loadData();
+      return collectionResults(store, { groupFilter: new Set(store.groups.map((group) => group.name)) }).map((journey) => journey.id);
+    });
+    const visible = await page.$$eval(".rail-card", (cards) => cards.map((card) => card.dataset.survivor));
+    if (visible.join() !== expected.slice(0, 140).join()) throw new Error("the reader and collection disagree on result order");
+    await page.click(".rail-card");
+    if (!await page.$eval(".result-navigation [data-act='previous-account']", (button) => button.disabled)) {
+      throw new Error("the first account has an enabled Previous control");
+    }
+    await page.click(".result-navigation:not(.result-navigation-end) [data-act='next-account']");
+    if (await page.evaluate(() => location.hash.split("?")[0]) !== `#/survivor/${expected[1]}`) throw new Error("Next skipped a result");
+    await page.click(".panel-close");
+    await page.evaluate((id) => document.querySelector(`[data-survivor="${CSS.escape(id)}"]`).focus(), expected[139]);
+    await page.keyboard.press("Enter");
+    await page.click(".result-navigation:not(.result-navigation-end) [data-act='next-account']");
+    const paged = await page.evaluate(() => ({
+      hash: location.hash.split("?")[0],
+      count: document.querySelectorAll(".rail-card").length,
+      focus: document.activeElement.id,
+    }));
+    if (paged.hash !== `#/survivor/${expected[140]}` || paged.count < 141 || paged.focus !== "profile-name") {
+      throw new Error(`continuing beyond the first page lost the results ${JSON.stringify(paged)}`);
+    }
+    await page.click(".result-navigation:not(.result-navigation-end) [data-act='previous-account']");
+    if (await page.evaluate(() => location.hash.split("?")[0]) !== `#/survivor/${expected[139]}`) throw new Error("Previous did not return to the same result");
+  });
+  await check("saving and opening reference tools do not restart a playing interview", async () => {
+    const context = await browser.createBrowserContext();
+    const mediaPage = await context.newPage();
+    mediaPage.on("pageerror", (error) => errors.push("reader tools media: " + error.message));
+    await mediaPage.setRequestInterception(true);
+    mediaPage.on("request", (request) => request.url().startsWith("https://player.vimeo.com/video/")
+      ? request.respond({ status: 200, contentType: "text/html", body: "<html><body>Player test</body></html>" })
+      : request.continue());
+    try {
+      await mediaPage.setViewport({ width: 1366, height: 850 });
+      await mediaPage.goto(BASE + "/?media-tools=1#/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await mediaPage.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await mediaPage.click("[data-act='show-interviews']");
+      await wait(600);
+      await mediaPage.click(".video-chapter[data-video]");
+      await mediaPage.waitForSelector(".player-frame iframe");
+      await mediaPage.$eval(".player-frame iframe", (frame) => { frame.dataset.continuous = "yes"; });
+      await mediaPage.click(".account-save");
+      await mediaPage.click("[data-act='toggle-account-reference']");
+      if (await mediaPage.$eval(".player-frame iframe", (frame) => frame.dataset.continuous) !== "yes") {
+        throw new Error("reference or save tools replaced the playing iframe");
+      }
+    } finally {
+      await context.close();
+    }
+  });
+  await check("research tools remain accessible on small phones and landscape readers", async () => {
+    for (const viewport of [{ width: 320, height: 568 }, { width: 568, height: 320 }]) {
+      await page.setViewport(viewport);
+      await page.goto(BASE + `/?research-layout=${viewport.width}#/explore?q=Wally+Adam`, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await page.click(".rail-save");
+      await page.click(".saved-view");
+      await page.click(".rail-card");
+      await page.click("[data-act='toggle-account-reference']");
+      await wait(650);
+      const layout = await page.evaluate(() => {
+        const field = document.getElementById("account-link").getBoundingClientRect();
+        const panel = document.querySelector(".panel").getBoundingClientRect();
+        return {
+          overflow: document.documentElement.scrollWidth > innerWidth,
+          fieldLeft: field.left, fieldRight: field.right, panelLeft: panel.left, panelRight: panel.right,
+          copyHeight: document.querySelector("[data-copy-account='link']").getBoundingClientRect().height,
+          savedHeight: document.querySelector(".account-save").getBoundingClientRect().height,
+        };
+      });
+      if (layout.overflow || layout.fieldLeft < layout.panelLeft || layout.fieldRight > layout.panelRight ||
+          layout.copyHeight < 44 || layout.savedHeight < 44) {
+        throw new Error(`research controls overflow or are too small ${JSON.stringify({ viewport, ...layout })}`);
+      }
+      await page.click("[data-act='close-account-reference']");
+      await page.click(".account-save");
+      const removed = await page.evaluate(() => ({
+        saved: document.querySelector(".account-save").getAttribute("aria-pressed"),
+        ids: JSON.parse(localStorage.getItem("ohp-map.saved-accounts.v1")).ids,
+        hash: location.hash,
+      }));
+      if (removed.saved !== "false") throw new Error(`closing citation tools left Save covered ${JSON.stringify({ viewport, removed })}`);
+      await page.click(".panel-close");
+      if (!await page.$(".rail-empty")) throw new Error(`removing the final saved account did not leave a recoverable empty list ${JSON.stringify({ viewport, removed, hash: await page.evaluate(() => location.hash) })}`);
+      await page.click(".saved-view");
+    }
+  });
+
   for (const transfer of dataTransfers.values()) {
     if (transfer.failed < 0) continue;
     if (transfer.completed <= transfer.failed) errors.push(`unrecovered data request: ${transfer.url} (${transfer.reasons.join(", ")})`);

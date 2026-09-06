@@ -5,7 +5,8 @@
 import { C, GROUP_COLOR, SYSTEM_REDUCED_MOTION, esc } from "./config.js";
 import { captionStatus, playerURL } from "./media.js";
 import { FLAG_SOURCES, resourcesForYear } from "./historical-context.js";
-import { journeyFilter } from "./data.js";
+import { collectionResults } from "./data.js";
+import { accountLink, accountCitation } from "./research-tools.js";
 
 const RAIL_PAGE = 140;
 const icon = (name) => `<svg class="icon icon-${name}" aria-hidden="true" focusable="false">
@@ -133,7 +134,12 @@ export function explore(store, state) {
   return `
   <div class="ov ov-explore ${state.selectedId ? "has-sel" : ""}">
     <aside class="rail scroll" aria-label="Browse the collection">
-      <div class="rail-heading"><h2>The collection</h2><span>${store.journeys.length.toLocaleString("en-CA")} people</span></div>
+      <div class="rail-heading"><h2 data-collection-title>${state.savedOnly ? "Saved accounts" : "The collection"}</h2>
+        <button class="saved-view" data-act="toggle-saved-view">${savedViewLabel(store, state)}</button></div>
+      <div class="saved-privacy" data-saved-privacy${state.savedOnly ? "" : " hidden"}>
+        <p>Saved only in this browser.</p>
+      </div>
+      <p class="saved-feedback" data-saved-feedback aria-live="${state.selectedId ? "off" : "polite"}"${state.savedError ? "" : " hidden"}>${esc(state.savedError || "")}</p>
       <div class="rail-search">
         ${icon("search")}
         <input id="search" class="search-input" type="search" placeholder="Search names or places"
@@ -173,11 +179,11 @@ export function explore(store, state) {
 }
 
 export function railInner(store, state) {
-  const matched = store.journeys.filter(journeyFilter(state));
+  const matched = collectionResults(store, state);
   const limit = state.railLimit || RAIL_PAGE;
   const slice = matched.slice(0, limit);
 
-  // Group the slice by archive category, each alphabetical (already sorted by surname).
+  // The full result order is shared with the reader's previous/next controls.
   const byGroup = new Map();
   for (const j of slice) {
     if (!byGroup.has(j.group)) byGroup.set(j.group, []);
@@ -190,25 +196,84 @@ export function railInner(store, state) {
     const col = GROUP_COLOR[g.name] || C.accent;
     html += `<div class="rail-group"><div class="rail-ghead" style="--gc:${col}">${esc(g.name)}
       <span class="rail-gn">${items.length}${items.length < (store.groups.find((x) => x.name === g.name).count) ? " shown" : ""}</span></div>`;
-    html += items.map((j) => railCard(j, j.id === state.selectedId)).join("");
+    html += items.map((j) => railCard(j, state)).join("");
     html += `</div>`;
   }
-  if (!html) html = `<div class="rail-empty"><p>${state.groupFilter.size ? "No matching accounts" : "No communities selected"}</p>
-    <span>Try a surname or place, or reset the search and communities.</span>
-    <button class="link" data-act="reset-search">Show the whole collection</button></div>`;
+  if (!html) {
+    const emptySaved = state.savedOnly && !savedCount(store, state);
+    html = `<div class="rail-empty"><p>${emptySaved
+      ? (state.savedError ? "Saved accounts are unavailable" : "Keep an account for later")
+      : state.groupFilter.size ? "No matching accounts" : "No communities selected"}</p>
+      <span>${emptySaved ? (state.savedError
+        ? "Your existing list has not been changed. You can browse the collection and copy account links instead."
+        : "Use the bookmark beside a name or Save account in the reader. You can return to your list here.")
+        : "Try a surname or place, or reset the search and communities."}</span>
+      <button class="link" data-act="reset-search">${state.savedOnly && !emptySaved ? "Show all saved accounts" : "Show the whole collection"}</button></div>`;
+  }
   else if (matched.length > slice.length)
     html += `<button class="rail-more" data-act="more">Show more (${matched.length - slice.length} more)</button>`;
+  if (state.savedOnly) html += `<div class="saved-list-footer"><button class="link" data-act="reset-saved-list">Clear saved list</button></div>`;
   return { html, shown: slice.length, total: matched.length };
 }
 
-function railCard(j, isSel) {
+function savedCount(store, state) {
+  return store.journeys.filter((journey) => state.savedIds.has(journey.id)).length;
+}
+
+export function savedViewLabel(store, state) {
+  return state.savedOnly ? `${icon("arrow-right")} All accounts`
+    : `${icon("bookmark")} Saved <span>${savedCount(store, state)}</span>`;
+}
+
+export function saveButton(journey, state, compact = false) {
+  const saved = state.savedIds.has(journey.id);
+  const label = saved ? `Remove ${journey.name} from saved accounts` : `Save ${journey.name} for later`;
+  return `<button class="${compact ? "rail-save" : "account-save"}" data-save-id="${esc(journey.id)}"
+    aria-pressed="${saved}" aria-label="${esc(label)}" title="${esc(label)}">
+    ${icon("bookmark")}${compact ? "" : `<span>${saved ? "Saved account" : "Save account"}</span>`}</button>`;
+}
+
+function railCard(j, state) {
+  const isSel = j.id === state.selectedId;
   const col = GROUP_COLOR[j.group] || C.accent;
-  return `<button class="rail-card ${isSel ? "sel" : ""}" data-survivor="${esc(j.id)}" aria-pressed="${isSel}">
+  return `<div class="rail-entry${isSel ? " sel" : ""}">
+    <button class="rail-card ${isSel ? "sel" : ""}" data-survivor="${esc(j.id)}" aria-pressed="${isSel}">
     ${profileMedal(j, col)}
     <span class="rail-text">
       <span class="rail-name">${esc(j.name)}</span>
       <span class="rail-intro">${profileMeta(j) || esc(j.group)}</span>
-    </span></button>`;
+    </span></button>${saveButton(j, state, true)}</div>`;
+}
+
+export function resultNavigation(store, state) {
+  const results = collectionResults(store, state);
+  const index = results.findIndex((journey) => journey.id === state.selectedId);
+  if (index < 0) return `<p class="outside-results">This account is outside the current ${state.savedOnly ? "saved " : ""}results.</p>`;
+  if (results.length === 1) return "";
+  return `<button data-act="previous-account"${index ? ` title="${esc(results[index - 1].name)}"` : " disabled"} aria-label="Previous account in results">${icon("arrow-right")}<span>Previous</span></button>
+    <span class="result-position">${index + 1} of ${results.length} ${state.savedOnly ? "saved " : ""}${results.length === 1 ? "result" : "results"}</span>
+    <button data-act="next-account"${index < results.length - 1 ? ` title="${esc(results[index + 1].name)}"` : " disabled"} aria-label="Next account in results"><span>Next</span>${icon("arrow-right")}</button>`;
+}
+
+function accountTools(journey, state) {
+  return `<section class="account-tools" aria-label="Keep or reference this account">
+    <div class="account-tool-row">${saveButton(journey, state)}
+      <button data-act="toggle-account-reference" aria-expanded="false" aria-controls="account-reference">${icon("share")} Share &amp; cite</button>
+    </div>
+    <p class="saved-feedback" data-account-saved-feedback role="status"${state.savedError ? "" : " hidden"}>${esc(state.savedError || "")}</p>
+    <div class="account-reference" id="account-reference" hidden>
+      <div class="reference-heading"><h3>Share &amp; cite</h3>
+        <button data-act="close-account-reference" aria-label="Close sharing and citation tools">${icon("close")}</button></div>
+      <label for="account-link">Link to this account</label>
+      <div class="reference-copy-row"><input id="account-link" readonly value="${esc(accountLink(journey, location.href))}">
+        <button data-copy-account="link" aria-label="Copy account link">${icon("copy")} Copy link</button></div>
+      <label for="account-citation">Citation for the original OHP page</label>
+      <textarea id="account-citation" rows="5" readonly>${esc(accountCitation(journey, state.citationDate))}</textarea>
+      <button class="citation-copy" data-copy-account="citation">${icon("copy")} Copy citation</button>
+      <p class="reference-note">Cites the source page, not a verbatim transcript. No interview date is inferred.</p>
+      <p class="reference-status" data-account-copy-status role="status"></p>
+    </div>
+  </section>`;
 }
 
 function panel(store, state) {
@@ -259,7 +324,9 @@ function panel(store, state) {
           <div class="panel-meta">${profileMeta(j)}</div>
         </div>
       </div>
+      <nav class="result-navigation" data-result-navigation aria-label="Browse matching accounts">${resultNavigation(store, state)}</nav>
       <p class="profile-route-status">${esc(profileRouteStatus(j))}</p>
+      ${accountTools(j, state)}
       <div class="profile-actions">
         ${j.videoCount ? `<button class="interview-action" data-act="show-interviews">View interview chapters ${icon("arrow-right")}</button>` : ""}
         <a class="archive-pill" href="${esc(j.archiveUrl)}" target="_blank" rel="noopener">Read the original OHP page ${icon("external-link")}</a>
@@ -284,6 +351,7 @@ function panel(store, state) {
       ${contextualPlaces(j)}
       <div class="tags">${tags}</div>
       ${reviewed ? `<div class="ver" style="color:${C.verified}"><span class="ver-dot"></span>Checked against the interview</div>` : ""}
+      <nav class="result-navigation result-navigation-end" data-result-navigation aria-label="Continue through matching accounts">${resultNavigation(store, state)}</nav>
     </aside>`;
 }
 
