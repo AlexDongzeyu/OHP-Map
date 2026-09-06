@@ -26,15 +26,19 @@ const SERVICE_WINDOWS = {
   "Korean War": { start: 1950, end: 1953 },
 };
 
+function journeySearchText(journey) {
+  return normalizeSearch([
+    journey.name, journey.hometown, journey.group, ...journey.conflicts, ...journey.themes,
+    ...journey.waypoints.flatMap((place) => [place.canonical, place.asWritten]),
+  ].join(" "));
+}
+
 export function journeyFilter({ query, groupFilter, originCountry, savedOnly = false, savedIds = new Set() }) {
   const term = normalizeSearch(query);
   return (journey) => groupFilter.has(journey.group) &&
     (!originCountry || journey.originCountry === originCountry) &&
     (!savedOnly || savedIds.has(journey.id)) &&
-    (!term || normalizeSearch([
-      journey.name, journey.hometown, journey.group, ...journey.conflicts, ...journey.themes,
-      ...journey.waypoints.flatMap((place) => [place.canonical, place.asWritten]),
-    ].join(" ")).includes(term));
+    (!term || (journey.searchText ?? journeySearchText(journey)).includes(term));
 }
 
 export function collectionResults(store, state) {
@@ -262,6 +266,7 @@ function toJourney(props) {
     (point.evidenceScope === "personal" || point.verified) &&
     (["city", "site"].includes(point.locationPrecision) || (point.verified && point.locationPrecision === "unknown"))
   ));
+  j.searchText = journeySearchText(j);
   return j;
 }
 

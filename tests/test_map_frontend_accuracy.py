@@ -89,3 +89,34 @@ console.log(JSON.stringify({
     assert data["spelling"] == ["spelling"]
     assert data["empty"] == []
     assert data["combined"] == ["spelling"]
+
+
+def test_source_search_folds_non_decomposing_letters_and_uses_cached_text():
+    script = r"""
+import fs from 'node:fs';
+globalThis.window={matchMedia:()=>({matches:false})};
+globalThis.fetch=async name=>({ok:true,json:async()=>JSON.parse(fs.readFileSync(name,'utf8'))});
+const {normalizeSearch}=await import('./js/config.js');
+const {loadData,journeyFilter}=await import('./js/data.js');
+const store=await loadData();
+const groups=new Set(store.groups.map(group=>group.name));
+const match=query=>store.journeys.filter(journeyFilter({query,groupFilter:groups})).map(j=>j.id);
+const plain=match('Lodz'),polish=match('\u0141\u00f3d\u017a');
+const cached=store.journeys.every(journey=>typeof journey.searchText==='string');
+for(const journey of store.journeys){
+  Object.defineProperty(journey,'waypoints',{get(){throw new Error('Search rebuilt the waypoint text')}});
+}
+console.log(JSON.stringify({
+  folds:normalizeSearch('\u0141\u00d8\u0110\u0126\u0131\u1e9e\u00c6\u0152\u00de\u00d0'),
+  plain,polish,cached,fromCache:match('\u0141\u00f3d\u017a'),
+}));
+"""
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        cwd=ROOT, check=True, capture_output=True, text=True, encoding="utf-8",
+    )
+    data = json.loads(result.stdout)
+    assert data["folds"] == "lodhissaeoethd"
+    assert data["plain"]
+    assert data["polish"] == data["plain"] == data["fromCache"]
+    assert data["cached"]

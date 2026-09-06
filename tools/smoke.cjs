@@ -2298,6 +2298,148 @@ function assertCounterMotion(label, { targets, samples }) {
     }
   });
 
+  await check("landing backgrounds can play explicitly and pause without changing the design", async () => {
+    const animationPage = await browser.newPage();
+    animationPage.on("pageerror", (error) => errors.push("landing animation: " + error.message));
+    try {
+      await animationPage.setViewport({ width: 390, height: 844 });
+      await animationPage.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+      await animationPage.goto(BASE + "/?landing-control=1", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await animationPage.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      const frame = () => animationPage.evaluate(() => ({
+        globe: document.querySelector(".globe-graticule").getAttribute("d"),
+        belt: getComputedStyle(document.querySelector(".mosaic-track")).transform,
+        pressed: document.querySelector("[data-act='toggle-landing-motion']").getAttribute("aria-pressed"),
+        interfaceMode: document.documentElement.dataset.motion,
+      }));
+      const reduced = await frame();
+      await wait(450);
+      const beforePlay = await frame();
+      if (reduced.pressed !== "false" || reduced.globe !== beforePlay.globe || reduced.belt !== beforePlay.belt) {
+        throw new Error("landing motion ignored the reduced-motion default");
+      }
+      await animationPage.click("[data-act='toggle-landing-motion']");
+      await wait(150);
+      const playing = await frame();
+      await wait(550);
+      const advanced = await frame();
+      if (playing.pressed !== "true" || advanced.globe === playing.globe || advanced.belt === playing.belt ||
+          advanced.interfaceMode !== "reduced" || !animationPage.url().includes("motion=on")) {
+        throw new Error("explicit Play did not restart both backgrounds or changed interface motion");
+      }
+      await animationPage.click("[data-act='toggle-landing-motion']");
+      const paused = await frame();
+      await wait(500);
+      const stopped = await frame();
+      if (paused.pressed !== "false" || paused.globe !== stopped.globe || paused.belt !== stopped.belt) {
+        throw new Error("Pause left a background moving");
+      }
+      await animationPage.click("[data-act='toggle-landing-motion']");
+      await animationPage.click(".nav-tab[data-view='explore']");
+      await animationPage.click(".brand");
+      await animationPage.waitForSelector(".landing-motion");
+      await animationPage.reload({ waitUntil: "domcontentloaded" });
+      await animationPage.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      const reloaded = await frame();
+      await wait(500);
+      if (reloaded.pressed !== "true" || (await frame()).belt === reloaded.belt) {
+        throw new Error("the explicit animation choice did not survive return/reload");
+      }
+      await animationPage.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+      await animationPage.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+      await animationPage.waitForFunction(() => document.querySelector(".landing-motion").getAttribute("aria-pressed") === "false");
+      if (animationPage.url().includes("motion=")) throw new Error("a new system preference retained an obsolete override");
+    } finally {
+      await animationPage.close();
+    }
+  });
+  await check("source spellings and same-place roles are clear in collection and history search", async () => {
+    await page.setViewport({ width: 1366, height: 850 });
+    await page.goto(BASE + "/?source-spelling=1#/explore?q=Lodz", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    const plain = await page.$$eval(".rail-card", (cards) => cards.map((card) => card.dataset.survivor));
+    await page.$eval("#search", (input) => {
+      input.value = "\u0141\u00f3d\u017a"; input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const polish = await page.$$eval(".rail-card", (cards) => cards.map((card) => card.dataset.survivor));
+    if (!plain.length || plain.join() !== polish.join()) throw new Error("Lodz and its original spelling produce different accounts");
+    await page.click(".nav-tab[data-view='patterns']");
+    await page.waitForFunction(() => document.documentElement.dataset.historicalBoundaries === "ready");
+    await page.type("[data-country-search]", "\u0141\u00f3d\u017a");
+    await page.click("[data-history-search] button");
+    const matches = await page.$$eval("[data-history-match]", (buttons) => buttons.map((button) => ({
+      index: button.dataset.historyMatch, name: button.querySelector("span").textContent,
+    })));
+    const city = matches.find((match) => match.name === "Lodz, Poland");
+    if (!city || !matches.some((match) => match.name === "Lodz Ghetto, Poland")) {
+      throw new Error("the original spelling did not find both the city and the distinct ghetto reference");
+    }
+    await page.click(`[data-history-match="${city.index}"]`);
+    if (!await page.$eval("[data-search-status]", (status) => status.textContent.includes("Centred on Lodz"))) {
+      throw new Error("the historical place search did not fold the original spelling");
+    }
+    const roles = await page.evaluate(async () => {
+      const {loadData}=await import("./js/data.js");
+      const store=await loadData();
+      const events=store.eventsByYear.get(1944);
+      return events.every(event=>{
+        const button=document.querySelector(`[data-event="${CSS.escape(event.key)}"]`);
+        return button?.querySelector("small").textContent.startsWith(`${event.role}.`);
+      });
+    });
+    if (!roles) throw new Error("dated place rows still conceal their distinct source roles");
+  });
+  await check("year entry commits supported bounds and rejects invalid whole years explicitly", async () => {
+    await page.goto(BASE + "/?year-entry-bounds=1#/patterns/1944", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    for (const [value, expected] of [["1800", "1914"], ["3000", "2026"]]) {
+      await page.$eval("[data-year-entry]", (input, value) => {
+        input.value=value;input.dispatchEvent(new Event("change",{bubbles:true}));
+      }, value);
+      const bounded=await page.evaluate(()=>({
+        field:document.querySelector("[data-year-entry]").value,
+        slider:document.querySelector("[data-scrub]").value,
+        hash:location.hash,
+        status:document.querySelector("[data-year-status]").textContent,
+      }));
+      if(bounded.field!==expected||bounded.slider!==expected||!bounded.hash.startsWith(`#/patterns/${expected}`)||
+          !bounded.status.includes(`Showing ${expected}`)){
+        throw new Error(`year entry and map disagree ${JSON.stringify(bounded)}`);
+      }
+    }
+    await page.$eval("[data-year-entry]",input=>{
+      input.value="1944.5";input.dispatchEvent(new Event("change",{bubbles:true}));
+    });
+    const invalid=await page.$eval("[data-year-entry]",input=>({valid:input.validity.valid,message:input.validationMessage,hash:location.hash}));
+    if(invalid.valid||!invalid.message.includes("whole year")||!invalid.hash.startsWith("#/patterns/2026")){
+      throw new Error(`invalid year was accepted without feedback ${JSON.stringify(invalid)}`);
+    }
+    await page.$eval("[data-year-entry]",input=>{
+      input.value="1944";input.dispatchEvent(new Event("input",{bubbles:true}));
+      input.form.requestSubmit();
+    });
+    if(await page.$eval("[data-year-entry]",input=>input.value!=="1944"||!input.validity.valid)){
+      throw new Error("correcting the year did not clear its validation state");
+    }
+  });
+  await check("counter labels and selected collection text meet accessibility requirements", async () => {
+    await page.click(".brand");
+    await page.waitForSelector(".archive-register");
+    const counters=await page.$$eval(".register-item",items=>items.every(item=>item.getAttribute("role")==="group"&&item.getAttribute("aria-label")));
+    if(!counters)throw new Error("archive counter labels lack an accessible role");
+    await page.click(".nav-tab[data-view='explore']");
+    await page.click(".rail-card");
+    const contrast=await page.$eval(".rail-card.sel",card=>{
+      const rgb=value=>value.match(/[\d.]+/g).slice(0,3).map(Number);
+      const luminance=color=>color.map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4)
+        .reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
+      const text=luminance(rgb(getComputedStyle(card.querySelector(".rail-intro")).color));
+      const background=luminance(rgb(getComputedStyle(card).backgroundColor));
+      return (Math.max(text,background)+.05)/(Math.min(text,background)+.05);
+    });
+    if(contrast<4.5)throw new Error(`selected-card text contrast is ${contrast.toFixed(2)}:1`);
+  });
+
   for (const transfer of dataTransfers.values()) {
     if (transfer.failed < 0) continue;
     if (transfer.completed <= transfer.failed) errors.push(`unrecovered data request: ${transfer.url} (${transfer.reasons.join(", ")})`);

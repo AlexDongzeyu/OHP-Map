@@ -1,4 +1,4 @@
-import { motionEnabled, SYSTEM_REDUCED_MOTION } from "./config.js";
+import { motionEnabled, landingMotionEnabled, SYSTEM_REDUCED_MOTION } from "./config.js";
 
 const gsap = window.gsap;
 let warned = false;
@@ -7,8 +7,8 @@ let beltTweens = [];
 let landingTimeline = null;
 const entranceTweens = new Set();
 
-function canAnimate() {
-  if (!motionEnabled()) return false;
+function canAnimate(ambient = false) {
+  if (!(ambient ? landingMotionEnabled() : motionEnabled())) return false;
   if (gsap) return true;
   if (!warned) {
     console.warn("GSAP did not load; interface motion is disabled.");
@@ -54,7 +54,7 @@ export function init() {
 export function syncPreference() {
   updateMotionMode();
   if (motionEnabled()) {
-    if (document.body.dataset.view === "landing" && !document.hidden) startMosaic();
+    syncLandingMotion();
     return;
   }
   if (landingTimeline) {
@@ -69,7 +69,20 @@ export function syncPreference() {
   for (const counter of document.querySelectorAll("[data-counter]")) {
     counter.textContent = Number(counter.dataset.counter).toLocaleString("en-CA");
   }
-  pauseMosaic();
+  syncLandingMotion();
+}
+
+export function syncLandingMotion() {
+  if (document.body.dataset.view === "landing") startMosaic();
+  else pauseMosaic();
+  const button = document.querySelector("[data-act='toggle-landing-motion']");
+  if (button) {
+    const enabled = landingMotionEnabled();
+    button.setAttribute("aria-pressed", String(enabled));
+    button.setAttribute("aria-label", `${enabled ? "Pause" : "Play"} background animation`);
+    button.querySelector("span").textContent = `${enabled ? "Pause" : "Play"} animation`;
+    button.querySelector("use").setAttribute("href", enabled ? "#icon-pause" : "#icon-play");
+  }
 }
 
 function updateMotionMode() {
@@ -84,8 +97,8 @@ export function animateShell() {
 export function animateOverlay(view, changes) {
   if (landingTimeline) { landingTimeline.kill(); landingTimeline = null; }
   if (view !== "landing") stopMosaic();
+  else syncLandingMotion();
   if (!canAnimate()) {
-    document.documentElement.dataset.mosaicMotion = view === "landing" ? "static" : "inactive";
     return;
   }
   const mobile = window.matchMedia("(max-width: 820px)").matches;
@@ -96,7 +109,6 @@ export function animateOverlay(view, changes) {
       for (const element of counters) element.textContent = Number(element.dataset.counter).toLocaleString("en-CA");
       return;
     }
-    startMosaic();
     if (SYSTEM_REDUCED_MOTION) return;
     for (const element of counters) element.textContent = "0";
     landingTimeline = gsap.timeline({ defaults: { ease: "power3.out" } });
@@ -171,7 +183,7 @@ export function animatePatternEvent() {
 }
 
 function startMosaic() {
-  if (document.hidden || !canAnimate()) {
+  if (document.hidden || !canAnimate(true)) {
     pauseMosaic();
     return;
   }
@@ -189,7 +201,7 @@ function startMosaic() {
     const duration = [120, 144, 132, 160, 148, 174][index] || 144;
     return index % 2
       ? gsap.fromTo(track, { xPercent: -50 }, { xPercent: 0, duration, ease: "none", repeat: -1 })
-      : gsap.to(track, { xPercent: -50, duration, ease: "none", repeat: -1 });
+      : gsap.fromTo(track, { xPercent: 0 }, { xPercent: -50, duration, ease: "none", repeat: -1 });
   });
   document.documentElement.dataset.mosaicBelts = "rolling";
   tiles.forEach((tile, index) => {

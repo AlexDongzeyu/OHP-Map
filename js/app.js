@@ -4,7 +4,7 @@ import { loadData, journeyFilter, collectionResults } from "./data.js";
 import { createAtlas } from "./atlas.js";
 import * as ui from "./ui.js";
 import * as motion from "./motion.js";
-import { motionEnabled, onMotionPreferenceChange, slug } from "./config.js";
+import { motionEnabled, landingMotionEnabled, setLandingMotion, onMotionPreferenceChange, slug } from "./config.js";
 import { playerURL } from "./media.js";
 import {
   SAVED_ACCOUNTS_KEY, readSavedAccounts, updateSavedAccount, isSavedAccountsFailure, copyText,
@@ -1107,6 +1107,21 @@ function closeShare(restoreFocus = true) {
   if (restoreFocus) button.focus({ preventScroll: true });
 }
 
+function setLandingMotionAddress(enabled = null) {
+  const url = new URL(location.href);
+  if (enabled === null) url.searchParams.delete("motion");
+  else url.searchParams.set("motion", enabled ? "on" : "off");
+  history.replaceState(history.state, "", url);
+}
+
+function toggleLandingMotion() {
+  const enabled = !landingMotionEnabled();
+  setLandingMotion(enabled);
+  setLandingMotionAddress(enabled);
+  motion.syncLandingMotion();
+  atlas.syncMotion();
+}
+
 // ---- event wiring ------------------------------------------------------------
 function wireGlobal() {
   window.addEventListener("storage", (event) => {
@@ -1124,6 +1139,7 @@ function wireGlobal() {
     }
   });
   onMotionPreferenceChange((reduced) => {
+    setLandingMotionAddress();
     motion.syncPreference();
     atlas.syncMotion();
     if (reduced) stopHistoryPlayback();
@@ -1207,8 +1223,20 @@ function wireOverlay() {
   if (yearForm) {
     const year = yearForm.querySelector("input");
     const submitYear = () => {
-      if (year.reportValidity()) setScrub(Number(year.value));
+      stopHistoryPlayback();
+      year.setCustomValidity("");
+      const value = year.valueAsNumber;
+      if (!Number.isInteger(value)) {
+        year.setCustomValidity(`Enter a whole year from ${store.time.min} to ${store.time.max}.`);
+        year.reportValidity();
+        return;
+      }
+      const bounded = Math.max(store.time.min, Math.min(store.time.max, value));
+      setScrub(bounded);
+      document.querySelector("[data-year-status]").textContent = value === bounded ? ""
+        : `The atlas covers ${store.time.min} to ${store.time.max}. Showing ${bounded}.`;
     };
+    year.addEventListener("input", () => year.setCustomValidity(""));
     yearForm.addEventListener("submit", (event) => { event.preventDefault(); submitYear(); });
     year.addEventListener("change", submitYear);
   }
@@ -1273,6 +1301,7 @@ function onActivate(e) {
     case "explore": return go("explore");
     case "about": return go("about");
     case "home": return go("landing");
+    case "toggle-landing-motion": return toggleLandingMotion();
     case "clear": return clearSel();
     case "more": return showMore();
     case "reset-search": return resetSearch();

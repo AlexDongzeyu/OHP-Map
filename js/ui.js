@@ -2,7 +2,7 @@
 // markup over the persistent atlas. Markup here; styling in css; map engine in atlas.js;
 // orchestration in app.js. Everyone is presented equally — grouped by the archive's own
 // categories (doc 13 §4.2), no "featured" hierarchy (§4.3), each with a brief intro (§4.4).
-import { C, GROUP_COLOR, SYSTEM_REDUCED_MOTION, esc } from "./config.js";
+import { C, GROUP_COLOR, SYSTEM_REDUCED_MOTION, landingMotionEnabled, esc } from "./config.js";
 import { captionStatus, playerURL } from "./media.js";
 import { FLAG_SOURCES, resourcesForYear } from "./historical-context.js";
 import { collectionResults } from "./data.js";
@@ -40,6 +40,10 @@ export function landing(store) {
           ${counter(conflicts, "periods")}
         </div>
       </section>
+      <button class="landing-motion" data-act="toggle-landing-motion" aria-pressed="${landingMotionEnabled()}"
+        aria-label="${landingMotionEnabled() ? "Pause" : "Play"} background animation">
+        ${icon(landingMotionEnabled() ? "pause" : "play")}<span>${landingMotionEnabled() ? "Pause" : "Play"} animation</span>
+      </button>
     </div>
   </div>`;
 }
@@ -47,7 +51,7 @@ export function landing(store) {
 function counter(value, label) {
   const initialValue = !SYSTEM_REDUCED_MOTION &&
     document.documentElement.dataset.motion === "gsap" ? 0 : value;
-  return `<div class="register-item" aria-label="${value} ${label}">
+  return `<div class="register-item" role="group" aria-label="${value} ${label}">
     <b class="register-number" data-counter="${value}" aria-hidden="true">${initialValue.toLocaleString("en-CA")}</b>
     <span aria-hidden="true">${label}</span>
   </div>`;
@@ -589,12 +593,13 @@ export function patterns(store, state) {
         <span class="timeline-label">Historical timeline</span>
         <div class="year-navigation">
           <button data-act="prev-year" aria-label="Previous year"${state.scrubYear <= store.time.min ? " disabled" : ""}>${icon("arrow-right")}</button>
-          <form data-year-form><label class="sr-only" for="history-year">Year</label>
+          <form data-year-form novalidate><label class="sr-only" for="history-year">Year</label>
             <input id="history-year" class="scrub-year" type="number" min="${store.time.min}" max="${store.time.max}" step="1" required value="${state.scrubYear}" data-year data-year-entry aria-label="Year">
           </form>
           <button data-act="next-year" aria-label="Next year"${state.scrubYear >= store.time.max ? " disabled" : ""}>${icon("arrow-right")}</button>
         </div>
       </div>
+      <span class="sr-only" data-year-status role="status"></span>
       <input class="range" type="range" min="${store.time.min}" max="${store.time.max}" step="1" value="${state.scrubYear}" data-scrub aria-label="Year, ${store.time.min} to ${store.time.max}">
       ${boundaryDensity(store, state.scrubYear)}
       <div class="scrub-ticks"><span>${store.time.min}</span><span>1945</span><span>1989</span><span>${store.time.max}</span></div>
@@ -846,7 +851,7 @@ function testimonyMoment(activeEvent, events, state, store) {
   const places = `<details class="year-place-list" data-history-place-list${state.historyPlacesOpen ? " open" : ""}>
     <summary>Browse all ${events.length} recorded ${events.length === 1 ? "place" : "places"} ${icon("chevron")}</summary>
     <ul>${events.map((event) => `<li><button data-event="${esc(event.key)}" aria-pressed="${event.key === activeEvent?.key}">
-      <span>${esc(event.place)}<small>${event.count} ${event.count === 1 ? "account" : "accounts"} with a reference in ${event.year}</small></span>${icon("arrow-right")}
+      <span>${esc(event.place)}<small>${esc(event.role)}. ${event.count} ${event.count === 1 ? "account" : "accounts"} with a reference in ${event.year}</small></span>${icon("arrow-right")}
     </button></li>`).join("")}</ul>
   </details>`;
   if (!activeEvent) {

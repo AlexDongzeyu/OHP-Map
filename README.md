@@ -101,6 +101,16 @@ Changes to the system's reduced-motion preference apply immediately without a re
 Counters and route drawing settle to their readable final state, ambient motion pauses,
 and ongoing history playback stops. Escape closes an open interview player before
 leaving its account, returning keyboard focus to the selected chapter.
+The landing page retains its rotating globe and moving portrait belts. **Play/Pause
+animation** controls only that background, including an explicit opt-in when the browser
+requests reduced motion. `?motion=on` or `?motion=off` carries that choice in the current
+address; a new system-preference change returns to the system default.
+
+Collection and atlas searches fold source spellings such as Lodz / Łódź consistently.
+Collection search text is prepared once when loading the archive. The dated-place list
+shows the recorded role to distinguish separate entries at the same location, and
+committing an out-of-range whole year selects the nearest supported year. These controls
+do not merge source claims, assign verification, or change historical flag policy.
 
 Initial data requests retry once after a transport interruption or a temporary
 502/503/504 response. The loading screen announces reconnection; a second failure,
