@@ -1,13 +1,17 @@
 """The human-review gate (doc 04 guardrail #2, doc 02 risk R3/R7).
 
-Nothing extracted publishes until a person confirms it. This module:
-* emit_review_queue() — writes every unverified / low-confidence waypoint to a CSV
-  and JSON queue for a human to sit with the testimony and approve.
-* filter_published() — keeps ONLY verified waypoints, and drops any survivor left
-  with no verified waypoints. That filtered set is what renders on the map.
+Human verification and publication are separate, explicit states. This module:
+* emit_review_queue() — writes unresolved unverified / low-confidence waypoints to
+  a CSV and JSON queue for a human to sit with the testimony. This legacy queue is not
+  an import format; blank "approved" cells do not authorize any data changes.
+* stage() — labels pending routes honestly; strict mode keeps only wholly reviewed
+  routes. An account-level label cannot override an unverified waypoint. Existing
+  fingerprinted approvals cease to verify a claim when its source identity changes.
+* pipeline.review_decisions — exports source-fingerprinted worksheets and checks/
+  applies explicit human decisions offline. Run its --help for maintainer commands.
 
-For the bundled sample, the anchors are hand-entered and already verified, so the
-queue comes out empty — but the gate is real and runs every build.
+Bundled fictional samples can have hand-entered verified anchors. Nothing in this
+module independently verifies a real testimony.
 """
 from __future__ import annotations
 
@@ -19,7 +23,26 @@ from . import config
 LOW_CONFIDENCE = 0.85
 
 
-def _flag(wp: dict) -> str | None:
+def _flag(wp: dict, account: dict | None = None) -> str | None:
+    audit = wp.get("human_review")
+    if account is not None and "human_review" in wp:
+        from .review_decisions import source_fingerprint
+
+        if not isinstance(audit, dict) or audit.get("action") not in ("approve", "context", "reject"):
+            return "invalid_review"
+        action = audit["action"]
+        try:
+            if audit.get("source_fingerprint") != source_fingerprint(account, wp):
+                return "stale_review"
+        except ValueError:
+            return "stale_review"
+        personal = action == "approve"
+        if (
+            wp.get("verified") is personal
+            and (wp.get("evidence") or {}).get("scope") == ("personal" if personal else "contextual")
+        ):
+            return None
+        return "inconsistent_review"
     if not wp.get("verified"):
         return "unverified"
     if wp.get("confidence", 1.0) < LOW_CONFIDENCE:
@@ -33,7 +56,7 @@ def emit_review_queue(survivors: list[dict]) -> int:
     rows = []
     for s in survivors:
         for i, wp in enumerate([*s.get("waypoints", []), *s.get("contextual_places", [])]):
-            flag = _flag(wp)
+            flag = _flag(wp, s)
             if flag:
                 rows.append({
                     "survivor_id": s["survivor_id"],
@@ -49,7 +72,7 @@ def emit_review_queue(survivors: list[dict]) -> int:
                     "evidence_reason": wp.get("evidence", {}).get("reason", ""),
                     "source_quote": wp.get("source_quote", ""),
                     "archive_url": s.get("archive_url", ""),
-                    "approved": "",  # a reviewer sets this to yes/no
+                    "approved": "",  # legacy worksheet only; never implicitly imported
                 })
 
     with open(config.REVIEW_DIR / "review_queue.json", "w", encoding="utf-8") as fh:
@@ -69,12 +92,13 @@ def emit_review_queue(survivors: list[dict]) -> int:
 def stage(survivors: list[dict], strict: bool = False) -> list[dict]:
     """Tag each survivor with a review_status and decide what publishes.
 
-    Every survivor keeps only its placeable waypoints. Public profiles with none
-    remain pending and discoverable with null geometry. We do NOT silently drop
+    Every survivor keeps only its placeable waypoints. Unresolved route claims
+    recorded by the geocoder still prevent a wholly reviewed status. Public profiles
+    with none remain pending and discoverable with null geometry. We do NOT silently drop
     unverified records — on a memorial, hiding everything unreviewed would just show
     "0 journeys". Instead each record is labelled honestly:
 
-        review_status = "reviewed"  -> every waypoint is verified by a human
+        review_status = "reviewed"  -> every route waypoint is verified/personal
                         "pending"   -> auto-extracted, awaiting human verification
 
     The front end renders "pending" records faintly and clearly labelled (doc 09
@@ -83,12 +107,29 @@ def stage(survivors: list[dict], strict: bool = False) -> list[dict]:
     """
     staged = []
     for s in survivors:
-        wps = s.get("waypoints", [])
-        all_verified = bool(wps) and all(wp.get("verified") for wp in wps)
-        status = "reviewed" if all_verified or s.get("review_status") == "reviewed" else "pending"
+        s = dict(s)
+        wps = []
+        for wp in s.get("waypoints", []):
+            if wp.get("verified") is True and "human_review" in wp:
+                flag = _flag(wp, s)
+                if flag:
+                    wp = {
+                        **wp, "verified": False,
+                        "evidence": {
+                            **(wp.get("evidence") or {}), "scope": "uncertain",
+                            "reason": f"{flag}: recorded approval does not support the current route claim",
+                        },
+                    }
+            wps.append(wp)
+        s["waypoints"] = wps
+        all_verified = bool(wps) and not s.get("unplaced_waypoint_count", 0) and all(
+            wp.get("verified") is True
+            and (wp.get("evidence") or {}).get("scope", "personal") == "personal"
+            for wp in wps
+        )
+        status = "reviewed" if all_verified else "pending"
         if strict and status != "reviewed":
             continue
-        s = dict(s)
         s["review_status"] = status
         staged.append(s)
     return staged

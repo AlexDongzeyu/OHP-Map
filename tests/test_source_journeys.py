@@ -230,7 +230,7 @@ def test_cache_provenance_is_shared_by_pipeline_worker_and_existing_live_rows():
         }],
       };
       let writes = 0;
-      const env = {OHP_DATA: {put: async () => {writes++;}}};
+      const env = {OHP_DATA: {put: async (key) => {if (key === worker.DATA_KEY) writes++;}}};
       const migrated = await worker.ensureCurrentData(env, cached);
       const unchanged = await worker.ensureCurrentData(env, migrated);
       console.log(JSON.stringify({feature, migrated, writes, unchanged: unchanged === migrated}));

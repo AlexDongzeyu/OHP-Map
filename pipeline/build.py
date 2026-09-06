@@ -1,11 +1,12 @@
 """Build orchestrator (doc 02 architecture, doc 04 phases).
 
-    ingest -> extract -> normalize -> review gate -> geocode -> validate -> emit
+    ingest -> extract -> normalize -> geocode -> explicit review decisions -> validate -> emit
 
 Run it:
     python -m pipeline.media                      # snapshot public source references
     python -m pipeline.vimeo_transcripts          # audit all groups; private VTT cache
     python -m pipeline.build --source all          # whole-archive offline build
+    python -m pipeline.build --review-decisions decisions.json  # trusted human review
     python -m pipeline.build --source wordpress --extractor anthropic --allow-network
     python -m pipeline.build --discover           # just probe the WP REST API
 
@@ -14,10 +15,13 @@ The browser only ever loads the emitted JSON; nothing here runs at page load.
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import json
+from pathlib import Path
 import sys
 
 from . import config, derive, extract, gazetteer, geocode, ingest, journey, media, review, transcript_index, validate
+from . import review_decisions as decision_review
 from .text import repair_source_quote, sentence_excerpt
 
 
@@ -100,8 +104,10 @@ def _record_to_survivor(rec: dict, extractor) -> dict:
     }
 
 
-def _geocode_survivor(s: dict, cache: dict, allow_network: bool, warnings: list) -> dict:
+def _geocode_survivor(s: dict, cache: dict, allow_network: bool, warnings: list,
+                      unplaced: list | None = None) -> dict:
     s = dict(s)
+    unplaced_route_count = 0
     for key in ("waypoints", "contextual_places"):
         placed = []
         for wp in s.get(key, []):
@@ -109,6 +115,10 @@ def _geocode_survivor(s: dict, cache: dict, allow_network: bool, warnings: list)
             if not coords:
                 warnings.append(f"{s['survivor_id']}: no coordinates for "
                                 f"{wp['canonical']!r} (as written {wp['as_written']!r}) — dropped")
+                if unplaced is not None:
+                    unplaced.append((s["survivor_id"], key, dict(wp)))
+                if key == "waypoints":
+                    unplaced_route_count += 1
                 continue
             wp = dict(wp)
             reviewed = wp.get("verified") or s.get("review_status") == "reviewed"
@@ -130,6 +140,10 @@ def _geocode_survivor(s: dict, cache: dict, allow_network: bool, warnings: list)
             wp.pop("resolved", None)
             placed.append(wp)
         s[key] = placed
+    if unplaced_route_count:
+        s["unplaced_waypoint_count"] = unplaced_route_count
+    else:
+        s.pop("unplaced_waypoint_count", None)
     return s
 
 
@@ -148,7 +162,22 @@ def _to_feature(s: dict) -> dict:
 
 
 def build(source_name="local", extractor_name="offline", allow_network=False,
-          strict=False, featured=None) -> dict:
+          strict=False, featured=None, review_decisions=None) -> dict:
+    decisions = None
+    if review_decisions is not None:
+        decision_path = Path(review_decisions).resolve()
+        outputs = (
+            config.OUT_GEOJSON, config.OUT_PLACE_INDEX, config.OUT_CONNECTIONS,
+            config.GEOCODE_CACHE, config.REVIEW_DIR / "review_queue.json",
+            config.REVIEW_DIR / "review_queue.csv",
+        )
+        if any(
+            decision_path == path.resolve()
+            or (decision_path.exists() and path.exists() and decision_path.samefile(path))
+            for path in outputs
+        ):
+            raise ValueError("The review decision file must be distinct from build outputs")
+        decisions = decision_review.load_decisions(decision_path)
     warnings: list[str] = []
     transcript_index._load.cache_clear()
     source = ingest.get_source(source_name)
@@ -162,13 +191,18 @@ def build(source_name="local", extractor_name="offline", allow_network=False,
         and transcript_index.entry_for(rec["survivor_id"]).get("source_status") != "protected"
     ]
 
-    # Human-review gate: queue everything unverified for a person to confirm.
-    queued = review.emit_review_queue(survivors)
-
     # Geocode (cache-only unless --allow-network), dropping any waypoint we can't place.
-    survivors = [_geocode_survivor(s, cache, allow_network, warnings) for s in survivors]
-    if allow_network:
-        geocode.save_cache(cache)
+    unplaced = []
+    survivors = [_geocode_survivor(s, cache, allow_network, warnings, unplaced) for s in survivors]
+
+    # Fingerprints bind the source AND the final coordinate identity. Validate the
+    # complete decision file before writing any queue, cache or publication output.
+    if decisions is not None:
+        survivors = decision_review.apply_decisions(survivors, decisions)
+    queue_survivors = deepcopy(survivors)
+    queue_accounts = {s["survivor_id"]: s for s in queue_survivors}
+    for sid, collection, waypoint in unplaced:
+        queue_accounts[sid][collection].append(waypoint)
 
     # Tag review status; optionally publish only fully-reviewed records.
     survivors = review.stage(survivors, strict=strict)
@@ -226,6 +260,9 @@ def build(source_name="local", extractor_name="offline", allow_network=False,
     place_index = derive.build_place_index(features)
     connections = derive.build_connections(features)
 
+    queued = review.emit_review_queue(queue_survivors)
+    if allow_network:
+        geocode.save_cache(cache)
     _write(config.OUT_GEOJSON, doc)
     _write(config.OUT_PLACE_INDEX, place_index)
     _write(config.OUT_CONNECTIONS, connections)
@@ -273,6 +310,8 @@ def main(argv=None) -> int:
                    help="permit live geocoding for cache misses (writes back to cache)")
     p.add_argument("--strict", action="store_true",
                    help="publish only human-reviewed records (drop pending)")
+    p.add_argument("--review-decisions",
+                   help="explicit trusted reviewer decision JSON to validate and replay after geocoding")
     p.add_argument("--featured", default="",
                    help="comma-separated survivor_ids to flag as featured")
     p.add_argument("--discover", action="store_true", help="probe the WP REST API and exit")
@@ -283,8 +322,8 @@ def main(argv=None) -> int:
     featured = [s for s in args.featured.split(",") if s]
     try:
         build(args.source, args.extractor, args.allow_network,
-              strict=args.strict, featured=featured)
-    except ValueError as exc:  # validation failure
+              strict=args.strict, featured=featured, review_decisions=args.review_decisions)
+    except (OSError, ValueError) as exc:  # validation or input failure
         print(str(exc), file=sys.stderr)
         return 2
     return 0

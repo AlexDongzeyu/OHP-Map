@@ -3,6 +3,8 @@
 import gazetteer from "../data/gazetteer.json";
 import geocodeCache from "../data/geocode_cache.json";
 import otherMediaPages from "../data/source/ohp_media_pages.json";
+import { INDEX_FORMAT, seedCatalog } from "./publication.js";
+import { pendingPublicationKey, publishArchive } from "./live-publication.js";
 import {
   decodeEntities,
   mergeMediaCoverage,
@@ -24,6 +26,9 @@ export const HISTORY_MIN_YEAR = 1914;
 export const HISTORY_MAX_YEAR = 2026;
 const PUBLIC_FORMAT = 1;
 export const PUBLIC_DATA_KEY = `survivors.public-v${PUBLIC_FORMAT}.${CONTENT_REVISION}.${GAZETTEER_REVISION}.${HISTORY_MIN_YEAR}-${HISTORY_MAX_YEAR}.geojson`;
+export const INDEX_KEY = `index-v${INDEX_FORMAT}.${PUBLIC_DATA_KEY}`;
+export const CATALOG_KEY = `catalog-v${INDEX_FORMAT}.${PUBLIC_DATA_KEY}`;
+export const SITEMAP_KEY = `sitemap-v${INDEX_FORMAT}.${PUBLIC_DATA_KEY}`;
 const SEEN_KEY = "ohp-seen-slugs.json";
 const FAILURE_KEY = "ohp-fetch-failures.json";
 const CURSOR_KEY = "ohp-refresh-cursor";
@@ -48,7 +53,7 @@ const GROUP_ORDER = [
 const ROLE_ORDER = { birthplace: 0, ghetto: 1, camp: 2, transit: 3, liberation: 4, resettlement: 5 };
 const NON_PROFILE_SLUGS = new Set(otherMediaPages.pages.map((page) => page.survivor_id));
 
-export async function syncSurvivors(env) {
+export async function syncSurvivors(env, { publicationStorage } = {}) {
   if (!env.OHP_DATA || !env.ASSETS) throw new Error("OHP_DATA and ASSETS bindings are required");
   const startedAt = new Date().toISOString();
   const previousStatus = await env.OHP_DATA.get(STATUS_KEY, "json");
@@ -61,6 +66,38 @@ export async function syncSurvivors(env) {
   await env.OHP_DATA.put(STATUS_KEY, JSON.stringify({ state: "running", started_at: startedAt }));
 
   try {
+    let pending = publicationStorage && await publicationStorage.get(pendingPublicationKey(INDEX_KEY));
+    if (pending) {
+      const snapshot = await env.OHP_DATA.getWithMetadata(DATA_KEY, { type: "json" });
+      const frozen = snapshot.value;
+      if (isCurrentPublication(pending.replacement?.metadata) &&
+        snapshot.metadata?.version === pending.replacement.metadata.version) {
+        pending = { ...pending, ...pending.replacement };
+        delete pending.replacement;
+        await publicationStorage.put(pendingPublicationKey(INDEX_KEY), pending);
+      }
+      if (!frozen?.features || !isCurrentPublication(pending.metadata) ||
+        snapshot.metadata?.version !== pending.metadata.version) {
+        throw new Error("The staged compact archive has no matching full snapshot");
+      }
+      const seed = await seedCatalog(env);
+      const changedSeed = pending.seed_version !== seed.version;
+      const current = changedSeed ? reconcilePendingSeed(frozen, await loadSeedData(env)) : frozen;
+      const publication = await publishCurrentData(env, current, {
+        storage: publicationStorage, seedCatalog: seed,
+        ...(changedSeed ? { restart: true, previousVersion: pending.metadata.version }
+          : { resume: true, metadata: pending.metadata }),
+      });
+      const status = {
+        state: publication.complete ? "ready" : "preparing-index",
+        started_at: startedAt,
+        completed_at: new Date().toISOString(),
+        total: current.features.length,
+        publication,
+      };
+      await env.OHP_DATA.put(STATUS_KEY, JSON.stringify(status));
+      return status;
+    }
     const current = await loadCurrentData(env);
     const featuresById = new Map(
       (current.features || []).map((feature) => [feature.properties.survivor_id, feature]),
@@ -186,8 +223,9 @@ export async function syncSurvivors(env) {
       next_cursor: nextCursor,
     };
 
+    status.publication = await publishCurrentData(env, doc, { storage: publicationStorage });
+    if (!status.publication.complete) status.state = "preparing-index";
     await Promise.all([
-      publishCurrentData(env, doc),
       env.OHP_DATA.put(SEEN_KEY, JSON.stringify([...seen].sort())),
       env.OHP_DATA.put(FAILURE_KEY, JSON.stringify(failures)),
       env.OHP_DATA.put(CURSOR_KEY, String(nextCursor)),
@@ -227,16 +265,53 @@ async function loadSeedData(env) {
   return seed;
 }
 
+function reconcilePendingSeed(frozen, seed) {
+  // A review import does not bump extraction revisions. Rebase from the live
+  // snapshot, not from the older bundled archive, and reuse unaffected detail keys.
+  const features = new Map(frozen.features.map((feature) => [feature.properties.survivor_id, feature]));
+  for (const seeded of seed.features) {
+    const id = seeded.properties.survivor_id;
+    const aliases = seeded.properties.source_aliases || [];
+    const candidates = [id, ...aliases].map((key) => features.get(key)).filter(Boolean);
+    // Missing rows may have been removed or made private by a newer live refresh.
+    // Normal source discovery, not a seed rebase, is responsible for additions.
+    if (!candidates.length) continue;
+    const existing = candidates.find((feature) => hasReviewedJourney(feature.properties)) || candidates[0];
+    const reviewed = mergeSeedReviews(existing, seeded);
+    const identity = {
+      survivor_id: id,
+      archive_url: seeded.properties.archive_url || reviewed.properties.archive_url,
+      ...(aliases.length ? { source_aliases: aliases } : {}),
+    };
+    for (const alias of aliases) features.delete(alias);
+    features.set(id, withSourceIdentity(reviewed, identity));
+  }
+  const values = [...features.values()];
+  const reviewed = values.filter((feature) => feature.properties.review_status === "reviewed").length;
+  return {
+    ...frozen,
+    metadata: {
+      ...frozen.metadata,
+      count: values.length, groups: countGroups(values),
+      reviewed, pending: values.length - reviewed,
+      placed: values.filter((feature) => feature.properties.waypoints?.length).length,
+      unplaced: values.filter((feature) => !feature.properties.waypoints?.length).length,
+    },
+    features: values,
+  };
+}
+
 function mergeSeedPortraits(cached, seed) {
   const seedById = new Map(
-    seed.features.map((feature) => [feature.properties.survivor_id, feature.properties]),
+    seed.features.map((feature) => [feature.properties.survivor_id, feature]),
   );
   return {
     ...cached,
     features: cached.features.map((original) => {
-      const feature = withLocationPrecision(original);
-      const seeded = seedById.get(feature.properties.survivor_id);
-      if (!seeded) return feature;
+      const seedFeature = seedById.get(original.properties.survivor_id);
+      const feature = withLocationPrecision(mergeSeedReviews(original, seedFeature));
+      if (!seedFeature) return feature;
+      const seeded = seedFeature.properties;
       return {
         ...feature,
         properties: {
@@ -249,6 +324,119 @@ function mergeSeedPortraits(cached, seed) {
       };
     }),
   };
+}
+
+function humanReviewPoints(properties) {
+  return [...(properties.waypoints || []), ...(properties.contextual_places || [])]
+    .filter((waypoint) => waypoint.human_review && typeof waypoint.human_review === "object");
+}
+
+function hasReviewedJourney(properties) {
+  return properties.review_status === "reviewed" ||
+    (properties.waypoints || []).some((waypoint) => waypoint.verified) ||
+    humanReviewPoints(properties).length > 0;
+}
+
+function withSourceIdentity(feature, identity) {
+  const changed = ["survivor_id", "archive_url"].some((key) => (
+    Object.hasOwn(identity, key) && identity[key] !== feature.properties[key]
+  ));
+  const properties = { ...feature.properties, ...identity };
+  if (changed) {
+    for (const collection of ["waypoints", "contextual_places"]) {
+      if (!properties[collection]) continue;
+      properties[collection] = properties[collection].map((waypoint) => {
+        if (waypoint.verified !== true || !waypoint.human_review) return waypoint;
+        properties.review_status = "pending";
+        return {
+          ...waypoint,
+          verified: false,
+          evidence: {
+            ...(waypoint.evidence || {}),
+            scope: "uncertain",
+            reason: "stale_review: account identity changed after review",
+          },
+        };
+      });
+    }
+  }
+  return { ...feature, properties };
+}
+
+function pointSourceKey(point) {
+  // Equality inside an already matched account, not a replacement for the public
+  // fingerprint. JSON numbers round-trip exactly and normalize negative zero.
+  return JSON.stringify([
+    point.as_written, point.canonical, point.role,
+    ["start", "end", "precision", "as_written"].map((key) => point.date?.[key] ?? null),
+    point.source_quote ?? null,
+    ["lat", "lng", "location_precision", "location_note", "location_source_url", "location_coordinate_source_url"]
+      .map((key) => point[key] ?? null),
+  ]);
+}
+
+function mergeSeedReviews(existing, seeded) {
+  if (!seeded || !hasReviewedJourney(seeded.properties)) return existing;
+  const incoming = humanReviewPoints(seeded.properties);
+  if (hasReviewedJourney(existing.properties) && !incoming.length) return existing;
+  // An explicitly imported seed decision is authoritative over an older automatic
+  // journey, including a rejection/context decision which verifies no route point.
+  // Keep live source media and biography instead of replacing the whole live row.
+  const properties = { ...existing.properties };
+  for (const key of [
+    "survivor_id", "archive_url", "waypoints", "contextual_places", "review_status",
+    "birth_year", "birth_date", "journey_revision",
+  ]) {
+    if (Object.hasOwn(seeded.properties, key)) properties[key] = seeded.properties[key];
+  }
+  if (Object.hasOwn(seeded.properties, "unplaced_waypoint_count")) {
+    properties.unplaced_waypoint_count = seeded.properties.unplaced_waypoint_count;
+  } else {
+    delete properties.unplaced_waypoint_count;
+  }
+  let geometry = seeded.geometry;
+  if (incoming.length) {
+    const identity = Object.fromEntries(["survivor_id", "archive_url"]
+      .filter((key) => Object.hasOwn(seeded.properties, key)).map((key) => [key, seeded.properties[key]]));
+    const sameAccount = Object.entries(identity).every(([key, value]) => existing.properties[key] === value);
+    const prior = withSourceIdentity(existing, identity).properties;
+    const collections = { waypoints: [], contextual_places: [] };
+    const cached = Object.keys(collections).flatMap((collection) => (prior[collection] || [])
+      .filter((point) => point.human_review || point.verified === true)
+      .map((point) => ({ collection, point, source: pointSourceKey(point), used: false })));
+    let applied = false;
+    for (const collection of Object.keys(collections)) {
+      for (const point of seeded.properties[collection] || []) {
+        const source = pointSourceKey(point);
+        const fingerprint = point.human_review?.source_fingerprint;
+        const match = cached.find((entry) => !entry.used && entry.source === source) ||
+          (fingerprint && cached.find((entry) => !entry.used && entry.point.human_review?.source_fingerprint === fingerprint));
+        // Compare the conflicting point's audit, not the account's latest date:
+        // another point's newer review must not block a same-day replacement.
+        const keepCached = match && (!point.human_review || (sameAccount && match.point.human_review &&
+          (match.point.human_review.reviewed_at || "") > (point.human_review.reviewed_at || "")));
+        if (match) match.used = true;
+        if (keepCached) collections[match.collection].push(match.point);
+        else {
+          collections[collection].push(point);
+          if (point.human_review) applied = true;
+        }
+      }
+    }
+    if (!applied) return existing;
+    for (const entry of cached) {
+      if (!entry.used) collections[entry.collection].push(entry.point);
+    }
+    properties.waypoints = orderWaypoints(collections.waypoints);
+    properties.contextual_places = collections.contextual_places;
+    properties.review_status = properties.waypoints.length && !properties.unplaced_waypoint_count &&
+      properties.waypoints.every((point) => point.verified === true && (point.evidence?.scope ?? "personal") === "personal")
+      ? "reviewed" : "pending";
+    const home = properties.waypoints.find((point) => point.role === "birthplace") || properties.waypoints[0];
+    geometry = Number.isFinite(home?.lat) && Number.isFinite(home?.lng)
+      ? { type: "Point", coordinates: [home.lng, home.lat] } : null;
+  }
+  return { ...existing, geometry, properties };
 }
 
 export async function ensureCurrentData(env, cached) {
@@ -306,10 +494,13 @@ export function publicationMetadata(doc) {
   return metadata;
 }
 
-export async function publishCurrentData(env, doc) {
-  const metadata = publicationMetadata(doc);
-  const body = JSON.stringify(doc);
-  await env.OHP_DATA.put(DATA_KEY, body, { metadata });
+export async function publishCurrentData(env, doc, options = {}) {
+  const checked = publicationMetadata(doc);
+  const metadata = options.metadata || checked;
+  if (!isCurrentPublication(metadata)) throw new Error("Cannot resume an outdated archive publication");
+  return publishArchive(env, doc, metadata, {
+    full: DATA_KEY, index: INDEX_KEY, catalog: CATALOG_KEY, sitemap: SITEMAP_KEY,
+  }, options);
 }
 
 function migrateCachedData(cached, seed) {
@@ -326,17 +517,16 @@ function migrateCachedData(cached, seed) {
     const candidates = [
       ...aliases.map((alias) => cachedById.get(alias)), cachedById.get(id),
     ].filter(Boolean);
-    const existing = candidates.find((feature) => (
-      feature.properties.review_status === "reviewed" ||
-      feature.properties.waypoints.some((waypoint) => waypoint.verified)
-    )) || candidates[0];
+    let existing = candidates.find((feature) => hasReviewedJourney(feature.properties)) || candidates[0];
     if (!existing) return seedFeature;
+    existing = mergeSeedReviews(existing, seedFeature);
     const identity = {
       survivor_id: id,
       archive_url: seedFeature.properties.archive_url || existing.properties.archive_url,
       ...(aliases.length ? { source_aliases: aliases } : {}),
     };
-    if (existing.properties.review_status === "reviewed") {
+    existing = withSourceIdentity(existing, identity);
+    if (existing.properties.review_status === "reviewed" || humanReviewPoints(existing.properties).length) {
       return {
         ...existing,
         properties: {
@@ -394,7 +584,7 @@ function migrateCachedData(cached, seed) {
 
   for (const feature of cached.features) {
     if (seedIds.has(feature.properties.survivor_id) || NON_PROFILE_SLUGS.has(feature.properties.survivor_id)) continue;
-    if (feature.properties.review_status === "reviewed") {
+    if (feature.properties.review_status === "reviewed" || humanReviewPoints(feature.properties).length) {
       features.push(feature);
       continue;
     }
@@ -451,6 +641,7 @@ function withLocationPrecision(feature) {
 }
 
 function withWaypointLocationMetadata(waypoint, reviewedRecord = false) {
+  if (waypoint.human_review) return waypoint;
   const coordinates = geocodeCache[waypoint.canonical] || {};
   const metadata = { location_precision: coordinates.precision || "unknown" };
   const fields = [
@@ -480,7 +671,7 @@ function withWaypointLocationMetadata(waypoint, reviewedRecord = false) {
 
 function mergeSeedQuotes(existing, seeded) {
   return existing.map((waypoint) => {
-    if (waypoint.verified) return waypoint;
+    if (waypoint.verified || waypoint.human_review) return waypoint;
     const source = seeded.find((candidate) => (
       candidate.canonical === waypoint.canonical && candidate.as_written === waypoint.as_written
     ));
@@ -491,7 +682,7 @@ function mergeSeedQuotes(existing, seeded) {
 }
 
 function sanitizeCachedFeature(feature) {
-  if (feature.properties.waypoints.some((waypoint) => waypoint.verified)) return withLocationPrecision(feature);
+  if (hasReviewedJourney(feature.properties)) return withLocationPrecision(feature);
   const seen = new Set();
   const waypoints = [];
   const cachedWaypoints = feature.properties.waypoints || [];
@@ -993,6 +1184,7 @@ function toFeature(record) {
       journey_revision: JOURNEY_REVISION,
       review_status: "pending",
       bio_excerpt: sentenceExcerpt(record.quote_text ?? record.text),
+      source_biography: record.quote_text ?? record.text,
       archive_url: record.archive_url,
       portrait: record.portrait || null,
       portrait_rights: record.portrait ? record.portrait_rights : null,
@@ -1006,7 +1198,7 @@ function toFeature(record) {
 }
 
 function mergeFeature(existing, fresh) {
-  if (existing.properties.review_status === "reviewed") {
+  if (existing.properties.review_status === "reviewed" || humanReviewPoints(existing.properties).length) {
     return {
       ...existing,
       properties: {

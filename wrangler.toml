@@ -14,15 +14,21 @@ compatibility_date = "2024-11-01"
 # Assemble only the static site into ./public (keeps .git, tooling, and source out of
 # what's served — see tools/assemble_site.cjs).
 [build]
-command = "node tools/assemble_site.cjs"
+# Production restores the actually published predecessor, even in a clean clone.
+# `node tools/assemble_site.cjs` remains the offline/local build command.
+command = "node tools/assemble_site.cjs --restore-published"
 
-# Serve ./public as static assets. run_worker_first lets the Worker own the dataset
-# route so it can serve the warm KV cache when one is configured (falling back to the
-# committed file otherwise).
+# The Worker owns routing, headers and real 404s for every response. Static assets
+# never apply SPA fallbacks or implicit .html redirects to immutable data paths.
 [assets]
 directory = "public"
 binding = "ASSETS"
-run_worker_first = ["/data/survivors.geojson", "/__sync", "/__sync/status"]
+run_worker_first = true
+html_handling = "none"
+not_found_handling = "none"
+
+[vars]
+SITE_ORIGIN = "https://ohpmap.alexdong0414.workers.dev"
 
 # Every hour, discover additions across all OHP categories and refresh a rotating
 # batch of existing profiles. This keeps source load bounded while covering the

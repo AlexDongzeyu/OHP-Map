@@ -28,7 +28,7 @@ function assertCounterMotion(label, { targets, samples }) {
   await page.setViewport({ width: 1366, height: 850 });
   await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
   let mockVideoPlayer = false;
-  const coreData = (url) => /\/data\/(?:survivors\.geojson|place_index\.json|connections\.json|war_context\.json|historical_boundary_index\.json)(?:\?|$)/.test(url || "");
+  const coreData = (url) => /\/data\/(?:index\.json|survivors\.geojson|place_index\.json|connections\.json|war_context\.json|historical_boundary_index\.json|profiles\/[^/]+\.json)(?:\?|$)/.test(url || "");
   const requestMeta = new WeakMap();
   const dataTransfers = new Map();
   let navigation = 0, requestOrder = 0;
@@ -305,7 +305,7 @@ function assertCounterMotion(label, { targets, samples }) {
   });
   await check("all public records retain complete excerpts and media inventories", async () => {
     const inventory = await page.evaluate(async () => {
-      const response = await fetch("data/survivors.geojson");
+      const response = await fetch("/data/survivors.geojson");
       if (!response.ok) throw new Error(`archive data returned ${response.status}`);
       const document = await response.json();
       const records = document.features.map((feature) => feature.properties);
@@ -338,6 +338,58 @@ function assertCounterMotion(label, { targets, samples }) {
       input.value = ""; input.dispatchEvent(new Event("input", { bubbles: true }));
     });
   });
+  await check("compact startup defers complete profile details until an account opens", async () => {
+    const compactContext = await browser.createBrowserContext();
+    const compactPage = await compactContext.newPage();
+    await compactPage.setCacheEnabled(false);
+    compactPage.on("pageerror", (error) => errors.push("compact startup: " + error.message));
+    const requests = [];
+    compactPage.on("request", (request) => { requests.push(new URL(request.url()).pathname); });
+    try {
+      await compactPage.goto(BASE + "/?compact-delivery=1", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await compactPage.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      const startup = await compactPage.evaluate(() => {
+        const data = performance.getEntriesByType("resource").find((entry) => entry.name.includes("/data/index.json"));
+        return { bytes: data?.decodedBodySize, transferred: data?.transferSize, readyMs: Math.round(performance.now()) };
+      });
+      if (!requests.includes("/data/index.json") || requests.includes("/data/survivors.geojson") ||
+          requests.some((url) => url.startsWith("/data/profiles/")) || !startup.bytes || startup.bytes > 3_000_000) {
+        throw new Error(`startup did not use the compact index ${JSON.stringify({ startup, requests: requests.filter(url => url.startsWith("/data/")) })}`);
+      }
+      await compactPage.click(".nav-tab[data-view='explore']");
+      await compactPage.$eval("#search", input => {
+        input.value = "Martin Baranek"; input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await compactPage.click(".rail-card");
+      await compactPage.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      const details = requests.filter((url) => url.startsWith("/data/profiles/"));
+      if (details.length !== 1 || !details[0].includes("/baranek-martin.") ||
+          !await compactPage.$eval(".bio", bio => bio.textContent.length > 100)) {
+        throw new Error(`the selected account was not loaded independently ${JSON.stringify(details)}`);
+      }
+      console.log(`MEASURE compact startup: ${startup.bytes} decoded bytes; ${startup.transferred} transferred; ${startup.readyMs} ms`);
+    } finally {
+      await compactContext.close();
+    }
+  });
+  await check("immutable release assets and compatible response headers are published", async () => {
+    const response = await fetch(BASE + "/");
+    const html = await response.text();
+    const release = html.match(/name="ohp-static-release" content="([a-f0-9]{64})"/)?.[1];
+    if (!release || response.headers.get("x-content-type-options") !== "nosniff" ||
+        response.headers.get("referrer-policy") !== "strict-origin-when-cross-origin" ||
+        !response.headers.get("content-security-policy")?.includes("frame-ancestors")) {
+      throw new Error("the static release or compatible security headers are missing");
+    }
+    const versioned = await fetch(`${BASE}/releases/${release}/js/app.js`);
+    const alias = await fetch(BASE + "/js/app.js");
+    if (!versioned.ok || !alias.ok ||
+        !versioned.headers.get("cache-control")?.includes("max-age=31536000, immutable") ||
+        alias.headers.get("cache-control")?.includes("immutable") ||
+        await versioned.text() !== await alias.text()) {
+      throw new Error("static asset aliases and immutable releases do not agree");
+    }
+  });
   await check("historical source aliases retain one readable account", async () => {
     await page.goto(BASE + "/?source-alias=1#/survivor/thomas-jack", { waitUntil: "domcontentloaded", timeout: 40000 });
     await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
@@ -360,7 +412,7 @@ function assertCounterMotion(label, { targets, samples }) {
     const source = await page.evaluate(() => ({
       context: document.querySelector(".contextual-places").textContent,
       precision: [...document.querySelectorAll(".place-precision")].map((element) => element.textContent),
-      needsReview: document.querySelectorAll(".place-review").length,
+      needsReview: [...document.querySelectorAll(".reference-kind")].filter((element) => element.textContent === "Needs review").length,
       firstPlace: document.querySelector(".place-focus .step-place")?.textContent,
     }));
     if (!source.context.includes("England") || !source.context.includes("Family background") ||
@@ -425,7 +477,7 @@ function assertCounterMotion(label, { targets, samples }) {
     const empty = await page.evaluate(() => ({
       selected: document.querySelectorAll("[data-group]:checked").length,
       cards: document.querySelectorAll(".rail-card").length,
-      markers: document.querySelectorAll("#map [data-person]").length,
+      markers: document.querySelectorAll("#map .place-cluster").length,
       message: document.querySelector(".rail-empty p")?.textContent,
     }));
     if (empty.selected || empty.cards || empty.markers || empty.message !== "No communities selected") {
@@ -523,7 +575,7 @@ function assertCounterMotion(label, { targets, samples }) {
       return {
         top: bar.top, bottom: bar.bottom, panelTop: panel.top,
         routes: document.querySelector(".profile-route-status").textContent,
-        backgroundPeople: document.querySelectorAll("#map [data-person]").length,
+        backgroundPeople: document.querySelectorAll("#map .place-cluster").length,
       };
     });
     if (toolbar.top < toolbar.panelTop - 1 || toolbar.bottom > toolbar.panelTop + 110 ||
@@ -555,11 +607,12 @@ function assertCounterMotion(label, { targets, samples }) {
   await check("unmapped accounts explain the missing route beside the identity", async () => {
     await page.evaluate(() => { location.hash = "#/survivor/aldous-amanda"; });
     await page.waitForFunction(() => document.getElementById("profile-name")?.textContent === "Amanda Aldous");
+    await page.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
     const unmapped = await page.evaluate(() => ({
       notice: document.querySelector(".profile-route-status").textContent,
       noticeTop: document.querySelector(".profile-route-status").getBoundingClientRect().top,
       sourceTop: document.querySelector(".profile-actions").getBoundingClientRect().top,
-      drawn: document.querySelectorAll("#map .explore-route, #map [data-person]").length,
+      drawn: document.querySelectorAll("#map .explore-route, #map .account-place-marker, #map .place-cluster").length,
       action: document.querySelector(".interview-action").textContent.trim(),
       chapterNote: document.querySelector(".profile-interviews .section-note").textContent,
     }));
@@ -689,6 +742,7 @@ function assertCounterMotion(label, { targets, samples }) {
   });
   await check("free zoom changes camera transform", async () => {
     if (await page.$(".panel-close")) await page.click(".panel-close");
+    await wait(1000);
     await wait(200);
     const before = await page.$eval("#map .camera", (g) => g.getAttribute("transform") || "");
     await page.mouse.move(760, 430);
@@ -705,7 +759,7 @@ function assertCounterMotion(label, { targets, samples }) {
     await page.click("[data-act='reset-map']");
     await wait(1000);
     const fitted = await page.$eval("#map .camera", (g) => g.getAttribute("transform"));
-    if (fitted !== "translate(0,0) scale(1)") throw new Error(`fit map failed ${fitted}`);
+    if (fitted !== before) throw new Error(`fit map did not restore the data extent (${before} -> ${fitted})`);
   });
   await check("patterns: historical events + timeline + density", async () => {
     await page.click(".nav-tab[data-view='patterns']");
@@ -825,7 +879,7 @@ function assertCounterMotion(label, { targets, samples }) {
     }));
     if (decolonization.phase !== "Empires recede" ||
         !/Africa and Asia/.test(decolonization.copy || "") ||
-        decolonization.map !== "assets/history/atlas-1960.svg" ||
+        !decolonization.map?.endsWith("/assets/history/atlas-1960.svg") ||
         !/territories, \d+ changes/.test(decolonization.footer || "")) {
       throw new Error(`1960 dossier is incomplete ${JSON.stringify(decolonization)}`);
     }
@@ -960,7 +1014,8 @@ function assertCounterMotion(label, { targets, samples }) {
       })).length;
       return {
         expected, mentions,
-        markers: [...document.querySelectorAll("#map [data-person]")].map((marker) => marker.dataset.person),
+        markers: [...new Set([...document.querySelectorAll("#map .place-cluster")]
+          .flatMap((marker) => JSON.parse(marker.dataset.accountIds)))],
         cards: [...document.querySelectorAll(".rail-card")].map((card) => card.dataset.survivor),
         count: document.querySelector("[data-rail-count]").textContent,
         hash: location.hash,
@@ -1231,7 +1286,7 @@ function assertCounterMotion(label, { targets, samples }) {
           scale: Number(document.querySelector(".camera").getAttribute("transform").match(/scale\(([^)]+)\)/)[1]),
         };
       });
-      if (profile.overflow || profile.scale <= 4 ||
+      if (profile.overflow || profile.scale < 1 ||
           (viewport.width <= 820 && profile.endpoints.some((y) => y >= profile.top - 4 || y <= 100))) {
         throw new Error(`profile map is obscured at ${viewport.width}px ${JSON.stringify(profile)}`);
       }
@@ -1366,7 +1421,7 @@ function assertCounterMotion(label, { targets, samples }) {
         request.respond({ status: 503, contentType: "application/json", body: "{}" });
       } else request.continue();
     });
-    for (const [asset, cover] of [["survivors.geojson", "#fatal"], ["atlas-world.json", "#error"]]) {
+    for (const [asset, cover] of [["index.json", "#fatal"], ["atlas-world.json", "#error"]]) {
       failedAsset = asset;
       await recovery.goto(BASE + `/?recovery=${asset}`, { waitUntil: "domcontentloaded", timeout: 40000 });
       await recovery.waitForSelector(`${cover}:not([hidden]) .btn`, { timeout: 15000 });
@@ -1911,14 +1966,14 @@ function assertCounterMotion(label, { targets, samples }) {
 
   await check("temporary archive interruptions recover once with visible status", async () => {
     // The recovery leg is deterministic; other scenarios exercise the live archive.
-    const archive = fs.readFileSync(path.join(__dirname, "..", "data", "survivors.geojson"), "utf8");
+    const archive = fs.readFileSync(path.join(__dirname, "..", "public", "data", "index.json"), "utf8");
     const recovery = await browser.newPage();
     recovery.on("pageerror", (error) => errors.push("archive retry: " + error.message));
     await recovery.setViewport({ width: 390, height: 844 });
     await recovery.setRequestInterception(true);
     let mode = "http", requests = 0;
     recovery.on("request", (request) => {
-      if (!request.url().includes("/data/survivors.geojson")) return request.continue();
+      if (!request.url().includes("/data/index.json")) return request.continue();
       requests++;
       if (requests === 1 && mode === "network") return request.abort("connectionfailed");
       if (requests === 1 || mode === "persistent") {
@@ -2062,7 +2117,8 @@ function assertCounterMotion(label, { targets, samples }) {
       await savedPage.click(".saved-view");
       const saved = await savedPage.evaluate(() => ({
         ids: [...document.querySelectorAll(".rail-card")].map((card) => card.dataset.survivor),
-        markers: [...document.querySelectorAll("#map [data-person]")].map((marker) => marker.dataset.person),
+        markers: [...new Set([...document.querySelectorAll("#map .place-cluster")]
+          .flatMap((marker) => JSON.parse(marker.dataset.accountIds)))],
         count: document.querySelector("[data-rail-count]").textContent,
         privacy: document.querySelector("[data-saved-privacy]").innerText,
       }));
@@ -2161,7 +2217,7 @@ function assertCounterMotion(label, { targets, samples }) {
       await wait(650);
       await referencePage.click("[data-copy-account='link']");
       const link = await referencePage.evaluate(() => window.__accountCopies[0]);
-      if (link !== new URL("/#/survivor/adam-wally", BASE).href || /private|saved=|reference-tools/i.test(link)) {
+      if (link !== new URL("/survivor/adam-wally", BASE).href || /private|saved=|reference-tools/i.test(link)) {
         throw new Error(`account sharing leaked local filters ${link}`);
       }
       await referencePage.click("[data-copy-account='citation']");
@@ -2246,6 +2302,7 @@ function assertCounterMotion(label, { targets, samples }) {
       await mediaPage.setViewport({ width: 1366, height: 850 });
       await mediaPage.goto(BASE + "/?media-tools=1#/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
       await mediaPage.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await mediaPage.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
       await mediaPage.click("[data-act='show-interviews']");
       await wait(600);
       await mediaPage.click(".video-chapter[data-video]");
@@ -2432,6 +2489,330 @@ function assertCounterMotion(label, { targets, samples }) {
       return (Math.max(text,background)+.05)/(Math.min(text,background)+.05);
     });
     if(contrast<4.5)throw new Error(`selected-card text contrast is ${contrast.toFixed(2)}:1`);
+  });
+
+  await check("unreviewed accounts frame all mapped mentions without inventing solid routes", async () => {
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewport(viewport);
+      for (const [id, expectedCount] of [["baranek-martin", 7], ["adler-amek", 9]]) {
+        await page.goto(BASE + `/?source-frame=${viewport.width}#/survivor/${id}`, { waitUntil: "domcontentloaded", timeout: 40000 });
+        await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+        await page.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+        await wait(200);
+        const frame = await page.evaluate(() => {
+          const panel = document.querySelector(".panel").getBoundingClientRect();
+          const rail = document.querySelector(".rail").getBoundingClientRect();
+          const camera = document.querySelector(".camera").getScreenCTM();
+          const points = [...document.querySelectorAll(".account-place-marker")].map(marker => {
+            const point = new DOMPoint(marker.__data__.px, marker.__data__.py).matrixTransform(camera);
+            return { x: point.x, y: point.y };
+          });
+          return {
+            points, panel: { left: panel.left, top: panel.top }, railRight: rail.right,
+            review: document.querySelectorAll(".account-place-marker.map-reference--review").length,
+            summary: document.querySelector(".profile-route-status").textContent,
+            routes: document.querySelectorAll(".explore-route").length,
+          };
+        });
+        if (frame.points.length !== expectedCount || !frame.summary.startsWith(`${expectedCount} matched place mentions:`) ||
+            !frame.review || (id === "baranek-martin" && frame.routes)) {
+          throw new Error(`source references were hidden or promoted ${JSON.stringify({ id, frame })}`);
+        }
+        if (frame.points.some(point => viewport.width <= 820
+          ? point.y >= frame.panel.top - 4 || point.y <= 100
+          : point.x <= frame.railRight || point.x >= frame.panel.left)) {
+          throw new Error(`references are hidden behind the reader ${JSON.stringify({ id, viewport, points: frame.points })}`);
+        }
+        await page.click(".map-tools [data-act='show-explore-map']");
+        await wait(200);
+        const expanded = await page.evaluate(() => {
+          const camera = document.querySelector(".camera").getScreenCTM();
+          const points = [...document.querySelectorAll(".account-place-marker")].map(marker =>
+            new DOMPoint(marker.__data__.px, marker.__data__.py).matrixTransform(camera));
+          return { width: Math.max(...points.map(p => p.x)) - Math.min(...points.map(p => p.x)),
+            height: Math.max(...points.map(p => p.y)) - Math.min(...points.map(p => p.y)), mode: document.querySelector(".ov-explore").dataset.presentation };
+        });
+        if (expanded.mode !== "map" || Math.max(expanded.width, expanded.height) < 160) {
+          throw new Error(`the full source map is still unreadable ${JSON.stringify({ id, expanded })}`);
+        }
+      }
+    }
+  });
+  await check("collection clusters are keyboard reachable without thousands of rail tab stops", async () => {
+    await page.setViewport({ width: 1366, height: 850 });
+    await page.goto(BASE + "/?cluster-keyboard=1#/explore?limit=1176", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    const counts = await page.evaluate(() => ({
+      accounts: document.querySelectorAll(".rail-card").length,
+      tabStops: [...document.querySelectorAll(".rail-entry button")].filter(button => button.tabIndex === 0).length,
+      clusters: document.querySelectorAll(".place-cluster").length,
+      clusterStops: document.querySelectorAll(".place-cluster[tabindex='0']").length,
+      heading: !!document.querySelector(".ov-explore h1"),
+    }));
+    if (counts.accounts < 1000 || counts.tabStops > 2 || !counts.clusters || counts.clusters > 160 ||
+        counts.clusterStops !== 1 || !counts.heading) throw new Error(`keyboard navigation is not bounded ${JSON.stringify(counts)}`);
+    await page.$eval(".rail-card", card => card.focus());
+    const first = await page.evaluate(() => document.activeElement.dataset.survivor);
+    await page.keyboard.press("ArrowDown");
+    if (await page.evaluate(() => document.activeElement.dataset.survivor) === first) throw new Error("rail arrow navigation did not advance");
+    await page.click("[data-act='focus-map']");
+    const marker = await page.evaluate(() => ({ name: document.activeElement.getAttribute("aria-label"), key: document.activeElement.dataset.mapFocus }));
+    await page.keyboard.press("ArrowRight");
+    const next = await page.evaluate(() => ({
+      name: document.activeElement.getAttribute("aria-label"), key: document.activeElement.dataset.mapFocus,
+      announcement: document.getElementById("map-announcement").textContent,
+    }));
+    if (!marker.key || next.key === marker.key || !next.announcement) throw new Error(`map focus is not announced ${JSON.stringify({ marker, next })}`);
+    await page.keyboard.press("Enter");
+    const filtered = await page.evaluate(() => ({
+      name: document.querySelector("[data-place-filter-name]").textContent,
+      visible: !document.querySelector("[data-place-filter]").hidden,
+      count: document.querySelectorAll(".rail-card").length,
+    }));
+    if (!filtered.name || !filtered.visible || !filtered.count) throw new Error(`a map place did not open its accounts ${JSON.stringify(filtered)}`);
+  });
+  await check("collection count labels stay legible without dropping place controls", async () => {
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewport(viewport);
+      await page.goto(BASE + `/?map-counts=${viewport.width}#/explore`, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      const labelState = () => page.evaluate(() => {
+        const labels = [...document.querySelectorAll(".place-cluster-count")];
+        const rail = document.querySelector(".rail").getBoundingClientRect();
+        const visible = labels.filter(label => {
+          const box = label.getBoundingClientRect();
+          return getComputedStyle(label).display !== "none" && box.width > 0 &&
+            box.left >= (innerWidth > 820 ? rail.right : 0) && box.right <= innerWidth &&
+            box.top > 70 && box.bottom < (innerWidth > 820 ? innerHeight : rail.top);
+        });
+        const boxes = visible.map(label => label.getBoundingClientRect());
+        return {
+          markers: document.querySelectorAll(".place-cluster").length,
+          total: labels.length, visible: visible.length,
+          overlaps: boxes.some((a, index) => boxes.slice(index + 1).some(b =>
+            a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top)),
+        };
+      });
+      const initial = await labelState();
+      if (initial.markers < 100 || initial.visible < 3 || initial.visible >= initial.total || initial.overlaps) {
+        throw new Error(`overview counts are not decluttered ${JSON.stringify({ viewport, initial })}`);
+      }
+      await page.click(".map-tools [data-act='zoom-in']");
+      await page.click(".map-tools [data-act='zoom-in']");
+      const zoomed = await labelState();
+      if (zoomed.markers !== initial.markers || zoomed.overlaps) {
+        throw new Error(`zoom hid places or overlapped counts ${JSON.stringify({ viewport, zoomed })}`);
+      }
+    }
+  });
+  await check("public profile paths contain readable source text and share metadata without JavaScript", async () => {
+    const publicPage = await browser.newPage();
+    try {
+      await publicPage.setJavaScriptEnabled(false);
+      const response = await publicPage.goto(BASE + "/survivor/adler-amek", { waitUntil: "domcontentloaded", timeout: 40000 });
+      const source = await publicPage.evaluate(() => ({
+        heading: document.querySelector("#server-profile h1")?.textContent,
+        text: document.getElementById("server-profile")?.textContent,
+        og: document.querySelector("meta[property='og:title']")?.content,
+        image: document.querySelector("meta[property='og:image']")?.content,
+        canonical: document.querySelector("link[rel='canonical']")?.href,
+      }));
+      if (response.status() !== 200 || !source.heading?.includes("Amek Adler") ||
+          !source.text?.includes("Lublin") || !source.og?.includes("Amek Adler") ||
+          !source.image?.includes("/wp-content/uploads/") || !source.canonical?.endsWith("/survivor/adler-amek")) {
+        throw new Error(`the public profile is not source-readable ${JSON.stringify(source)}`);
+      }
+      const missing = await publicPage.goto(BASE + "/nonexistent-page", { waitUntil: "domcontentloaded" });
+      if (missing.status() !== 404 || (await publicPage.$eval("body", body => body.innerText.trim())).length < 80) {
+        throw new Error("the HTTP 404 is empty or has the wrong status");
+      }
+      await publicPage.setJavaScriptEnabled(true);
+      await publicPage.click("a[href='/#/explore']");
+      await publicPage.waitForSelector(".rail-card", { timeout: 15000 });
+      if (await publicPage.$("#missing-title")) throw new Error("the server recovery link opened an unsupported route");
+      await publicPage.goto(BASE + "/survivor/adler-amek", { waitUntil: "domcontentloaded" });
+      await publicPage.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      if (await publicPage.$("#server-profile")) throw new Error("the static fallback remained over the interactive reader");
+      if (await publicPage.$eval("#portrait-field", field => field.hasChildNodes())) {
+        throw new Error("opening an account needlessly created the landing portrait belts");
+      }
+      await publicPage.click(".nav-tab[data-view='explore']");
+      await publicPage.waitForSelector(".rail-card");
+      if (await publicPage.$(".panel")) throw new Error("a real profile path trapped navigation in the account");
+    } finally {
+      await publicPage.close();
+    }
+  });
+  await check("a valid server profile remains readable while the collection index catches up", async () => {
+    const context = await browser.createBrowserContext();
+    const lagPage = await context.newPage();
+    lagPage.on("pageerror", error => errors.push("profile index lag: " + error.message));
+    const index = await (await fetch(BASE + "/data/index.json")).json();
+    index.features = index.features.filter(feature => feature.properties.survivor_id !== "adler-amek");
+    let lagging = true;
+    await lagPage.setRequestInterception(true);
+    lagPage.on("request", request => request.url().includes("/data/index.json") && lagging
+      ? request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(index) })
+      : request.continue());
+    try {
+      await lagPage.goto(BASE + "/survivor/adler-amek", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await lagPage.waitForSelector("[data-server-profile-retry]:not([hidden])", { timeout: 15000 });
+      const readable = await lagPage.evaluate(() => ({
+        name: document.getElementById("server-profile-name")?.textContent,
+        status: document.querySelector("[data-server-profile-status]")?.textContent,
+        source: document.querySelector("#server-profile blockquote")?.textContent,
+        missing: !!document.getElementById("missing-title"),
+      }));
+      if (!readable.name?.includes("Amek Adler") || !readable.status?.includes("still updating") ||
+          !readable.source?.includes("Lublin") || readable.missing) {
+        throw new Error(`a lagging index hid a valid account ${JSON.stringify(readable)}`);
+      }
+      lagging = false;
+      await Promise.all([
+        lagPage.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 40000 }),
+        lagPage.click("[data-server-profile-retry]"),
+      ]);
+      await lagPage.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      if (await lagPage.$("#server-profile") || await lagPage.$eval("#profile-name", name => !name.textContent.includes("Amek Adler"))) {
+        throw new Error("the current index did not restore the interactive account");
+      }
+    } finally {
+      await context.close();
+    }
+  });
+  await check("late profile details preserve map focus, camera and reader controls", async () => {
+    const context = await browser.createBrowserContext();
+    const detailPage = await context.newPage();
+    detailPage.on("pageerror", error => errors.push("late profile: " + error.message));
+    let release;
+    const requested = new Promise(resolve => { release = resolve; });
+    await detailPage.setViewport({ width: 1366, height: 850 });
+    await detailPage.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+    await detailPage.setRequestInterception(true);
+    detailPage.on("request", request => request.url().includes("/data/profiles/")
+      ? release(request) : request.continue());
+    try {
+      await detailPage.goto(BASE + "/?late-profile=1#/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await detailPage.waitForSelector(".panel[data-profile-state='loading']", { timeout: 15000 });
+      const request = await Promise.race([requested, wait(15000).then(() => { throw new Error("profile details were never requested"); })]);
+      await detailPage.click(".account-save");
+      await detailPage.click("[data-act='toggle-account-reference']");
+      await detailPage.click(".map-tools [data-act='zoom-in']");
+      await detailPage.click("[data-act='focus-map']");
+      const before = await detailPage.evaluate(() => {
+        window.__retainedProfileNodes = [".panel-close", ".account-save", "#account-reference", ".rail-card.sel"]
+          .map(selector => [selector, document.querySelector(selector)]);
+        window.__retainedProfileFocus = document.activeElement;
+        return document.querySelector(".camera").getAttribute("transform");
+      });
+      await request.continue();
+      await detailPage.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      const retained = await detailPage.evaluate(() => ({
+        nodes: window.__retainedProfileNodes.every(([selector, node]) => document.querySelector(selector) === node),
+        focus: document.activeElement === window.__retainedProfileFocus,
+        camera: document.querySelector(".camera").getAttribute("transform"),
+        reference: !document.getElementById("account-reference").hidden,
+        saved: document.querySelector(".account-save").getAttribute("aria-pressed"),
+      }));
+      if (!retained.nodes || !retained.focus || retained.camera !== before || !retained.reference || retained.saved !== "true") {
+        throw new Error(`hydration interrupted the reader ${JSON.stringify(retained)}`);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+  await check("profile loading failures recover without a full-archive fallback", async () => {
+    const detailPage = await browser.newPage();
+    detailPage.on("pageerror", error => errors.push("profile retry: " + error.message));
+    await detailPage.setRequestInterception(true);
+    let fail = true, fullArchive = false, detailRequests = 0;
+    detailPage.on("request", request => {
+      if (request.url().includes("/data/survivors.geojson")) fullArchive = true;
+      if (request.url().includes("/data/profiles/")) {
+        detailRequests++;
+        if (fail) return request.respond({ status: 500, contentType: "application/json", body: "{}" });
+      }
+      request.continue();
+    });
+    try {
+      await detailPage.goto(BASE + "/?detail-recovery=1#/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await detailPage.waitForSelector(".panel[data-profile-state='error']", { timeout: 15000 });
+      if (!await detailPage.$(".account-place-marker") || fullArchive) throw new Error("detail failure discarded the map or fetched the entire archive");
+      fail = false;
+      await detailPage.click("[data-act='retry-profile']");
+      await detailPage.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      if (fullArchive || detailRequests !== 2 || !await detailPage.$(".profile-interviews")) {
+        throw new Error("detail retry did not load exactly the selected account");
+      }
+      if (!await detailPage.$eval(".panel", panel => panel.contains(document.activeElement))) {
+        throw new Error("retrying account details lost keyboard focus");
+      }
+    } finally {
+      await detailPage.close();
+    }
+  });
+  await check("history uses a neutral Germany label and both maps explain their symbols", async () => {
+    await page.setViewport({ width: 1366, height: 850 });
+    await page.goto(BASE + "/?neutral-symbol=1#/patterns/1944", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForFunction(() => document.documentElement.dataset.historicalBoundaries === "ready", { timeout: 15000 });
+    const neutral = await page.$eval("[data-neutral-identifier='true']", marker => ({
+      text: marker.textContent, image: !!marker.querySelector("image"),
+      label: marker.getAttribute("aria-label"),
+    }));
+    if (!neutral.text.includes("Germany") || neutral.image || !neutral.label.includes("not a historical flag")) {
+      throw new Error(`the sensitive symbol is still decorative ${JSON.stringify(neutral)}`);
+    }
+    if (!await page.$(".history-context-body .map-legend")) throw new Error("history has no map key");
+    await page.click(".nav-tab[data-view='explore']");
+    if (!await page.$(".explore-map-status .map-legend")) throw new Error("Explore has no map key");
+    await page.$eval("#search", input => { input.value = "aushwitz"; input.dispatchEvent(new Event("input", { bubbles: true })); });
+    await page.waitForSelector("[data-search-suggestion]");
+    await page.click("[data-search-suggestion='Auschwitz']");
+    if (!await page.$(".rail-card")) throw new Error("the suggested spelling did not return real accounts");
+  });
+
+  await check("review downloads preserve evidence without approving an account", async () => {
+    await page.goto(BASE + "/?review-download=1#/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+    await page.evaluate(() => {
+      const create = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = (blob) => { window.__reviewExport = blob; return create(blob); };
+      const click = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function () {
+        if (this.download.endsWith("-review-source.json")) { window.__reviewFilename = this.download; return; }
+        return click.call(this);
+      };
+    });
+    await page.click(".review-tools > summary");
+    await page.click("[data-act='download-review']");
+    const exported = await page.evaluate(async () => ({
+      file: window.__reviewFilename,
+      data: JSON.parse(await window.__reviewExport.text()),
+      pending: !!document.querySelector(".account-review-note"),
+    }));
+    const properties = exported.data.features?.[0]?.properties;
+    if (exported.file !== "adam-wally-review-source.json" || exported.data.type !== "FeatureCollection" ||
+        properties?.survivor_id !== "adam-wally" || !properties.profile_media ||
+        !properties.waypoints.some(place => place.source_quote) || !exported.pending ||
+        !exported.data.metadata.notice.includes("does not approve")) {
+      throw new Error("the review source export omitted evidence or implied approval");
+    }
+  });
+  await check("timeline speed can change without losing the chosen year", async () => {
+    await page.goto(BASE + "/?timeline-speed=1#/patterns/1944", { waitUntil: "domcontentloaded", timeout: 40000 });
+    await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+    await page.click(".history-settings > summary");
+    await page.select("[data-history-speed]", "4");
+    await page.keyboard.press("Escape");
+    await page.click("[data-act='play-history']");
+    await page.waitForFunction(() => Number(document.querySelector("[data-year-entry]").value) >= 1946, { timeout: 2200 });
+    await page.click("[data-act='play-history']");
+    const paused = await page.$eval("[data-year-entry]", input => input.value);
+    await wait(700);
+    if (await page.$eval("[data-year-entry]", input => input.value) !== paused ||
+        !await page.evaluate(() => location.hash.includes("speed=4"))) throw new Error("timeline speed lost its state or could not pause");
   });
 
   for (const transfer of dataTransfers.values()) {

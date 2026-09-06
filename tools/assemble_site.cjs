@@ -4,17 +4,14 @@
 const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const { buildArchiveAssets, priorArchives } = require("./build_archive_assets.cjs");
+const {
+  buildStaticRelease, prepareStaticRelease, captureStaticReleases, restorePublishedReleases,
+} = require("./build_static_release.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
 const OUT = path.join(ROOT, "public");
 
-// Build the compact basemap first (writes data/atlas-europe.json).
-execSync("node tools/build_atlas.cjs", { cwd: ROOT, stdio: "inherit" });
-
-// Whole directories copied verbatim.
-const DIRS = ["css", "js", "assets"];
-// Only the vendor libraries the runtime actually loads.
-const VENDOR = ["vendor/d3", "vendor/fonts", "vendor/gsap", "vendor/topojson"];
 // Individual files.
 const FILES = ["index.html", "embed.html"];
 // Only the JSON the front end fetches at runtime.
@@ -36,33 +33,48 @@ function copy(src, dest) {
   fs.cpSync(src, dest, { recursive: true });
 }
 
-rmrf(OUT);
-fs.mkdirSync(OUT, { recursive: true });
-
-for (const d of DIRS) {
-  const src = path.join(ROOT, d);
-  if (fs.existsSync(src)) copy(src, path.join(OUT, d));
-}
-for (const v of VENDOR) {
-  const src = path.join(ROOT, v);
-  if (fs.existsSync(src)) copy(src, path.join(OUT, v));
-}
-for (const f of FILES) {
-  const src = path.join(ROOT, f);
-  if (fs.existsSync(src)) copy(src, path.join(OUT, f));
-}
-for (const f of DATA) {
-  const src = path.join(ROOT, "data", f);
-  if (fs.existsSync(src)) copy(src, path.join(OUT, "data", f));
-}
-fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
-
-let count = 0;
-(function walk(p) {
-  for (const e of fs.readdirSync(p, { withFileTypes: true })) {
-    const full = path.join(p, e.name);
-    if (e.isDirectory()) walk(full);
-    else count++;
+async function assemble() {
+  const staticRelease = prepareStaticRelease(ROOT);
+  const published = process.argv.includes("--restore-published")
+    ? await restorePublishedReleases({ prepared: staticRelease }) : null;
+  const previousReleases = published ? published.releases : captureStaticReleases(OUT);
+  if (published) {
+    console.log(published.firstRelease ? "Verified first hashed release (published site is unversioned)."
+      : `Verified published release ${published.publishedHash}; retaining ${published.requiredHash || "the unchanged current tree"}.`);
   }
-})(OUT);
-console.log(`Assembled public/ with ${count} files.`);
+  // Fail required restoration before modifying local output or generated data.
+  execSync("node tools/build_atlas.cjs", { cwd: ROOT, stdio: "inherit" });
+  rmrf(OUT);
+  fs.mkdirSync(OUT, { recursive: true });
+  for (const f of FILES) {
+    const src = path.join(ROOT, f);
+    if (fs.existsSync(src)) copy(src, path.join(OUT, f));
+  }
+  for (const f of DATA) {
+    const src = path.join(ROOT, "data", f);
+    if (fs.existsSync(src)) copy(src, path.join(OUT, "data", f));
+  }
+  fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
+  const stats = await buildArchiveAssets({ root: ROOT, out: OUT, previousDocuments: priorArchives(ROOT) });
+  const release = await buildStaticRelease({
+    root: ROOT, out: OUT, prepared: staticRelease, previous: previousReleases,
+    requiredPreviousHash: published?.requiredHash || null,
+  });
+  let count = 0;
+  (function walk(p) {
+    for (const e of fs.readdirSync(p, { withFileTypes: true })) {
+      const full = path.join(p, e.name);
+      if (e.isDirectory()) walk(full);
+      else count++;
+    }
+  })(OUT);
+  console.log(`Assembled public/ with ${count} files.`);
+  console.log(`Compact archive: ${stats.profiles} profiles, ${stats.index_bytes} bytes / ${stats.index_gzip_bytes} gzip bytes.`);
+  console.log(`Complete profile data: ${stats.detail_bytes} bytes; ${stats.retained_details} preceding seed details retained.`);
+  console.log(`Static release ${release.hash}: ${release.retained_releases} retained tree(s), ${release.total_files} total files.`);
+}
+
+assemble().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

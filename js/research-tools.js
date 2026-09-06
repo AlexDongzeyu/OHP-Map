@@ -43,7 +43,8 @@ export function accountLink(journey, address) {
   if (!ACCOUNT_ID.test(journey.id)) throw new Error("The account identifier is invalid.");
   const url = new URL(address);
   url.search = "";
-  url.hash = `/survivor/${journey.id}`;
+  url.hash = "";
+  url.pathname = `/survivor/${journey.id}`;
   return url.href;
 }
 

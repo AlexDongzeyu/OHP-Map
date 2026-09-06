@@ -14,6 +14,13 @@ def _worker(code, payload=None):
       import { pathToFileURL } from 'node:url';
       const payload = JSON.parse(fs.readFileSync(0, 'utf8') || 'null');
       const mediaModule = await import('./worker/media.js');
+      const publicationModule = await import('./worker/publication.js');
+      const seedAssets = (doc) => ({fetch: async (request) => {
+        const pathname = new URL(request.url).pathname;
+        const value = pathname === '/data/catalog.json'
+          ? (await publicationModule.prepareArchive(doc, 'test-seed')).catalog : doc;
+        return new Response(JSON.stringify(value));
+      }});
       let source = fs.readFileSync('worker/sync.js', 'utf8')
         .replace('import gazetteer from "../data/gazetteer.json";',
           `const gazetteer = ${fs.readFileSync('data/gazetteer.json', 'utf8')};`)
@@ -21,7 +28,9 @@ def _worker(code, payload=None):
           `const geocodeCache = ${fs.readFileSync('data/geocode_cache.json', 'utf8')};`)
         .replace('import otherMediaPages from "../data/source/ohp_media_pages.json";',
           `const otherMediaPages = ${fs.readFileSync('data/source/ohp_media_pages.json', 'utf8')};`)
-        .replace('from "./media.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/media.js').href)}`);
+        .replace('from "./media.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/media.js').href)}`)
+        .replace('from "./publication.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/publication.js').href)}`)
+        .replace('from "./live-publication.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/live-publication.js').href)}`);
       source += '\nexport { extract, extractEvidence, deriveConflicts, extractSlugs, parseEntry, toFeature, mergeFeature, migrateCachedData, sanitizeCachedFeature, sourceSentence, sentenceExcerpt, repairSourceQuote };';
       const worker = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
     """
@@ -123,7 +132,7 @@ def test_idle_sync_preserves_live_media_and_only_supplements_matching_audits():
             ? (database.has(key) ? JSON.parse(database.get(key)) : null) : (database.get(key) || null),
           put: async (key, value) => database.set(key, value),
         },
-        ASSETS: {fetch: async () => new Response(JSON.stringify(seed))},
+        ASSETS: seedAssets(seed),
       };
       globalThis.fetch = async () => new Response('<a href="https://ohp.crestwood.on.ca/ohp/person/">A Person</a>');
       const status = await worker.syncSurvivors(env);
@@ -168,7 +177,7 @@ def test_invalid_source_preserves_backoff_for_new_and_refresh_profiles(existing)
             ? (database.has(key) ? JSON.parse(database.get(key)) : null) : (database.get(key) || null),
           put: async (key, value) => database.set(key, value),
         },
-        ASSETS: {fetch: async () => new Response(JSON.stringify(seed))},
+        ASSETS: seedAssets(seed),
       };
       let detailRequests = 0;
       globalThis.fetch = async (url) => {
@@ -367,12 +376,12 @@ def test_live_sync_includes_a_public_unplaced_profile_with_source_media():
           },
           put: async (key, value) => store.set(key, value),
         },
-        ASSETS: {fetch: async () => new Response(JSON.stringify({
+        ASSETS: seedAssets({
           type: 'FeatureCollection', metadata: {
             gazetteer_revision: worker.GAZETTEER_REVISION,
             content_revision: worker.CONTENT_REVISION,
           }, features: [],
-        }))},
+        }),
       };
       globalThis.fetch = async (url) => new Response(url.includes('/ohp-type/')
         ? '<a href="https://ohp.crestwood.on.ca/ohp/unplaced/">Public profile</a>'

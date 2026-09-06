@@ -114,10 +114,10 @@ export const FLAG_SOURCES = Object.freeze([
     "Flag of Germany (3-2).svg", GERMANY_HISTORY),
   diagram("de-federal", "germany-federal.svg", "German federal national/civil flag — black-red-gold, 3:5",
     "Flag of Germany.svg", GERMANY_LAW),
-  source("de-1935", "germany-1935.svg", "German national/merchant flag — 1935 Nazi design",
-    commons("Flag of Germany (1935–1945).svg"), "Public domain",
-    "German government; vector contributors credited on the Commons file page.",
-    "Commons declares the official flag public domain. Educational historical identification only; restrictions on Nazi insignia can apply independently of copyright."),
+  Object.freeze({...source("de-1935", "germany-1935.svg", "Germany, neutral territorial identifier for the Nazi period",
+    GERMANY_HISTORY, "CC0-1.0", "Crestwood OHP Map, original neutral identifier.",
+    "The displayed DE identifier is not a historical flag. The atlas does not reproduce Nazi insignia as a map ornament."),
+    publisher: "Crestwood OHP Map (neutral identifier); cited historical source"}),
   source("de-east", "germany-east-1959.svg", "GDR national flag — hammer, compass and wreath",
     commons("Flag of East Germany.svg"), "Public domain",
     "GDR official design; Jwnabd (SVG).",
@@ -222,8 +222,8 @@ export const FLAG_RECORDS = Object.freeze([
     "Germany — black-white-red co-national flag", "1933-03-12", "1935-09-15",
     "Restored alongside the Nazi flag in March 1933; this was not the sole national flag. The 1935 mid-year sample still falls in that co-national period."),
   record("germany-1935", [...GERMANY_REICH, "Nazi Germany"], "de-1935",
-    "Germany — Nazi national/merchant flag (1935 design)", "1935-09-15", "1945-05-08",
-    "Sole national flag from September 1935 until the regime's defeat in May 1945. Displayed solely for historical identification, not endorsement. No successor national flag is invented for Allied occupation."),
+    "Germany, neutral identifier for 1935 to 1945", "1935-09-15", "1945-05-08",
+    "A neutral DE identifier is shown instead of Nazi insignia. The source documents the national flag used from September 1935 until the regime's defeat in May 1945; that design is not reproduced here. No successor national flag is invented for Allied occupation."),
   record("germany-federal", GERMANY_FEDERAL, "de-federal",
     "Germany — federal national/civil flag (3:5)", "1949-05-23", null,
     "Article 22 of the Basic Law. Identifies the Federal Republic, including reunified Germany after 3 October 1990; not a claim that West Germany governed the GDR."),
@@ -306,7 +306,8 @@ export function flagFor(controllerName, year) {
       && instant < dateLimit(candidate.end, false));
   if (!entry) return null;
   const { src, label, start, end, sourceUrl, license, credit, note } = entry;
-  return { src, label, start, end, sourceUrl, license, credit, note };
+  return { src, label, start, end, sourceUrl, license, credit, note,
+    ...(entry.id === "germany-1935" ? { neutralIdentifier: true } : {}) };
 }
 
 const CONTEXT_RESOURCES = Object.freeze([

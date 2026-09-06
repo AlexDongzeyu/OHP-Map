@@ -17,11 +17,15 @@ const doc = {
 };
 const syncURL = `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const runnerSource = fs.readFileSync('worker/archive-sync.js','utf8')
-  .replace('from "./sync.js"', `from ${JSON.stringify(syncURL)}`);
+  .replace('from "./sync.js"', `from ${JSON.stringify(syncURL)}`)
+  .replace('from "./publication.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/publication.js').href)}`);
 const runnerURL = `data:text/javascript;base64,${Buffer.from(runnerSource).toString('base64')}`;
 const entrySource = fs.readFileSync('worker/index.js','utf8')
   .replace('from "./sync.js"', `from ${JSON.stringify(syncURL)}`)
-  .replace('from "./archive-sync.js"', `from ${JSON.stringify(runnerURL)}`);
+  .replace('from "./archive-sync.js"', `from ${JSON.stringify(runnerURL)}`)
+  .replace('from "./publication.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/publication.js').href)}`)
+  .replace('from "./profile-pages.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/profile-pages.js').href)}`)
+  .replace('from "./headers.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/headers.js').href)}`);
 const entry = (await import(`data:text/javascript;base64,${Buffer.from(entrySource).toString('base64')}`)).default;
 """
 
@@ -115,7 +119,8 @@ def test_publication_attaches_revision_metadata_without_duplicate_data_writes():
         current:worker.isCurrentPublication(published.options.metadata),
       }));
     """)
-    assert len(result["writes"]) == 1
+    assert len([write for write in result["writes"] if write["key"] == result["processingKey"]]) == 1
+    assert not any(write["key"] == result["publicKey"] for write in result["writes"])
     assert result["writes"][0]["key"] == result["processingKey"]
     assert result["current"]
 

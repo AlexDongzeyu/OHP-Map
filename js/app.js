@@ -24,6 +24,7 @@ const state = {
   query: "",
   groupFilter: new Set(),        // populated from the data (all on by default)
   originCountry: null,
+  placeFilter: null,
   savedIds: new Set(),
   savedOnly: false,
   savedError: "",
@@ -46,6 +47,7 @@ const state = {
   historyOpacity: 1,
   historySplit: 50,
   historyPlaying: false,
+  historySpeed: 1,
   historyContextOpen: null,
   historyPlacesOpen: false,
   pendingHistoryCamera: null,
@@ -59,23 +61,33 @@ async function main() {
   const loadingEl = document.getElementById("loading");
   const errorEl = document.getElementById("error");
   const fatalEl = document.getElementById("fatal");
+  const serverProfile = document.getElementById("server-profile");
+  const serverId = serverProfile?.dataset.survivorId;
+  const openingServerProfile = serverId && currentFragment().split("?")[0] === `#/survivor/${serverId}`;
 
   try {
-    store = await loadData({ onRetry: () => {
+    store = await loadData({ compact: true, onRetry: () => {
       loadingEl.querySelector(".loading-status").textContent = "Reconnecting to the archive";
     } });
   }
   catch (err) {
     loadingEl.hidden = true; fatalEl.hidden = false;
+    if (openingServerProfile) showServerProfileRetry(serverProfile,
+      "The interactive collection could not load. This account is still available below; you can retry the map or read the original source.");
     console.error(err); return;
+  }
+  if (openingServerProfile && !store.byId.has(serverId)) {
+    loadingEl.hidden = true;
+    showServerProfileRetry(serverProfile,
+      "This account is available, but the interactive collection is still updating. Read its source summary below or try the interactive view again shortly.");
+    console.warn("The server-validated account is not yet available in this collection index.");
+    return;
   }
   loadingEl.querySelector(".loading-status").textContent = "Opening the map";
   loadSavedList();
 
   state.patternEventKey = null;
   store.groups.forEach((g) => state.groupFilter.add(g.name));
-  document.getElementById("portrait-field").innerHTML = ui.livingMosaic(store);
-
   atlas = createAtlas(document.getElementById("map"));
   atlas.setStore(store);
   atlas.setTooltipEl(document.getElementById("tip"));
@@ -92,7 +104,12 @@ async function main() {
   };
 
   try { await atlas.ready; }
-  catch (err) { loadingEl.hidden = true; errorEl.hidden = false; console.error(err); return; }
+  catch (err) {
+    loadingEl.hidden = true; errorEl.hidden = false;
+    if (openingServerProfile) showServerProfileRetry(serverProfile,
+      "The interactive map could not load. This account is still available below; you can retry the map or read the original source.");
+    console.error(err); return;
+  }
   document.getElementById("topbar").hidden = false;
   motion.init();
 
@@ -113,8 +130,16 @@ async function main() {
   wireGlobal();
   window.addEventListener("hashchange", route);
   route();
+  document.getElementById("server-profile")?.remove();
   motion.animateShell();
   dismissLoading(loadingEl);
+}
+
+function showServerProfileRetry(profile, message) {
+  profile.querySelector("[data-server-profile-status]").textContent = message;
+  const retry = profile.querySelector("[data-server-profile-retry]");
+  retry.hidden = false;
+  retry.onclick = () => location.reload();
 }
 
 function dismissLoading(element) {
@@ -157,6 +182,8 @@ function atlasCtx() {
     onEvent: (key) => setPatternEvent(key),
     onController: (name) => selectCountry(name),
     onOrigin: (name) => openOrigin(name),
+    onPlaceCluster: (canonical) => filterPlace(canonical),
+    onMapFocus: (text) => { document.getElementById("map-announcement").textContent = text; },
     historyCountry: state.historyCountry,
     historyFlags: state.historyFlags,
     historyLabels: state.historyLabels,
@@ -187,6 +214,10 @@ function render(preserveBrowse = false) {
     else b.removeAttribute("aria-current");
   });
   document.body.dataset.view = v;
+  if (v === "landing" && !document.getElementById("portrait-field").hasChildNodes()) {
+    document.getElementById("portrait-field").innerHTML = ui.livingMosaic(store);
+  }
+  document.querySelector(".skip-map").hidden = !["explore", "patterns"].includes(v);
   updateDocumentTitle();
   mountOverlay();
   syncPresentation();
@@ -221,10 +252,88 @@ function afterExplore() {
   if (state.selectedId) {
     const miniEl = document.querySelector("[data-mini]");
     if (miniEl) atlas.drawMini(miniEl, store.byId.get(state.selectedId));
+    void loadSelectedProfile(state.selectedId);
   }
 }
 
+async function loadSelectedProfile(id, retry = false) {
+  const journey = store.byId.get(id);
+  if (!journey || journey.detailState === "ready" || journey.detailState === "loading" ||
+      (journey.detailState === "error" && !retry)) return;
+  try {
+    const request = store.loadProfile(id);
+    if (retry) refreshProfilePanel(journey);
+    else document.querySelector(".panel").dataset.profileState = journey.detailState;
+    await request;
+    atlas.refreshJourney(journey);
+  } catch (error) {
+    journey.detailState = "error";
+    journey.detailError = error.message;
+    console.error("The selected account details could not load:", error);
+  }
+  if (state.view !== "explore" || state.selectedId !== id) return;
+  refreshProfilePanel(journey);
+}
+
+function refreshProfilePanel(journey) {
+  const panel = document.querySelector(".panel");
+  const template = document.createElement("template");
+  template.innerHTML = ui.panel(store, state);
+  const fresh = template.content.querySelector(".panel");
+  const focused = document.activeElement;
+  const content = panel.querySelector(".profile-content");
+  const contentFocused = content.contains(focused);
+  const attribute = contentFocused && ["id", "data-place-step", "data-act"]
+    .find((name) => focused.hasAttribute(name));
+  const selector = attribute ? `[${attribute}="${CSS.escape(focused.getAttribute(attribute))}"]` : "#profile-name";
+  const scroll = panel.scrollTop;
+
+  // Keep navigation, saved tools, rail and map nodes stable during a detail fetch.
+  const nextContent = fresh.querySelector(".profile-content");
+  content.replaceWith(nextContent);
+  panel.dataset.profileState = journey.detailState;
+  panel.setAttribute("aria-busy", fresh.getAttribute("aria-busy"));
+  panel.querySelector(".profile-route-status").textContent = fresh.querySelector(".profile-route-status").textContent;
+  const nav = panel.querySelector(".profile-nav");
+  for (const button of fresh.querySelectorAll("[data-profile-section]")) {
+    if (nav.querySelector(`[data-profile-section="${button.dataset.profileSection}"]`)) continue;
+    const following = [...button.parentElement.children].slice([...button.parentElement.children].indexOf(button) + 1)
+      .map(item => nav.querySelector(`[data-profile-section="${item.dataset.profileSection}"]`)).find(Boolean);
+    nav.insertBefore(button, following || null);
+  }
+  const interview = fresh.querySelector(".interview-action");
+  if (interview && !panel.querySelector(".interview-action")) panel.querySelector(".profile-actions").prepend(interview);
+  wireImages(nextContent);
+  atlas.refreshJourney(journey, { miniEl: panel.querySelector("[data-mini]") });
+  panel.scrollTop = scroll;
+  if (contentFocused) (panel.querySelector(selector) || panel.querySelector("#profile-story")).focus({ preventScroll: true });
+}
+
+function filterPlace(canonical) {
+  state.placeFilter = canonical;
+  state.selectedId = null;
+  state.activePlaceIndex = null;
+  state.railLimit = RAIL_PAGE;
+  state.explorePresentation = "auto";
+  setHash(exploreHash());
+  render(true);
+  document.getElementById("search").focus({ preventScroll: true });
+}
+
+function focusMap() {
+  if (state.view === "explore" && explorePresentation() === "reader") setExplorePresentation("map");
+  const context = document.querySelector("[data-history-context]");
+  if (state.view === "patterns" && SHORT_VIEWPORT.matches && context?.open) {
+    context.open = false;
+    state.historyContextOpen = false;
+    syncPresentation();
+    atlas.resize();
+  }
+  atlas.focusMap();
+}
+
 function explorePresentation() {
+  if (state.explorePresentation === "map") return "map";
   if (!MOBILE.matches) return "split";
   return state.explorePresentation === "auto"
     ? (SHORT_VIEWPORT.matches ? "reader" : "split") : state.explorePresentation;
@@ -291,6 +400,7 @@ function selectSurvivor(id, keepPresentation = false) {
   if (state.view !== "explore") {
     state.query = "";
     state.originCountry = null;
+    state.placeFilter = null;
     state.groupFilter = new Set(store.groups.map((group) => group.name));
     state.railLimit = RAIL_PAGE;
     state.savedOnly = false;
@@ -379,6 +489,7 @@ function toggleSavedView() {
   state.savedOnly = !state.savedOnly;
   state.query = "";
   state.originCountry = null;
+  state.placeFilter = null;
   state.groupFilter = new Set(store.groups.map((group) => group.name));
   state.railLimit = RAIL_PAGE;
   document.querySelector(".collection-filters").open = false;
@@ -435,6 +546,7 @@ function resetSearch() {
   if (state.savedOnly && !store.journeys.some((journey) => state.savedIds.has(journey.id))) state.savedOnly = false;
   state.query = "";
   state.originCountry = null;
+  state.placeFilter = null;
   state.groupFilter = new Set(store.groups.map((group) => group.name));
   state.railLimit = RAIL_PAGE;
   document.querySelector(".collection-filters").open = false;
@@ -453,9 +565,11 @@ function refreshCollection() {
   document.querySelector("[data-group-count]").textContent = state.groupFilter.size === store.groups.length
     ? "All" : `${state.groupFilter.size} selected`;
   document.querySelector(".filter-reset").hidden = !state.query && !state.originCountry &&
-    state.groupFilter.size === store.groups.length;
+    !state.placeFilter && state.groupFilter.size === store.groups.length;
   document.querySelector("[data-origin-filter]").hidden = !state.originCountry;
   document.querySelector("[data-origin-name]").textContent = state.originCountry || "";
+  document.querySelector("[data-place-filter]").hidden = !state.placeFilter;
+  document.querySelector("[data-place-filter-name]").textContent = state.placeFilter || "";
   refreshResearchTools();
   atlas.render("explore", atlasCtx());
   updateBoundaryNotice();
@@ -470,6 +584,7 @@ function collectionAddress(prefix) {
       .map((group) => slug(group.name)).join(","));
   }
   if (state.originCountry) params.set("origin", state.originCountry);
+  if (state.placeFilter) params.set("place", state.placeFilter);
   if (state.savedOnly) params.set("saved", "1");
   if (state.railLimit > RAIL_PAGE) params.set("limit", Math.min(state.railLimit, store.journeys.length));
   const query = params.toString();
@@ -498,6 +613,7 @@ function restoreCollectionAddress(params) {
   state.query = (params.get("q") || "").trim();
   state.groupFilter = new Set(requested.map((group) => groups.get(group)));
   state.originCountry = (params.get("origin") || "").trim() || null;
+  state.placeFilter = (params.get("place") || "").trim() || null;
   state.savedOnly = params.get("saved") === "1";
   state.railLimit = Math.max(RAIL_PAGE, Math.min(limit, store.journeys.length));
   return true;
@@ -510,6 +626,7 @@ function openOrigin(name) {
   }
   stopHistoryPlayback();
   state.originCountry = name;
+  state.placeFilter = null;
   state.savedOnly = false;
   state.query = "";
   state.groupFilter = new Set(store.groups.map((group) => group.name));
@@ -634,6 +751,39 @@ function refreshRail(resetScroll = false) {
     if (resetScroll) list.scrollTop = 0;
   }
   if (cnt) cnt.textContent = `${shown} of ${total} shown`;
+  const hint = document.querySelector("[data-explore-hint]");
+  if (hint) hint.textContent = total ? "Choose an account or a place marker to explore its source references."
+    : "No accounts match these filters. Reset the filters or try a different spelling.";
+  wireRail();
+}
+
+function wireRail() {
+  const list = document.querySelector("[data-rail-list]");
+  if (!list) return;
+  const activate = (card) => {
+    for (const entry of list.querySelectorAll(".rail-entry")) {
+      const active = entry.querySelector(".rail-card") === card;
+      entry.querySelectorAll("button").forEach((button) => { button.tabIndex = active ? 0 : -1; });
+    }
+  };
+  activate(list.querySelector(".rail-card.sel") || list.querySelector(".rail-card"));
+  list.onfocusin = (event) => {
+    const entry = event.target.closest(".rail-entry");
+    if (entry) activate(entry.querySelector(".rail-card"));
+  };
+  list.onkeydown = (event) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || event.ctrlKey || event.altKey || event.metaKey) return;
+    const entry = event.target.closest(".rail-entry");
+    if (!entry) return;
+    const cards = [...list.querySelectorAll(".rail-card")];
+    const index = cards.indexOf(entry.querySelector(".rail-card"));
+    const next = event.key === "Home" ? 0 : event.key === "End" ? cards.length - 1
+      : Math.max(0, Math.min(cards.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
+    event.preventDefault();
+    activate(cards[next]);
+    cards[next].focus({ preventScroll: true });
+    cards[next].scrollIntoView({ block: "nearest" });
+  };
 }
 
 function setLayer(layer) {
@@ -960,6 +1110,7 @@ function historyHash(includeCamera = false) {
   if (state.historyCompare) params.set("compare", "1");
   if (state.historyOpacity !== 1) params.set("opacity", state.historyOpacity);
   if (state.historySplit !== 50) params.set("split", state.historySplit);
+  if (state.historySpeed !== 1) params.set("speed", state.historySpeed);
   const camera = includeCamera ? atlas.cameraPosition() : null;
   if (camera) {
     params.set("lng", camera.lng.toFixed(4));
@@ -1046,7 +1197,7 @@ function toggleHistoryPlayback() {
       return;
     }
     setScrub(state.scrubYear + 1);
-  }, 1200);
+  }, 1200 / state.historySpeed);
 }
 
 async function shareMap() {
@@ -1099,6 +1250,33 @@ async function copyAccountReference(kind) {
   }
 }
 
+function downloadReviewSource() {
+  const journey = store.byId.get(state.selectedId);
+  if (journey?.detailState !== "ready") {
+    console.warn("Load the account details before downloading its review source.");
+    return;
+  }
+  const sourcePackage = {
+    type: "FeatureCollection",
+    metadata: {
+      source: "Crestwood Oral History Project",
+      content_revision: store.meta.content_revision,
+      exported_at: new Date().toISOString(),
+      notice: "Source material for human review. Downloading this file does not approve or verify a claim.",
+    },
+    features: [{ type: "Feature", geometry: null, properties: journey.sourceProperties }],
+  };
+  const blob = new Blob([JSON.stringify(sourcePackage, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${journey.id}-review-source.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function closeShare(restoreFocus = true) {
   document.getElementById("share-feedback").hidden = true;
   document.querySelector("[data-share-address]").hidden = true;
@@ -1133,6 +1311,10 @@ function wireGlobal() {
     event.preventDefault();
     focusMainContent();
   });
+  document.querySelector(".skip-map").addEventListener("click", (event) => {
+    event.preventDefault();
+    focusMap();
+  });
   document.addEventListener("pointerdown", (event) => {
     if (document.querySelector(".share-feedback:not([hidden])") &&
         !event.target.closest(".share-feedback,[data-act='share-map']")) closeShare(false);
@@ -1152,6 +1334,7 @@ function wireGlobal() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       const settings = document.querySelector(".history-settings[open]");
+      const legend = document.querySelector(".map-legend[open]");
       if (state.view === "patterns" && state.historyMatches.length) {
         state.historyMatches = [];
         state.historySearchMessage = "Location suggestions closed.";
@@ -1160,6 +1343,9 @@ function wireGlobal() {
       } else if (settings) {
         settings.open = false;
         settings.querySelector("summary").focus();
+      } else if (legend) {
+        legend.open = false;
+        legend.querySelector("summary").focus();
       } else if (document.querySelector(".share-feedback:not([hidden])")) {
         closeShare();
       } else if (state.view === "patterns" && SHORT_VIEWPORT.matches && document.querySelector("[data-history-context]")?.open) {
@@ -1192,15 +1378,8 @@ function focusMainContent() {
 function wireOverlay() {
   const host = document.getElementById("overlay");
   host.onclick = onActivate;
-  host.querySelectorAll(".medal img").forEach((image) => {
-    image.addEventListener("error", () => image.remove(), { once: true });
-  });
-  host.querySelectorAll(".profile-photo img").forEach((image) => {
-    image.addEventListener("error", () => {
-      image.parentElement.textContent = "This photograph could not load. Open the source image.";
-      console.warn("An OHP gallery photograph could not load.");
-    }, { once: true });
-  });
+  wireRail();
+  wireImages(host);
   const range = host.querySelector("[data-scrub]");
   if (range) range.addEventListener("input", () => setScrub(parseInt(range.value, 10)));
   const yearForm = host.querySelector("[data-year-form]");
@@ -1253,6 +1432,18 @@ function wireOverlay() {
     state.historySplit = Number(event.target.value);
     updateHistoryDisplay();
   });
+  host.querySelector("[data-history-speed]")?.addEventListener("change", (event) => {
+    const speed = Number(event.target.value);
+    if (![1, 2, 4].includes(speed)) {
+      console.warn("The timeline speed is not supported.");
+      return;
+    }
+    const playing = state.historyPlaying;
+    stopHistoryPlayback();
+    state.historySpeed = speed;
+    if (playing) toggleHistoryPlayback();
+    syncHistoryAddress();
+  });
   const search = host.querySelector("#search");
   if (search) {
     search.addEventListener("input", () => onSearch(search.value));
@@ -1262,14 +1453,29 @@ function wireOverlay() {
     input.addEventListener("change", () => toggleGroup(input.dataset.group, input.checked));
   });
 }
+function wireImages(host) {
+  host.querySelectorAll(".medal img").forEach((image) => {
+    image.addEventListener("error", () => image.remove(), { once: true });
+  });
+  host.querySelectorAll(".profile-photo img").forEach((image) => {
+    image.addEventListener("error", () => {
+      image.parentElement.textContent = "This photograph could not load. Open the source image.";
+      console.warn("An OHP gallery photograph could not load.");
+    }, { once: true });
+  });
+}
 function onActivate(e) {
-  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match],[data-save-id],[data-copy-account]");
+  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match],[data-save-id],[data-copy-account],[data-search-suggestion]");
   if (!t || !e.currentTarget.contains(t)) return;
   if (t.dataset.view) return go(t.dataset.view);
   if (t.dataset.layer) return setLayer(t.dataset.layer);
   if (t.dataset.survivor != null) return selectSurvivor(t.dataset.survivor);
   if (t.dataset.saveId) return toggleSavedAccount(t.dataset.saveId);
   if (t.dataset.copyAccount) return copyAccountReference(t.dataset.copyAccount);
+  if (t.dataset.searchSuggestion) {
+    onSearch(t.dataset.searchSuggestion);
+    return document.getElementById("search").focus({ preventScroll: true });
+  }
   if (t.dataset.profileSection) return scrollProfileTo(document.getElementById(t.dataset.profileSection));
   if (t.dataset.origin) return openOrigin(t.dataset.origin);
   if (t.dataset.historyMatch != null) {
@@ -1288,6 +1494,15 @@ function onActivate(e) {
     case "clear": return clearSel();
     case "more": return showMore();
     case "reset-search": return resetSearch();
+    case "clear-place-filter":
+      state.placeFilter = null;
+      refreshCollection();
+      return document.getElementById("search").focus({ preventScroll: true });
+    case "focus-map": return focusMap();
+    case "focus-reader": return document.getElementById("profile-name")?.focus({ preventScroll: true });
+    case "retry-profile": return loadSelectedProfile(state.selectedId, true);
+    case "reload-collection": return location.reload();
+    case "download-review": return downloadReviewSource();
     case "toggle-saved-view": return toggleSavedView();
     case "reset-saved-list": return resetSavedList();
     case "toggle-account-reference": return toggleAccountReference();
@@ -1330,7 +1545,22 @@ function onActivate(e) {
 
 // ---- routing -----------------------------------------------------------------
 let programmatic = false;
-function setHash(h) { programmatic = true; if (location.hash !== h) location.hash = h; else programmatic = false; }
+function pathProfileId() {
+  return /^\/survivor\/([a-z0-9_-]+)\/?$/.exec(location.pathname)?.[1] || null;
+}
+function currentFragment() {
+  if (location.hash) return location.hash;
+  const id = pathProfileId();
+  return id ? `#/survivor/${id}${location.search}` : "";
+}
+function setHash(h) {
+  if (pathProfileId()) {
+    history.replaceState(history.state, "", `/${location.search}${currentFragment()}`);
+  }
+  programmatic = true;
+  if (location.hash !== h) location.hash = h;
+  else programmatic = false;
+}
 function showMissing(kind) {
   state.missingKind = kind;
   state.view = "not-found";
@@ -1341,7 +1571,7 @@ function showMissing(kind) {
 function route() {
   if (programmatic) { programmatic = false; return; }
   stopHistoryPlayback();
-  const fragment = location.hash || "";
+  const fragment = currentFragment();
   const separator = fragment.indexOf("?");
   const hash = separator < 0 ? fragment : fragment.slice(0, separator);
   const query = separator < 0 ? "" : fragment.slice(separator + 1);
@@ -1398,6 +1628,9 @@ function route() {
     state.historyRoutes = params.get("routes") !== "0";
     state.historyTestimony = params.get("testimony") !== "0";
     state.historyCompare = params.get("compare") === "1";
+    const speed = Number(params.get("speed") || 1);
+    if (![1, 2, 4].includes(speed)) return showMissing("page");
+    state.historySpeed = speed;
     const opacity = Number(params.get("opacity") || 1), split = Number(params.get("split") ?? 50);
     state.historyOpacity = Number.isFinite(opacity) ? Math.max(.2, Math.min(1, opacity)) : 1;
     state.historySplit = Number.isFinite(split) ? Math.max(0, Math.min(100, split)) : 50;

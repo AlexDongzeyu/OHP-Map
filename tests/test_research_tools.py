@@ -72,7 +72,7 @@ console.log(JSON.stringify({
   citation:accountCitation(account,new Date(2026,8,6,12)),
 }));
 """)
-    assert data["link"] == "https://example.test/map/#/survivor/adam-wally"
+    assert data["link"] == "https://example.test/survivor/adam-wally"
     assert data["citation"] == (
         'Crestwood Oral History Project. "Wally Adam." '
         'https://ohp.crestwood.on.ca/ohp/adam-wally/ Accessed September 6, 2026.'

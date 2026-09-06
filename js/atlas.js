@@ -10,7 +10,7 @@
 // The 2D map is the canonical product; the globe is a calm overview with a graceful
 // reduced-motion fallback. People are coloured quietly by archive group — equal, never
 // a hierarchy (doc 13 §4.3).
-import { C, GROUP_COLOR, motionEnabled, normalizeSearch } from "./config.js";
+import { C, GROUP_COLOR, motionEnabled, normalizeSearch, siteResource } from "./config.js";
 import { flagFor } from "./historical-context.js";
 import { alignmentKey, datedTerritories } from "./historical-identity.js";
 
@@ -24,6 +24,8 @@ export function createAtlas(container) {
   let size = { w: 0, h: 0 }, currentK = 1;
   let mapFrame = null;
   let selectedJourney = null;
+  let selectedPlaceKey = null, activeClusterKey = null, collectionExtentKey = null;
+  let mapContext = null;
   let selectedPatternEvent = null;
   let cameraTarget = null;
   let store = null, tipEl = null, zoom = null;
@@ -39,23 +41,31 @@ export function createAtlas(container) {
   let historyDisplay = { compare: false, split: 50, opacity: 1 };
   let flagsVisible = true, labelsVisible = true;
   let visibleTerritories = [];
+  let historicalPlacements = [];
   let uncertainTerritoryIds = new Set();
   const api = {};
 
   api.ready = (async function init() {
-    world = await fetch("data/atlas-world.json", { cache: "force-cache" }).then((r) => r.json());
+    world = await fetch(siteResource("data/atlas-world.json"), { cache: "force-cache" }).then((r) => {
+      if (!r.ok) throw new Error(`World map failed to load: ${r.status}`);
+      return r.json();
+    });
     build();
     layout();
     return api;
   })();
 
-  api.setStore = (s) => { store = s; buildGlobeRoutePool(); };
+  api.setStore = (s) => { store = s; if (projection) projectAll(); buildGlobeRoutePool(); };
   api.setTooltipEl = (el) => { tipEl = el; };
 
   function build() {
     container.innerHTML = "";
+    if (!container.getAttribute("role") || container.getAttribute("role") === "img") container.setAttribute("role", "region");
+    if (!container.getAttribute("aria-label")) container.setAttribute("aria-label", "Map of source place references");
     svg = d3.select(container).append("svg")
-      .attr("width", "100%").attr("height", "100%").style("display", "block");
+      .attr("width", "100%").attr("height", "100%").style("display", "block")
+      .attr("role", "group").attr("tabindex", -1)
+      .attr("aria-label", "Map of source place references");
     const occupiedPattern = svg.append("defs").append("pattern")
       .attr("id", "war-occupied")
       .attr("width", 7).attr("height", 7)
@@ -75,7 +85,8 @@ export function createAtlas(container) {
     historicalLabelsG = camera.append("g").attr("class", "historical-labels")
       .style("display", "none").style("pointer-events", "none");
     historicalFlagsG = camera.append("g").attr("class", "historical-flags").style("display", "none");
-    overlayG = camera.append("g");
+    overlayG = camera.append("g").attr("class", "map-references");
+    bindReferenceControls();
 
     const interruptCamera = () => svg.interrupt().interrupt("camera");
     zoom = d3.zoom().scaleExtent([1, 14])
@@ -96,7 +107,14 @@ export function createAtlas(container) {
       .on("dblclick.zoom", null)
       .on("wheel.camera-interrupt", interruptCamera, { capture: true, passive: true })
       .on("pointerdown.camera-interrupt", interruptCamera, { capture: true })
-      .on("wheel", (e) => e.preventDefault());
+      .on("wheel", (e) => e.preventDefault())
+      .on("focusin.map", (event) => {
+        const marker = event.target.closest("[data-map-focus]");
+        if (marker) focusReference(marker);
+      })
+      .on("focusout.map", (event) => {
+        if (!event.relatedTarget?.closest?.("[data-map-focus]")) hideTip();
+      });
   }
 
   function rescale() {
@@ -107,7 +125,10 @@ export function createAtlas(container) {
     });
     historicalFlagsG.selectAll(".historical-flag")
       .attr("transform", (datum) => `translate(${datum.x},${datum.y}) scale(${1 / currentK})`);
+    layoutCollectionReferences();
     applyHistoryDisplay();
+    const focused = container.contains(document.activeElement) && document.activeElement.closest("[data-map-focus]");
+    if (focused && tipEl?.style.opacity === "1") showReferenceTip(focused);
   }
 
   function applyHistoryDisplay() {
@@ -137,6 +158,10 @@ export function createAtlas(container) {
       opacity: Math.max(.2, Math.min(1, settings.opacity)),
     };
     applyHistoryDisplay();
+    if (view === "patterns" && currentBoundaryYear != null && historicalFeatures) {
+      const flagged = renderHistoricalFlags(visibleTerritories, currentBoundaryYear);
+      renderHistoricalLabels(visibleTerritories, flagged);
+    }
   };
   api.historyLoaded = () => Boolean(historicalFeatures);
   api.historyState = () => historicalStatus;
@@ -305,8 +330,16 @@ export function createAtlas(container) {
     const frame = availableMapFrame();
     if (redraw && projection && sameSize && mapFrame && frame.every((value, index) => value === mapFrame[index])) return false;
     mapFrame = frame;
-    projection = d3.geoEqualEarth().fitExtent([[mapFrame[0], mapFrame[1]], [mapFrame[2], mapFrame[3]]],
-      { type: "Sphere" });
+    projection = d3.geoEqualEarth().scale(1).translate([0, 0]);
+    const [[west], [east]] = d3.geoPath(projection).bounds({ type: "Sphere" });
+    const north = projection([0, 90])[1], south = projection([0, -60])[1];
+    const scale = Math.min((mapFrame[2] - mapFrame[0]) / (east - west), (mapFrame[3] - mapFrame[1]) / (south - north));
+    const x = (mapFrame[0] + mapFrame[2] - scale * (west + east)) / 2;
+    const y = (mapFrame[1] + mapFrame[3] - scale * (north + south)) / 2;
+    // Equal Earth's parallels are horizontal. Clip only streamed display geometry;
+    // source features, IDs and point coordinates (including southern references) stay intact.
+    projection.scale(scale).translate([x, y])
+      .clipExtent([[x + scale * west - 1, y + scale * north - 1], [x + scale * east + 1, y + scale * south]]);
     path = d3.geoPath(projection);
 
     const land = countriesG.selectAll("path").data(world.features);
@@ -344,11 +377,45 @@ export function createAtlas(container) {
   }
 
   function projectAll() {
-    for (const j of store.journeys)
-      for (const w of j.waypoints) {
-        const p = projection([w.lng, w.lat]);
-        w.px = p ? p[0] : null; w.py = p ? p[1] : null;
-      }
+    for (const journey of store.journeys) projectJourney(journey);
+  }
+
+  function projectJourney(journey) {
+    const places = new Set([
+      ...(journey.waypoints || []), ...(journey.contextualPlaces || []),
+      ...(journey.routeWaypoints || []), journey.routeStart, journey.birthplace,
+    ]);
+    for (const point of places) {
+      if (!point) continue;
+      const projected = hasCoordinates(point) ? projection([point.lng, point.lat]) : null;
+      point.px = projected?.every(Number.isFinite) ? projected[0] : null;
+      point.py = projected?.every(Number.isFinite) ? projected[1] : null;
+    }
+  }
+
+  // Hydration can replace every place object. Project it without rendering or
+  // moving the camera; optionally refresh a supplied mini-map SVG as well.
+  api.refreshJourney = (journey, { miniEl } = {}) => {
+    if (!journey || !projection) return false;
+    projectJourney(journey);
+    if (miniEl) api.drawMini(miniEl, journey);
+    return true;
+  };
+
+  function hasCoordinates(point) {
+    return Number.isFinite(point.lng) && Number.isFinite(point.lat);
+  }
+  function hasMapPoint(point) {
+    return hasCoordinates(point) && Number.isFinite(point.px) && Number.isFinite(point.py);
+  }
+  function personalPrecise(point) {
+    return (point.evidenceScope === "personal" || point.verified) && ["city", "site"].includes(point.locationPrecision);
+  }
+  function mappedPoints(journey) {
+    return (journey.waypoints || []).filter(hasMapPoint);
+  }
+  function routePoints(journey) {
+    return (journey.routeWaypoints || []).filter((point) => hasMapPoint(point) && personalPrecise(point));
   }
 
   function legPath(a, b) {
@@ -393,6 +460,7 @@ export function createAtlas(container) {
 
   // ---- draw primitives -------------------------------------------------------
   function clearOverlay() {
+    hideTip();
     overlayG.selectAll("*").interrupt().remove();
   }
   function dot(g, x, y, o = {}) {
@@ -420,7 +488,7 @@ export function createAtlas(container) {
   }
   function label(g, x, y, text, o = {}) {
     const fs = o.fs || 11, dy = o.dy || 0;
-    g.append("text").attr("x", x).attr("data-y0", y).attr("data-dy", dy).attr("y", y - dy / currentK)
+    return g.append("text").attr("x", x).attr("data-y0", y).attr("data-dy", dy).attr("y", y - dy / currentK)
       .attr("text-anchor", "middle").attr("data-fs", fs).attr("font-size", `${fs / currentK}px`)
       .attr("font-family", "'Public Sans',sans-serif").attr("font-weight", o.weight || 600)
       .attr("letter-spacing", o.ls || "0").attr("fill", o.fill || C.anchorInk)
@@ -446,22 +514,28 @@ export function createAtlas(container) {
       .on("end.motion interrupt.motion", () => { cameraTarget = null; }) : svg;
     selection.call(zoom.transform, transform);
   }
-  api.resetCamera = () => moveCamera(null, 1);
-  function personalMapPoints(journey) {
-    return journey.waypoints.filter((point) => point.px != null && (point.evidenceScope === "personal" || point.verified));
-  }
-  function focusJourney(journey) {
-    const points = personalMapPoints(journey);
-    if (!points.length) { api.resetCamera(); return; }
+  api.resetCamera = () => {
+    if (view === "explore" && store) {
+      const journey = store.byId.get(mapContext?.selectedId);
+      fitReferences(journey ? mappedPoints(journey) : collectionClusters(mapContext?.matches));
+    } else moveCamera(null, 1);
+  };
+  function fitReferences(points) {
+    if (!points.length) { moveCamera(null, 1); return; }
     const xs = points.map((point) => point.px), ys = points.map((point) => point.py);
     const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-    const precise = points.length > 1 && points.every((point) => ["city", "site"].includes(point.locationPrecision));
-    const padding = Math.min(40, (mapFrame[3] - mapFrame[1]) / 3);
-    const scale = Math.min(precise ? 14 : 4, Math.max(1, Math.min(
-      (mapFrame[2] - mapFrame[0] - padding) / Math.max(1, x1 - x0),
-      (mapFrame[3] - mapFrame[1] - padding) / Math.max(1, y1 - y0),
+    const width = mapFrame[2] - mapFrame[0], height = mapFrame[3] - mapFrame[1];
+    const padX = Math.min(42, width * .12), padY = Math.min(38, height * .16);
+    const single = Math.hypot(x1 - x0, y1 - y0) < 1e-6;
+    const precise = points.every((point) => ["city", "site"].includes(point.locationPrecision));
+    const scale = Math.min(single ? 6 : precise ? 14 : 8, Math.max(1, Math.min(
+      (width - padX * 2) / Math.max(1e-6, x1 - x0),
+      (height - padY * 2) / Math.max(1e-6, y1 - y0),
     )));
     moveCamera({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, scale);
+  }
+  function focusJourney(journey) {
+    fitReferences(mappedPoints(journey));
   }
   api.zoomBy = (factor) => {
     if (!Number.isFinite(factor) || factor <= 0) {
@@ -496,6 +570,109 @@ export function createAtlas(container) {
   }
   function hideTip() { if (tipEl) tipEl.style.opacity = 0; }
 
+  function referenceControl(target) {
+    const marker = target.closest?.(".account-place-marker, .place-cluster");
+    return marker && overlayG.node().contains(marker) ? marker : null;
+  }
+  function activateReference(marker) {
+    if (marker.classList.contains("place-cluster")) mapContext?.onPlaceCluster?.(marker.__data__.canonical);
+    else mapContext?.onPlace?.(Number(marker.dataset.placeIndex));
+  }
+  function bindReferenceControls() {
+    overlayG
+      .on("click.references", (event) => {
+        const marker = referenceControl(event.target);
+        if (!marker) return;
+        event.stopPropagation();
+        marker.focus({ preventScroll: true });
+        activateReference(marker);
+      })
+      .on("keydown.references", (event) => {
+        const marker = referenceControl(event.target);
+        if (!marker) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          event.stopPropagation();
+          activateReference(marker);
+          return;
+        }
+        if (!marker.classList.contains("place-cluster")) return;
+        const steps = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+        if (!(event.key in steps) && !["Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const markers = overlayG.selectAll(".place-cluster").nodes();
+        const index = markers.indexOf(marker);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? markers.length - 1 :
+          (index + steps[event.key] + markers.length) % markers.length;
+        markers[next]?.focus({ preventScroll: true });
+      })
+      .on("pointerover.references", (event) => {
+        const marker = referenceControl(event.target);
+        if (marker && !marker.contains(event.relatedTarget)) showTip(event, marker.getAttribute("aria-label"));
+      })
+      .on("pointermove.references", (event) => {
+        if (referenceControl(event.target)) moveTip(event);
+      })
+      .on("pointerout.references", (event) => {
+        const marker = referenceControl(event.target);
+        if (!marker || marker.contains(event.relatedTarget)) return;
+        const focused = container.contains(document.activeElement) && document.activeElement.closest("[data-map-focus]");
+        if (focused) showReferenceTip(focused);
+        else hideTip();
+      });
+  }
+  function showReferenceTip(marker) {
+    const rect = marker.getBoundingClientRect();
+    showTip({ clientX: (rect.left + rect.right) / 2, clientY: rect.top }, marker.getAttribute("aria-label"));
+  }
+  function keepReferenceVisible(marker) {
+    if (!mapFrame || view === "landing") return;
+    const rect = marker.getBoundingClientRect(), bounds = container.getBoundingClientRect();
+    const x = (rect.left + rect.right) / 2 - bounds.left, y = (rect.top + rect.bottom) / 2 - bounds.top;
+    const point = d3.zoomTransform(svg.node()).invert([x, y]);
+    const [targetX, targetY] = cameraTarget ? cameraTarget.apply(point) : [x, y];
+    const pad = 18;
+    if (targetX < mapFrame[0] + pad || targetX > mapFrame[2] - pad || targetY < mapFrame[1] + pad || targetY > mapFrame[3] - pad) {
+      moveCamera({ x: point[0], y: point[1] }, currentK, false);
+    }
+  }
+  function focusReference(marker) {
+    if (marker.classList.contains("place-cluster")) {
+      activeClusterKey = marker.__data__.key;
+      overlayG.selectAll(".place-cluster[tabindex='0']").attr("tabindex", -1);
+      d3.select(marker).attr("tabindex", 0);
+      layoutCollectionReferences();
+    }
+    keepReferenceVisible(marker);
+    showReferenceTip(marker);
+    mapContext?.onMapFocus?.(marker.getAttribute("aria-label"));
+  }
+  api.focusMap = () => {
+    if (!svg || container.closest("[inert]") || !container.getClientRects().length || getComputedStyle(container).visibility === "hidden") {
+      console.warn("Cannot focus the map: its region is not currently visible or interactive.");
+      return false;
+    }
+    const selected = overlayG.select(".account-place-marker[aria-pressed='true']").node();
+    const candidates = [
+      selected, overlayG.select(".account-place-marker").node(),
+      overlayG.select(".place-cluster[tabindex='0']").node(),
+      overlayG.select(".pattern-event-marker[aria-pressed='true']").node(),
+      ...svg.selectAll(".place-cluster, .pattern-event-marker, .historical-flag").nodes(),
+    ];
+    const target = candidates.find((node) => node?.getClientRects().length) || svg.node();
+    if (target !== svg.node()) keepReferenceVisible(target);
+    const alreadyFocused = document.activeElement === target;
+    target.focus({ preventScroll: true });
+    if (document.activeElement !== target) {
+      console.warn("Cannot focus the map: no available map target accepted focus.");
+      return false;
+    }
+    if (target === svg.node()) mapContext?.onMapFocus?.("Map region. No place controls are available in this view.");
+    else if (alreadyFocused) focusReference(target);
+    return true;
+  };
+
   // ---- choropleth ------------------------------------------------------------
   function paintChoropleth(on, onOrigin) {
     if (!countrySel) return;
@@ -504,6 +681,7 @@ export function createAtlas(container) {
       .on(".origin", null)
       .style("pointer-events", null)
       .style("cursor", null)
+      .attr("data-origin-count", null)
       .attr("data-war-side", null)
       .attr("stroke", C.landStroke)
       .attr("stroke-width", 0.5);
@@ -512,8 +690,9 @@ export function createAtlas(container) {
     const ramp = d3.interpolateRgb(C.densityLow, C.accentDeep);
     countrySel.attr("fill", (d) => {
       const n = store.originCounts.get(d.properties.name) || 0;
-      return n ? ramp(Math.pow(n / max, 0.5)) : C.densityNone;
+      return n ? ramp(.25 + .75 * Math.sqrt(n / max)) : C.densityNone;
     })
+      .attr("data-origin-count", (d) => store.originCounts.get(d.properties.name) || 0)
       .style("cursor", (d) => store.originCounts.has(d.properties.name) ? "pointer" : null)
       .on("click.origin", (event, d) => {
         if (store.originCounts.has(d.properties.name)) onOrigin(d.properties.name);
@@ -570,7 +749,7 @@ export function createAtlas(container) {
     document.documentElement.dataset.historicalBoundaries = "loading";
     api.onHistoryStatus?.();
     const revision = store?.historicalIndex?.geometry_revision || "legacy";
-    historicalPromise = fetch(`data/historical_boundaries.json?v=${encodeURIComponent(revision)}`, { cache: retry ? "reload" : "force-cache" })
+    historicalPromise = fetch(siteResource(`data/historical_boundaries.json?v=${encodeURIComponent(revision)}`), { cache: retry ? "reload" : "force-cache" })
       .then((response) => {
         if (!response.ok) throw new Error(`Historical boundaries failed to load: ${response.status}`);
         return response.json();
@@ -672,6 +851,22 @@ export function createAtlas(container) {
       .attr("stroke-dasharray", (feature) => uncertainTerritoryIds.has(feature.properties.id) ? "3 2" : null);
   }
 
+  let textMeasure = null;
+  function mapTextWidth(text, weight = 400) {
+    textMeasure ||= document.createElement("canvas").getContext("2d");
+    textMeasure.font = `${weight} 9px "Public Sans",sans-serif`;
+    return textMeasure.measureText(text).width;
+  }
+  function historyPlacementFrame() {
+    const frame = [...mapFrame];
+    if (historyDisplay.compare) frame[2] = frame[0] + (frame[2] - frame[0]) * historyDisplay.split / 100;
+    return frame;
+  }
+  function fitsPlacement(box, occupied) {
+    const frame = historyPlacementFrame();
+    return box[0] >= frame[0] && box[1] >= frame[1] && box[2] <= frame[2] && box[3] <= frame[3] &&
+      !occupied.some((other) => box[0] < other[2] + 4 && box[2] + 4 > other[0] && box[1] < other[3] + 4 && box[3] + 4 > other[1]);
+  }
   function renderHistoricalLabels(features, flaggedNames = new Set()) {
     const byName = new Map();
     for (const feature of features) {
@@ -681,15 +876,24 @@ export function createAtlas(container) {
       if (!byName.has(name) || area > byName.get(name).area) byName.set(name, { feature, area });
     }
     const limit = labelsVisible && size.w > 820 ? 8 : 0;
-    const labels = [...byName.values()]
+    const candidates = [...byName.values()]
       .filter((entry) => entry.area > 120000)
-      .sort((a, b) => b.area - a.area)
-      .slice(0, limit)
-      .map((entry) => {
-        const point = path.centroid(entry.feature);
-        return { ...entry, x: point[0], y: point[1] };
-      })
-      .filter((entry) => Number.isFinite(entry.x) && Number.isFinite(entry.y));
+      .sort((a, b) => b.area - a.area);
+    const labels = [], occupied = [...historicalPlacements];
+    const transform = d3.zoomTransform(svg.node());
+    for (const entry of candidates) {
+      if (labels.length >= limit) break;
+      const [x, y] = path.centroid(entry.feature);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const text = entry.feature.properties.name
+        .replace(/^Dominion of /i, "")
+        .replace(/^United Kingdom of Great Britain and Ireland$/i, "United Kingdom");
+      const [screenX, screenY] = transform.apply([x, y]), halfWidth = mapTextWidth(text, 500) / 2 + 3;
+      const box = [screenX - halfWidth, screenY - 12, screenX + halfWidth, screenY + 4];
+      if (!fitsPlacement(box, occupied)) continue;
+      occupied.push(box);
+      labels.push({ ...entry, x, y, text });
+    }
     historicalLabelsG.selectAll("text").data(labels, (entry) => entry.feature.properties.id).join(
       (enter) => enter.append("text")
         .attr("text-anchor", "middle")
@@ -708,12 +912,7 @@ export function createAtlas(container) {
       .attr("y", (entry) => entry.y)
       .attr("data-fs", 9)
       .attr("font-size", `${9 / currentK}px`)
-      .text((entry) => {
-        const name = entry.feature.properties.name
-          .replace(/^Dominion of /i, "")
-          .replace(/^United Kingdom of Great Britain and Ireland$/i, "United Kingdom");
-        return name;
-      });
+      .text((entry) => entry.text);
   }
 
   function renderHistoricalFlags(features, year) {
@@ -724,7 +923,7 @@ export function createAtlas(container) {
       const flag = flagFor(name, year);
       if (!flag) continue;
       const entity = feature.properties.name.replace(/\s*\([^)]*\)\s*$/, "");
-      const core = entity === name || flagFor(entity, year)?.src === flag.src;
+      const core = entity === name || Boolean(flag.src && flagFor(entity, year)?.src === flag.src);
       const area = Number(feature.properties.area_km2) || d3.geoArea(feature) * 6371 ** 2;
       const previous = controllers.get(controller);
       if (previous && ((previous.core && !core) || (previous.core === core && previous.area >= area))) continue;
@@ -734,6 +933,7 @@ export function createAtlas(container) {
       }
     }
     const placed = [];
+    historicalPlacements = [];
     const transform = d3.zoomTransform(svg.node());
     if (flagsVisible) {
       for (const entry of [...controllers.values()].sort((a, b) => (
@@ -741,12 +941,13 @@ export function createAtlas(container) {
       ))) {
         if (placed.length >= (size.w <= 820 ? 4 : 8)) break;
         const [screenX, screenY] = transform.apply([entry.x, entry.y]);
-        if (screenX < mapFrame[0] || screenX > mapFrame[2] || screenY < mapFrame[1] || screenY > mapFrame[3]) continue;
-        if (placed.some((other) => (
-          Math.abs(other.x - entry.x) * currentK < Math.max(40, Math.min(100, (other.name.length + entry.name.length) * 2.8)) &&
-          Math.abs(other.y - entry.y) * currentK < 38
-        ))) continue;
-        placed.push(entry);
+        const neutral = entry.flag.neutralIdentifier;
+        const halfWidth = neutral ? Math.max(12, mapTextWidth(entry.name, 500) / 2 + 4) :
+          Math.max(18, labelsVisible ? mapTextWidth(entry.name) / 2 + 3 : 0);
+        const box = [screenX - halfWidth, screenY - (neutral ? 12 : 32), screenX + halfWidth, screenY + (neutral ? 12 : labelsVisible ? 9 : -5)];
+        if (!fitsPlacement(box, historicalPlacements)) continue;
+        historicalPlacements.push(box);
+        placed.push({ ...entry, halfWidth });
       }
     }
     const groups = historicalFlagsG.selectAll(".historical-flag").data(placed, (entry) => entry.name)
@@ -763,21 +964,33 @@ export function createAtlas(container) {
               if (controllerHandler) controllerHandler(entry.controller);
             }
           });
-        group.append("rect").attr("x", -16).attr("y", -30).attr("width", 32).attr("height", 23)
-          .attr("rx", 2).attr("fill", C.paperSoft).attr("stroke", C.rule);
-        group.append("image").attr("x", -14).attr("y", -28).attr("width", 28).attr("height", 19);
-        group.append("text").attr("y", 5).attr("text-anchor", "middle")
+        group.append("text").attr("text-anchor", "middle")
           .attr("font-family", "'Public Sans',sans-serif").attr("font-size", 9)
           .attr("fill", C.ink).attr("stroke", C.paperSoft).attr("stroke-width", 3).attr("paint-order", "stroke");
         group.append("title");
         return group;
       });
-    groups.attr("aria-label", (entry) => `Inspect ${entry.name} in ${year}`)
+    groups.classed("historical-identifier", (entry) => Boolean(entry.flag.neutralIdentifier))
+      .attr("data-neutral-identifier", (entry) => entry.flag.neutralIdentifier ? "true" : null)
+      .attr("aria-label", (entry) => `Inspect ${entry.name} in ${year}${entry.flag.neutralIdentifier ? ". Text-only neutral territorial identifier, not a historical flag." : ""}`)
       .attr("data-map-focus", (entry) => `country:${entry.name}`)
       .attr("transform", (entry) => `translate(${entry.x},${entry.y}) scale(${1 / currentK})`);
-    groups.select("image").attr("href", (entry) => entry.flag.src);
-    groups.select("text").text((entry) => labelsVisible ? entry.name : "");
-    groups.select("title").text((entry) => `${entry.name}, ${year}. ${entry.flag.label}`);
+    groups.selectAll(".historical-flag-frame").data((entry) => entry.flag.neutralIdentifier ? [] : [entry])
+      .join((enter) => enter.insert("rect", "text").attr("class", "historical-flag-frame")
+        .attr("x", -16).attr("y", -30).attr("width", 32).attr("height", 23)
+        .attr("rx", 2).attr("fill", C.paperSoft).attr("stroke", C.rule));
+    groups.selectAll("image").data((entry) => entry.flag.neutralIdentifier ? [] : [entry])
+      .join((enter) => enter.insert("image", "text")
+        .attr("x", -14).attr("y", -28).attr("width", 28).attr("height", 19))
+      .attr("href", (entry) => siteResource(entry.flag.src));
+    groups.selectAll(".historical-identifier-hit").data((entry) => entry.flag.neutralIdentifier ? [entry] : [])
+      .join((enter) => enter.insert("rect", "text").attr("class", "historical-identifier-hit")
+        .attr("y", -12).attr("height", 24).attr("fill", "transparent").attr("aria-hidden", "true"))
+      .attr("x", (entry) => -entry.halfWidth).attr("width", (entry) => entry.halfWidth * 2);
+    groups.select("text").attr("y", (entry) => entry.flag.neutralIdentifier ? 3 : 5)
+      .attr("font-weight", (entry) => entry.flag.neutralIdentifier ? 500 : 400)
+      .text((entry) => labelsVisible || entry.flag.neutralIdentifier ? entry.name : "");
+    groups.select("title").text((entry) => `${entry.name}, ${year}. ${entry.flag.label}${entry.flag.neutralIdentifier && entry.flag.note ? `. Source note: ${entry.flag.note}` : ""}`);
     return new Set(placed.map((entry) => entry.entity));
   }
 
@@ -847,6 +1060,7 @@ export function createAtlas(container) {
     hoveredController = null;
     pinnedController = null;
     visibleTerritories = [];
+    historicalPlacements = [];
     uncertainTerritoryIds = new Set();
     historicalG.style("display", "none");
     historicalLabelsG.style("display", "none");
@@ -860,8 +1074,8 @@ export function createAtlas(container) {
     if (!store) { globeRoutePool = []; return; }
     globeRoutePool = store.journeys.map((journey) => {
       const coordinates = [];
-      for (const waypoint of journey.routeWaypoints) {
-        if (!Number.isFinite(waypoint.lng) || !Number.isFinite(waypoint.lat)) continue;
+      for (const waypoint of journey.routeWaypoints || []) {
+        if (!hasCoordinates(waypoint) || !personalPrecise(waypoint)) continue;
         const coordinate = [waypoint.lng, waypoint.lat];
         const previous = coordinates[coordinates.length - 1];
         if (!previous || previous[0] !== coordinate[0] || previous[1] !== coordinate[1]) {
@@ -1037,6 +1251,7 @@ export function createAtlas(container) {
 
   // ---- per-view rendering ----------------------------------------------------
   api.render = function (v, ctx, reframe = false) {
+    mapContext = ctx;
     api._last = (forceFrame = false) => api.render(v, {
       ...ctx,
       historyCompare: historyDisplay.compare,
@@ -1064,7 +1279,8 @@ export function createAtlas(container) {
     if (v === "landing") { svg.style("pointer-events", "none"); showGlobe(true); return; }
     showGlobe(false);
     const interactive = v === "explore" || v === "patterns";
-    svg.style("pointer-events", interactive ? "auto" : "none");
+    svg.style("pointer-events", interactive ? "auto" : "none")
+      .attr("aria-label", v === "explore" ? "Source place references. Select a marker to read the source." : "Historical context map. Select a marker to inspect its sources.");
     const historicalReady = ctx.boundaryYear != null
       ? showHistoricalBoundaries(ctx.boundaryYear, ctx.warPeriod)
       : (hideHistoricalBoundaries(), false);
@@ -1080,17 +1296,22 @@ export function createAtlas(container) {
     }
     if (v === "explore") {
       clearOverlay();
-      drawExplore(ctx);
+      const clusters = drawExplore(ctx);
       const journey = store.byId.get(ctx.selectedId);
       const place = journey?.waypoints[ctx.activePlaceIndex];
-      if (place && Number.isFinite(place.px) && Number.isFinite(place.py)) {
-        const broad = ["country", "region"].includes(place.locationPrecision);
-        moveCamera({ x: place.px, y: place.py }, broad ? 1.6 : 4);
-      } else if (changed || frameChanged || reframe || selectedJourney !== ctx.selectedId) {
+      const nextPlaceKey = place && hasMapPoint(place) ? `${journey.id}:${ctx.activePlaceIndex}` : null;
+      const extentKey = journey ? null : clusters.map((cluster) => cluster.key).join("\n");
+      const needsFrame = changed || frameChanged || reframe || selectedJourney !== ctx.selectedId || selectedPlaceKey !== nextPlaceKey;
+      if (nextPlaceKey) {
+        if (needsFrame) fitReferences([place]);
+      } else if (needsFrame || (!journey && collectionExtentKey !== extentKey)) {
         if (journey) focusJourney(journey);
-        else api.resetCamera();
+        else fitReferences(clusters);
       }
       selectedJourney = ctx.selectedId;
+      selectedPlaceKey = nextPlaceKey;
+      if (!journey) collectionExtentKey = extentKey;
+      layoutCollectionReferences();
     } else if (v === "patterns") {
       clearOverlay();
       const eventKey = ctx.activePatternEvent?.key || null;
@@ -1101,16 +1322,64 @@ export function createAtlas(container) {
       } else if ((changed || frameChanged || reframe) && !ctx.activePatternEvent) api.resetCamera();
     }
     if (focusKey && !container.inert) {
-      svg.select(`[data-map-focus="${CSS.escape(focusKey)}"]`).node()?.focus({ preventScroll: true });
+      const target = svg.select(`[data-map-focus="${CSS.escape(focusKey)}"]`).node();
+      if (target?.getClientRects().length) target.focus({ preventScroll: true });
+      else api.focusMap();
     }
   };
+
+  function referenceKind(point) {
+    if (point.evidenceScope !== "personal" && !point.verified) return "review";
+    return personalPrecise(point) ? "precise" : "broad";
+  }
+  function referenceDescription(point) {
+    const meaning = {
+      precise: "Personal city or site reference.",
+      broad: "Broad area reference, not a precise travel point.",
+      review: "Unreviewed source mention, not verified personal travel.",
+    }[referenceKind(point)];
+    return `${point.canonical || point.asWritten || "Unnamed place"}. ${point.locationPrecision || "Unknown"}-level reference. ${meaning} Open the source entry.`;
+  }
+  function referenceSymbol(group, point, kind, radius, color) {
+    dot(group, point.px, point.py, { r: Math.max(12, radius + 4), fill: "transparent" })
+      .attr("class", "map-reference-hit").attr("aria-hidden", "true");
+    dot(group, point.px, point.py, {
+      r: radius, fill: kind === "precise" ? color : "none",
+      stroke: kind === "precise" ? C.paperSoft : color, sw: kind === "precise" ? 1 : 1.8,
+    })
+      .attr("class", "map-reference-symbol").attr("aria-hidden", "true")
+      .attr("stroke-dasharray", kind === "review" ? "3 2" : null)
+      .style("pointer-events", "none");
+  }
+  function collectionClusters(matches = () => true) {
+    const places = new Map();
+    for (const journey of store.journeys) {
+      if (matches && !matches(journey)) continue;
+      for (const point of mappedPoints(journey)) {
+        const key = JSON.stringify([point.canonical, point.lng, point.lat]);
+        if (!places.has(key)) places.set(key, {
+          key, canonical: point.canonical, px: point.px, py: point.py,
+          accounts: new Set(), precisions: new Set(), review: false, broad: false,
+        });
+        const cluster = places.get(key);
+        cluster.accounts.add(journey.id);
+        cluster.precisions.add(point.locationPrecision || "unknown");
+        cluster.review ||= referenceKind(point) === "review";
+        cluster.broad ||= !["city", "site"].includes(point.locationPrecision);
+      }
+    }
+    return [...places.values()].map((cluster) => ({
+      ...cluster, count: cluster.accounts.size,
+      locationPrecision: cluster.broad ? "mixed" : "city",
+      kind: cluster.review ? "review" : cluster.broad ? "broad" : "precise",
+    })).sort((a, b) => String(a.canonical).localeCompare(String(b.canonical)) || a.key.localeCompare(b.key));
+  }
 
   function drawExplore(ctx) {
     const g = overlayG;
     const sel = store.byId.get(ctx.selectedId);
-    const visible = ctx.matches || (() => true);
     if (sel) {
-      const wp = sel.routeWaypoints.filter((w) => w.px != null);
+      const wp = routePoints(sel);
       const col = GROUP_COLOR[sel.group] || C.accent;
       route(g, wp, {
         className: "explore-route",
@@ -1119,47 +1388,91 @@ export function createAtlas(container) {
         op: 0.9,
         animate: ctx.selectedId !== selectedJourney,
       });
-      personalMapPoints(sel).forEach((w) => {
-        const broad = ["country", "region", "unknown"].includes(w.locationPrecision);
-        const index = sel.waypoints.indexOf(w);
-        const description = `${w.canonical}. ${w.locationPrecision || "Unknown"}-level reference. Open the source passage.`;
-        dot(g, w.px, w.py, { r: broad ? 6 : 5, fill: broad ? C.paperSoft : col, stroke: broad ? col : "none", sw: broad ? 1 : 0 })
-          .attr("class", "account-place-marker").attr("data-place-index", index)
+      sel.waypoints.forEach((w, index) => {
+        if (!hasMapPoint(w)) return;
+        const kind = referenceKind(w), description = referenceDescription(w);
+        const marker = g.append("g").datum(w)
+          .attr("class", `account-place-marker map-reference--${kind}`).attr("data-place-index", index)
           .attr("data-map-focus", `place:${sel.id}:${index}`)
+          .attr("data-precision", w.locationPrecision || "unknown")
+          .attr("aria-pressed", index === ctx.activePlaceIndex ? "true" : "false")
           .attr("role", "button").attr("tabindex", 0).attr("aria-label", description)
-          .style("cursor", "pointer")
-          .on("click", () => ctx.onPlace(index))
-          .on("keydown", (event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              ctx.onPlace(index);
-            }
-          })
-          .on("mouseenter", (event) => showTip(event, description))
-          .on("mousemove", moveTip).on("mouseleave", hideTip);
-        if (w.liberation || w.newLife) dot(g, w.px, w.py, { r: 8, fill: "none", stroke: col, sw: 1.2, op: 0.35 })
+          .style("cursor", "pointer").attr("pointer-events", "all");
+        referenceSymbol(marker, w, kind, kind === "precise" ? 5 : 6, col);
+        marker.append("title").text(description);
+        if (kind === "precise" && (w.liberation || w.newLife)) dot(g, w.px, w.py, { r: 8, fill: "none", stroke: col, sw: 1.2, op: 0.35 })
           .style("pointer-events", "none");
       });
       const active = sel.waypoints[ctx.activePlaceIndex];
-      if (active && Number.isFinite(active.px) && Number.isFinite(active.py)) {
-        dot(g, active.px, active.py, { r: 9, fill: C.paperSoft, stroke: col, sw: 2 })
+      if (active && hasMapPoint(active)) {
+        dot(g, active.px, active.py, { r: 10, fill: "none", stroke: col, sw: 2 })
           .attr("class", "selected-place-ring").style("pointer-events", "none");
+        label(g, active.px, active.py, active.canonical, { dy: 20, fs: 11, fill: col, halo: true })
+          .attr("class", "selected-place-label").style("pointer-events", "none");
       }
-      return;
+      return [];
     }
-    for (const j of store.journeys) {
-      if (!visible(j)) continue;
-      const home = j.routeStart;
-      if (!home || home.px == null) continue;
-      const col = GROUP_COLOR[j.group] || C.accent;
-      const c = dot(g, home.px, home.py, {
-        r: 4, fill: C.paperSoft, stroke: col, sw: 1.4,
-      });
-      c.attr("data-person", j.id).style("cursor", "pointer").attr("pointer-events", "all")
-        .on("click", () => ctx.onSelect && ctx.onSelect(j.id))
-        .on("mouseenter", (e) => showTip(e, `${j.name}, ${home.canonical}. ${home.locationPrecision || "Unknown"}-level map reference.`))
-        .on("mousemove", (e) => moveTip(e)).on("mouseleave", hideTip);
+    const clusters = collectionClusters(ctx.matches);
+    if (!clusters.some((cluster) => cluster.key === activeClusterKey)) activeClusterKey = clusters[0]?.key || null;
+    for (const cluster of clusters) {
+      const radius = Math.min(17, 5 + Math.sqrt(cluster.count) * 1.4);
+      const precision = [...cluster.precisions].sort().join(" / ");
+      const description = `${cluster.canonical}. ${precision}-level reference. ${cluster.count} ${cluster.count === 1 ? "account names" : "accounts name"} this place.${cluster.review ? " Includes unreviewed mentions." : ""} Naming a place does not establish verified presence. Open these accounts.`;
+      const marker = g.append("g").datum(cluster)
+        .attr("class", `place-cluster map-reference--${cluster.kind}`)
+        .attr("role", "button").attr("tabindex", cluster.key === activeClusterKey ? 0 : -1)
+        .attr("data-map-focus", `cluster:${cluster.key}`)
+        .attr("data-place-canonical", cluster.canonical).attr("data-precision", precision)
+        .attr("data-account-ids", JSON.stringify([...cluster.accounts].sort()))
+        .attr("data-account-count", cluster.count).attr("aria-label", description)
+        .attr("aria-keyshortcuts", "ArrowRight ArrowDown ArrowLeft ArrowUp Home End Enter Space")
+        .attr("pointer-events", "all").style("cursor", "pointer");
+      referenceSymbol(marker, cluster, cluster.kind, radius, C.accentDeep);
+      marker.append("title").text(description);
     }
+    const counts = g.append("g").attr("class", "collection-counts")
+      .attr("aria-hidden", "true").style("pointer-events", "none");
+    for (const cluster of clusters.filter(item => item.count > 1)) {
+      label(counts, cluster.px, cluster.py, cluster.count, {
+        fs: 10, dy: -3, fill: cluster.kind === "precise" ? C.paperSoft : C.accentDeep,
+        halo: cluster.kind !== "precise",
+      }).datum(cluster).attr("class", "place-cluster-count");
+    }
+    return clusters;
+  }
+
+  function layoutCollectionReferences() {
+    const markers = overlayG.selectAll(".place-cluster").nodes();
+    if (!markers.length) return;
+    const focused = document.activeElement;
+    const transform = d3.zoomTransform(svg.node());
+    const occupied = [], visible = new Set();
+    const radiusFor = (count) => Math.min(17, 5 + Math.sqrt(count) * 1.4);
+    const ranked = [...markers].sort((a, b) => Number(b === focused) - Number(a === focused) ||
+      b.__data__.count - a.__data__.count || a.__data__.key.localeCompare(b.__data__.key));
+    // Keep every place accessible; only count labels compete for map space.
+    for (const marker of ranked) {
+      const cluster = marker.__data__;
+      if (cluster.count < 2) continue;
+      const [x, y] = transform.apply([cluster.px, cluster.py]);
+      const radius = radiusFor(cluster.count) + 3;
+      if (mapFrame && (x < mapFrame[0] || x > mapFrame[2] || y < mapFrame[1] || y > mapFrame[3])) continue;
+      if (occupied.some(item => Math.hypot(x - item.x, y - item.y) < radius + item.radius)) continue;
+      occupied.push({ x, y, radius });
+      visible.add(cluster.key);
+    }
+    for (const marker of markers) {
+      const cluster = marker.__data__;
+      const radius = visible.has(cluster.key) ? radiusFor(cluster.count) : 4;
+      const symbol = marker.querySelector(".map-reference-symbol");
+      symbol.setAttribute("data-r", radius);
+      symbol.setAttribute("r", radius / currentK);
+      const hit = marker.querySelector(".map-reference-hit");
+      const hitRadius = Math.max(12, radius + 4);
+      hit.setAttribute("data-r", hitRadius);
+      hit.setAttribute("r", hitRadius / currentK);
+    }
+    overlayG.selectAll(".place-cluster-count").style("display", cluster => visible.has(cluster.key) ? null : "none");
   }
 
   function drawPatterns(ctx, focusEvent) {
@@ -1198,7 +1511,7 @@ export function createAtlas(container) {
 
     for (const journey of store.journeys) {
       if (!activeIds.has(journey.id)) continue;
-      const waypoints = journey.routeWaypoints.filter((waypoint) => waypoint.px != null && waypoint.historyYear === ctx.scrubYear);
+      const waypoints = routePoints(journey).filter((waypoint) => waypoint.historyYear === ctx.scrubYear);
       if (waypoints.length < 2) continue;
       g.append("path")
         .datum({ account: journey.id, year: ctx.scrubYear, waypoints })
@@ -1238,9 +1551,11 @@ export function createAtlas(container) {
         op: active ? 0.98 : 0.76,
       });
       marker.attr("class", "pattern-event-marker")
+        .datum(event)
         .attr("data-map-focus", `event:${event.key}`)
         .attr("role", "button")
         .attr("tabindex", 0)
+        .attr("aria-pressed", active ? "true" : "false")
         .attr("aria-label", `${event.year}, ${event.place}, ${event.count} ${event.count === 1 ? "testimony" : "testimonies"}`)
         .style("cursor", "pointer").attr("pointer-events", "all")
         .on("click", () => ctx.onEvent && ctx.onEvent(event.key))
@@ -1290,22 +1605,32 @@ export function createAtlas(container) {
   // ---- mini route (side panel) ----------------------------------------------
   api.drawMini = function (svgEl, j) {
     if (!svgEl || !j) return;
+    if (projection) projectJourney(j);
     const sel = d3.select(svgEl); sel.selectAll("*").remove();
     const W = 340, H = 150, pad = 22;
-    const pts = j.routeWaypoints.filter((w) => w.px != null).map((w) => ({ px: w.px, py: w.py, newLife: w.newLife }));
+    const pts = mappedPoints(j);
     if (pts.length < 1) return;
     const xs = pts.map((p) => p.px), ys = pts.map((p) => p.py);
     const minx = Math.min(...xs), maxx = Math.max(...xs), miny = Math.min(...ys), maxy = Math.max(...ys);
     const sx = (maxx - minx) || 1, sy = (maxy - miny) || 1;
     const k = Math.min((W - pad * 2) / sx, (H - pad * 2) / sy);
-    const ox = (W - sx * k) / 2 - minx * k, oy = (H - sy * k) / 2 - miny * k;
-    const P = pts.map((p) => ({ x: p.px * k + ox, y: p.py * k + oy, newLife: p.newLife }));
+    const position = (point) => ({
+      x: (point.px - (minx + maxx) / 2) * k + W / 2,
+      y: (point.py - (miny + maxy) / 2) * k + H / 2,
+    });
+    const P = routePoints(j).map(position);
     const col = GROUP_COLOR[j.group] || C.accent;
-    sel.append("path").attr("d", journeyPath(P))
-      .attr("fill", "none").attr("stroke", col).attr("stroke-width", 1.6)
+    if (P.length > 1) sel.append("path").attr("d", journeyPath(P))
+      .attr("class", "mini-route").attr("fill", "none").attr("stroke", col).attr("stroke-width", 1.6)
       .attr("stroke-linecap", "round").attr("stroke-linejoin", "round");
-    P.forEach((p, i) => sel.append("circle").attr("cx", p.x).attr("cy", p.y)
-      .attr("r", i === 0 || i === P.length - 1 ? 4 : 2.8).attr("fill", p.newLife ? C.anchorInk : col));
+    pts.forEach((point) => {
+      const p = position(point), kind = referenceKind(point);
+      sel.append("circle").attr("cx", p.x).attr("cy", p.y).attr("r", kind === "precise" ? 3.5 : 4.5)
+        .attr("class", `mini-map-reference map-reference--${kind}`)
+        .attr("fill", kind === "precise" ? col : "none")
+        .attr("stroke", col).attr("stroke-width", kind === "precise" ? .5 : 1.2)
+        .attr("stroke-dasharray", kind === "review" ? "2 1.5" : null);
+    });
   };
 
   return api;

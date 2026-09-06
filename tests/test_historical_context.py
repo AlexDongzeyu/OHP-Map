@@ -78,6 +78,16 @@ def filename(entry):
     return Path(entry["src"]).name if entry is not None else None
 
 
+def test_nazi_period_uses_an_explicit_neutral_identifier(registry):
+    entry = registry["samples"]["Germany"]["1944"]
+    assert entry["neutralIdentifier"] is True
+    assert "neutral" in entry["label"].lower()
+    assert "not reproduced" in entry["note"]
+    root = ET.parse(ROOT / entry["src"]).getroot()
+    assert any((element.text or "").strip() == "DE" for element in root.iter())
+    assert not any(element.tag.rsplit("}", 1)[-1] == "path" for element in root.iter())
+
+
 @pytest.mark.parametrize(("controller", "year", "expected"), [
     ("USA", 1912, None),
     ("USA", 1913, "united-states-48-stars.svg"),
@@ -238,7 +248,10 @@ def test_each_flag_has_an_asset_and_an_explicit_per_file_rights_record(registry)
         assert FLAG_FIELDS <= entry.keys()
         assert re.fullmatch(r"assets/flags/[a-z0-9-]+\.svg", entry["src"])
         assert (ROOT / entry["src"]).is_file()
-        assert re.search(r"national|civil|government", entry["label"], re.I)
+        if entry["id"] == "germany-1935":
+            assert "neutral identifier" in entry["label"]
+        else:
+            assert re.search(r"national|civil|government", entry["label"], re.I)
         rights = sources[entry["sourceId"]]
         assert entry["src"] == rights["src"]
         assert entry["credit"] == rights["credit"]
@@ -276,7 +289,7 @@ def _svg(name):
 def test_local_svgs_contain_only_safe_self_contained_vector_elements():
     allowed = {
         "svg", "g", "path", "rect", "circle", "ellipse", "polygon", "polyline", "line",
-        "defs", "use", "clipPath", "mask", "title", "desc", "style",
+        "defs", "use", "clipPath", "mask", "title", "desc", "style", "text",
         "linearGradient", "radialGradient", "stop",
     }
     for path in (ROOT / "assets" / "flags").glob("*.svg"):

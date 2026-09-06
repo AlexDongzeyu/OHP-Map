@@ -3,7 +3,7 @@
 // UI render: group (the OHP archive category), a one-line intro, conflict facet,
 // per-waypoint year/uncertainty, theme facets, origin-country counts (for the density
 // choropleth), and the shared persecution sites. As-written place names are preserved.
-import { ROLE_LABEL, GROUPS, parseYear, initials, slug, normalizeSearch, TIME } from "./config.js";
+import { ROLE_LABEL, GROUPS, parseYear, initials, slug, normalizeSearch, siteResource, TIME } from "./config.js";
 import { normalizeProfileMedia } from "./media.js";
 
 const BASE = "data";
@@ -33,10 +33,11 @@ function journeySearchText(journey) {
   ].join(" "));
 }
 
-export function journeyFilter({ query, groupFilter, originCountry, savedOnly = false, savedIds = new Set() }) {
+export function journeyFilter({ query, groupFilter, originCountry, placeFilter, savedOnly = false, savedIds = new Set() }) {
   const term = normalizeSearch(query);
   return (journey) => groupFilter.has(journey.group) &&
     (!originCountry || journey.originCountry === originCountry) &&
+    (!placeFilter || journey.waypoints.some((place) => place.canonical === placeFilter)) &&
     (!savedOnly || savedIds.has(journey.id)) &&
     (!term || (journey.searchText ?? journeySearchText(journey)).includes(term));
 }
@@ -47,10 +48,52 @@ export function collectionResults(store, state) {
   return matches.sort((a, b) => order.get(a.group) - order.get(b.group));
 }
 
+export function evidenceCounts(journey) {
+  const counts = { total: journey.waypoints.length, route: 0, broad: 0, review: 0, mapped: 0 };
+  for (const place of journey.waypoints) {
+    if (Number.isFinite(place.lat) && Number.isFinite(place.lng)) counts.mapped++;
+    if (!place.verified && place.evidenceScope !== "personal") counts.review++;
+    else if (journey.routeWaypoints.includes(place)) counts.route++;
+    else counts.broad++;
+  }
+  return counts;
+}
+
+export function searchSuggestions(store, state) {
+  const query = normalizeSearch(state.query);
+  if (query.length < 4 || query.length > 60) return [];
+  const limit = query.length > 7 ? 2 : 1;
+  const labels = new Map();
+  for (const journey of store.journeys.filter(journeyFilter({ ...state, query: "" }))) {
+    for (const label of [journey.name, ...journey.waypoints.flatMap((place) => [
+      place.canonical.split(",")[0], place.asWritten,
+      ...place.canonical.split(/[ ,()]+/).filter((word) => word.length > 3),
+    ])]) {
+      const folded = normalizeSearch(label);
+      if (Math.abs(folded.length - query.length) <= limit && folded !== query) labels.set(folded, label);
+    }
+  }
+  const ranked = [];
+  for (const [folded, label] of labels) {
+    let row = Array.from({ length: folded.length + 1 }, (_, index) => index);
+    for (let i = 1; i <= query.length; i++) {
+      const next = [i];
+      for (let j = 1; j <= folded.length; j++) {
+        next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (query[i - 1] === folded[j - 1] ? 0 : 1));
+      }
+      row = next;
+    }
+    const distance = row[folded.length];
+    if (distance <= limit) ranked.push({ label, distance });
+  }
+  return ranked.sort((a, b) => a.distance - b.distance || a.label.localeCompare(b.label)).slice(0, 3).map((entry) => entry.label);
+}
+
 async function getJSON(name, onRetry, mayRetry = true) {
   let response;
   try {
-    response = await fetch(`${BASE}/${name}`, { cache: "no-cache" });
+    const resource = name.startsWith("/data/") ? name.slice(1) : `${BASE}/${name}`;
+    response = await fetch(typeof document === "undefined" ? resource : siteResource(resource), { cache: "no-cache" });
     if (response.ok) return await response.json();
   } catch (error) {
     if (!(error instanceof TypeError) || !mayRetry) throw error;
@@ -212,6 +255,7 @@ function toJourney(props) {
       liberation: w.role === "liberation",
       newLife: w.role === "resettlement",
       verified: !!w.verified,
+      humanReview: w.human_review || null,
       quote: w.source_quote || null,
     };
   };
@@ -243,8 +287,13 @@ function toJourney(props) {
     transcriptStatus: props.transcript_status || "none",
     media: normalizeProfileMedia(props.profile_media),
     reviewStatus: props.review_status || "pending",
+    unplacedCount: props.unplaced_waypoint_count || 0,
     waypoints: wps,
     contextualPlaces,
+    detailUrl: props.detail_url || "",
+    detailState: props.detail_url ? "unloaded" : "ready",
+    detailError: "",
+    sourceProperties: props,
   };
   const datedServicePlaces = wps.filter((point) => !["birthplace", "resettlement"].includes(point.roleKey) && point.historyYear);
   j.serviceConflicts = j.group === "Military Veterans" ? j.conflicts.filter((conflict) => {
@@ -270,11 +319,11 @@ function toJourney(props) {
   return j;
 }
 
-export async function loadData({ onRetry } = {}) {
+export async function loadData({ onRetry, compact = false } = {}) {
   const [geojson, placeIndex, connections, warContext, historicalIndex] = await Promise.all([
-    getJSON("survivors.geojson", onRetry),
-    getJSON("place_index.json", onRetry),
-    getJSON("connections.json", onRetry),
+    getJSON(compact ? "index.json" : "survivors.geojson", onRetry),
+    compact ? null : getJSON("place_index.json", onRetry),
+    compact ? null : getJSON("connections.json", onRetry),
     getJSON("war_context.json", onRetry),
     getJSON("historical_boundary_index.json", onRetry),
   ]);
@@ -333,6 +382,42 @@ export async function loadData({ onRetry } = {}) {
     if (journey.serviceConflicts.includes(dated?.archive_conflict)) return dated;
     return warAt(journey.serviceYear);
   };
+  const profileRequests = new Map();
+  async function loadProfile(id) {
+    const journey = byId.get(id);
+    if (!journey) throw new Error("The requested account is not in this collection.");
+    if (journey.detailState === "ready") return journey;
+    if (profileRequests.has(journey.id)) return profileRequests.get(journey.id);
+    if (!/^\/data\/profiles\/[a-z0-9_-]+\.[a-f0-9]{16,64}\.json$/.test(journey.detailUrl)) {
+      throw new Error("The account detail address is not a supported archive resource.");
+    }
+    journey.detailState = "loading";
+    journey.detailError = "";
+    const request = getJSON(journey.detailUrl, onRetry).then((feature) => {
+      if (feature?.type !== "Feature" || feature.properties?.survivor_id !== journey.id ||
+          !Array.isArray(feature.properties.waypoints)) {
+        throw new Error("The account detail does not match the selected record.");
+      }
+      const full = toJourney(feature.properties);
+      if (full.waypoints.length !== journey.waypoints.length || full.waypoints.some((place, index) => {
+        const prior = journey.waypoints[index];
+        return place.canonical !== prior.canonical || place.lat !== prior.lat || place.lng !== prior.lng ||
+          place.roleKey !== prior.roleKey || place.historyYear !== prior.historyYear;
+      })) throw new Error("The account and map index have different revisions. Reload the collection.");
+      for (let index = 0; index < full.waypoints.length; index++) {
+        Object.assign(full.waypoints[index], { px: journey.waypoints[index].px, py: journey.waypoints[index].py });
+      }
+      const detailUrl = journey.detailUrl;
+      Object.assign(journey, full, { detailUrl, detailState: "ready", detailError: "" });
+      return journey;
+    }).catch((error) => {
+      journey.detailState = "error";
+      journey.detailError = error.message;
+      throw error;
+    }).finally(() => profileRequests.delete(journey.id));
+    profileRequests.set(journey.id, request);
+    return request;
+  }
   return {
     meta,
     journeys,
@@ -358,6 +443,7 @@ export async function loadData({ onRetry } = {}) {
     warAt,
     warForJourney,
     corridorsForYear,
+    loadProfile,
   };
 }
 

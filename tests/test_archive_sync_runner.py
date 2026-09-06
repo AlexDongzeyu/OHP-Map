@@ -10,10 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_refresh_is_queued_deduplicated_and_completed_by_an_alarm():
     script = r"""
 import fs from 'node:fs';
-const stub = `export const PUBLIC_DATA_KEY='current-contract';
+import {pathToFileURL} from 'node:url';
+const stub = `export const INDEX_KEY='current-contract';
 export async function syncSurvivors(env){env.calls++;if(env.fail)throw new Error('refresh failed');return {state:env.state};}`;
 const stubURL='data:text/javascript;base64,'+Buffer.from(stub).toString('base64');
-const source=fs.readFileSync('worker/archive-sync.js','utf8').replace('from "./sync.js"',`from "${stubURL}"`);
+const source=fs.readFileSync('worker/archive-sync.js','utf8')
+  .replace('from "./sync.js"',`from "${stubURL}"`)
+  .replace('from "./publication.js"',`from "${pathToFileURL(process.cwd()+'/worker/publication.js').href}"`);
 const {ArchiveSync}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 const values=new Map();
 let alarm=null;
@@ -25,6 +28,8 @@ const storage={
   setAlarm:async value=>{alarm=value},
 };
 const env={calls:0,state:'ready'};
+let now=Date.now();
+Date.now=()=>now;
 const runner=new ArchiveSync({storage,blockConcurrencyWhile:callback=>callback()},env);
 const request=path=>new Request('https://internal'+path,{method:'POST'});
 const first=await (await runner.fetch(request('/bootstrap'))).json();
@@ -37,12 +42,15 @@ const completed=values.get('prepared-publication');
 const jobCleared=!values.has('refresh-request');
 const prepared=await (await runner.fetch(request('/bootstrap'))).json();
 const manual=await (await runner.fetch(request('/run'))).json();
+const throttled=alarm>=now+60*60*1000;
+now+=60*60*1000;
 env.state='already-running';alarm=null;
 await runner.alarm();
 const deferred=alarm>Date.now();
+now+=60*60*1000;
 env.state='ready';env.fail=true;alarm=null;
 let error=null;try{await runner.alarm()}catch(failure){error=failure.message}
-console.log(JSON.stringify({first,callsBefore,queued,duplicate,completed,jobCleared,prepared,manual,deferred,error,calls:env.calls}));
+console.log(JSON.stringify({first,callsBefore,queued,duplicate,completed,jobCleared,prepared,manual,throttled,deferred,error,calls:env.calls}));
 """
     result = subprocess.run(
         ["node", "--input-type=module", "-e", script],
@@ -57,6 +65,7 @@ console.log(JSON.stringify({first,callsBefore,queued,duplicate,completed,jobClea
     assert data["jobCleared"]
     assert data["prepared"]["state"] == "already-prepared"
     assert data["manual"]["state"] == "queued"
+    assert data["throttled"]
     assert data["deferred"]
     assert data["error"] == "refresh failed"
     assert data["calls"] == 3

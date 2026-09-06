@@ -88,6 +88,14 @@ export function normalizeSearch(value) {
     .replace(/[\u0142\u00f8\u0111\u00f0\u0127\u0131\u00df\u00e6\u0153\u00fe]/g, (letter) => SEARCH_FOLDS[letter]).trim();
 }
 
+const STATIC_ASSET_ROOT = "../";
+
+export function siteResource(value) {
+  if (!value || /^(?:https?:|data:|#|\/)/i.test(value)) return value;
+  if (value.startsWith("data/")) return new URL(`/${value}`, import.meta.url).href;
+  return new URL(value, new URL(STATIC_ASSET_ROOT, import.meta.url)).href;
+}
+
 export function initials(name) {
   const parts = String(name).replace(/\(sample\)/i, "").trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "·";

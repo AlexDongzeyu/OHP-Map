@@ -50,6 +50,22 @@ place names, and source spellings. A country in **Route origins** opens its exac
 cohort, not every biography that mentions that country; those filters can be shared in
 an Explore URL.
 
+Collection markers group the accounts naming each place. Arrow keys move between
+markers or loaded account rows without adding thousands of tab stops. **Skip to map**
+and **Skip to account** bypass the collection. A selected account frames all its mapped
+references; this does not turn uncertain mentions into a personal route. Solid, hollow
+and dashed marks distinguish precise person-linked references, broad areas and mentions
+needing review. Both maps include a key, and the reader reconciles these categories in
+one place-count summary. **Full map** reveals more map space without losing the account.
+Nearby count labels appear as space becomes available when zooming; every place
+remains reachable with the keyboard even when its number is not shown.
+
+Misspelled searches offer explicit suggestions rather than silently changing the query.
+History settings provide 1x, 2x and 4x playback. Route-origin shading uses a square-root
+scale so small cohorts remain visible; its explanation identifies the Toronto-school
+collection bias rather than presenting the archive as a population sample. Nazi-era
+Germany uses a neutral text identifier instead of a decorative swastika.
+
 Each account has persistent navigation to its text, photographs, interview chapters,
 and places. The map shows only that selected account, labels current versus historical
 borders, and explains when there is not enough evidence to draw a route. A chapter link
@@ -97,6 +113,29 @@ summary is a transcript. Both fields remain selectable when clipboard access is 
 **Previous** and **Next** follow the same community/surname order as the filtered
 collection, including saved accounts; browsing onward loads further results when needed.
 
+### Reviewing source claims
+
+The loaded reader's **Review these references** section downloads an unchanged,
+single-account source package. A trusted project maintainer can turn it into a review
+worksheet, have a student or teacher check the original interview, then validate and
+apply the attributed decisions:
+
+```powershell
+python -m pipeline.review_decisions export --dataset adam-wally-review-source.json --survivor-id adam-wally --output worksheet.json
+python -m pipeline.review_decisions check --dataset data\survivors.geojson --decisions decisions.json
+python -m pipeline.review_decisions apply --dataset data\survivors.geojson --decisions decisions.json --output reviewed-candidate.geojson
+python -m pipeline.build --source all --review-decisions decisions.json
+```
+
+Keep the completed decision file in version control and supply it on subsequent builds.
+Every decision requires a reviewer, date, evidence URL, rationale, and source fingerprint.
+Changed source text or coordinates invalidate an old approval. Approvals do not inflate
+pipeline confidence values, and rejected/contextual mentions remain available as source
+context rather than being erased. Partial approvals do not verify the whole account.
+Reviewer names and rationales are public audit information; contributors must know that
+before submitting a decision. There is no unauthenticated approval endpoint and no real
+claims were automatically verified by adding this workflow.
+
 The landing page's rotating globe and moving portrait belts play automatically while
 the page is visible, with no start/pause control or motion URL setting. They pause in
 hidden tabs and resume when the visitor returns. The rest of the interface continues
@@ -130,22 +169,67 @@ Worker/Cron budget; Durable Objects provide a 30-second CPU budget without a pla
 upgrade. Queue deduplication prevents overlapping refreshes. A compatibility snapshot
 can request one background preparation after deployment without delaying page loading.
 
+### Compact delivery and discoverable accounts
+
+Startup uses `/data/index.json`, a compact map and search index, instead of transferring
+every biography and media inventory. Opening an account fetches its complete original
+feature from a content-addressed `/data/profiles/{id}.{sha256}.json` URL. Failed details
+offer a retry; a mismatched version asks the visitor to reload the collection rather
+than silently mixing evidence. The full `/data/survivors.geojson` endpoint remains
+available for research and compatibility.
+
+The build publishes real `/survivor/{id}` pages with server-readable source summaries,
+individual titles, canonical URLs and social-preview metadata. `/sitemap.xml` lists
+the public accounts. Old hash links still open correctly. The Worker handles aliases
+and genuine HTTP 404s; a plain file server cannot reproduce these routes.
+If the profile catalog reaches an edge before its updated collection index, the
+valid source page remains readable with a retry action instead of becoming a false 404.
+Share metadata uses the licensed full-size source photograph where available, not
+the 192px reader thumbnail. Accounts without a permitted original use the branded
+1200x630 PNG fallback rather than an unsupported SVG preview.
+
+Live refresh stages immutable detail files before switching the compact index. It
+reuses unchanged files and limits changed-detail KV writes to 30 per hourly refresh,
+keeping the previous complete publication usable while a larger update is staged.
+Source-bound human decisions survive refresh only while their evidence still matches.
+Pending updates are bound to the deployed seed version. A new seed reconciles review
+decisions before staging resumes, so an older in-progress snapshot cannot restore a
+rejected reference or discard a newly imported decision.
+
+Static scripts, styles, fonts, portraits and flags are served from a content-hashed
+`/releases/{sha256}/` tree with one-year immutable caching. Stable aliases revalidate;
+data stays under `/data/`. The current and one preceding verified static release are
+retained within the asset limit. Responses add a compatible CSP, `nosniff`, referrer
+and permissions policies; Vimeo playback and legitimate Crestwood embedding remain
+allowed. These changes do not assert that search engines have already indexed a page.
+
+Production assembly uses `--restore-published` to restore and verify the actually
+published preceding release, including on a clean CI checkout. Its manifest and file
+hashes must agree; a required restore failure stops the build. The first versioned
+deployment may proceed after confirming that the live site is still unversioned.
+`OHP_PUBLISHED_ORIGIN` overrides the public origin used for this read-only restore.
+Unflagged assembly remains available for offline static previews.
+
 ---
 
-## Quick start (offline, ~2 minutes)
+## Local preview
 
-```bash
-# 1. Build the dataset (offline; rebuilds the real data from committed artifacts)
-pip install -r pipeline/requirements.txt
-python -m pipeline.build            # default source = ohp (221 real survivors)
-
-# 2. Serve the static site
-python -m http.server 8124
-#   open http://localhost:8124
+```powershell
+# Assemble the committed archive and serve the actual Worker routes locally.
+npx wrangler dev --local --ip 127.0.0.1 --port 8124
+# Open http://127.0.0.1:8124
 ```
 
-That's the whole product: open the URL, try the three tabs, drag the scrubber to 1944 and
-watch the dots converge on Auschwitz.
+Open the URL, browse an account in Explore, or choose a year in History. Marker
+counts refer to accounts naming a place, not a claim that those people met there.
+This uses local KV and Durable Object storage, not the live archive's storage.
+A static-only visual preview can instead run `node tools\assemble_site.cjs` followed
+by `python -m http.server 8124 --directory public`, but must use the legacy hash
+routes and cannot validate profile HTTP responses, security headers or redirects.
+
+To regenerate the source dataset offline, install the existing Python requirements
+and run `python -m pipeline.build --source all`. Preserve and replay any real human
+decision files as described above; do not replace them with automatic approvals.
 
 Other builds:
 
@@ -157,7 +241,9 @@ python -m pipeline.build --discover       # probe the WP REST API and exit
 ```
 
 Run the tests with `python -m pytest -q`. A headless browser smoke test is in
-`tools/smoke.cjs` (`node tools/smoke.cjs` against a running server; puppeteer-core + Edge).
+`tools/smoke.cjs` (`node tools\smoke.cjs http://127.0.0.1:8124` against a running
+Worker preview; puppeteer-core + Edge). The complete smoke suite requires Worker
+routing, not only a static file server.
 
 ---
 
