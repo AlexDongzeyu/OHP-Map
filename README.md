@@ -105,6 +105,18 @@ an account's undated or other-year references remain in Explore, not on that yea
 Account-map markers also open their matching source entries. Broken account and place
 links show an explanation and recovery actions rather than silently returning home.
 
+Collection search combines words in any order: **Adler Amek**, **Adler Auschwitz**
+and **Warsaw Toronto** can match a name, a name with a place, or multiple recorded
+places in one account. Every term must match; use double quotes for a phrase such as
+**"Second World War"**. Diacritics, name punctuation and source spellings are supported.
+Results identify matching places, periods or topics; spelling suggestions keep the
+other search terms and current collection filters. These are metadata and source-place
+matches, not a search of full biographies or interview transcripts, and they do not
+verify a person's presence or travel between the places.
+Press Enter or Down arrow in search to focus the first result or its recovery message.
+On mobile, this uses the existing full-height collection view; **Map** returns to
+the same filtered map without discarding the search.
+
 Collection addresses retain the search, selected communities, origin filter, and loaded
 result count. Account links opened from that collection retain the same browsing context
 after a reload. Historical map links retain the selected dated place as well as the

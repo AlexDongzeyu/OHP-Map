@@ -28,22 +28,74 @@ const SERVICE_WINDOWS = {
   "Korean War": { start: 1950, end: 1953 },
 };
 
+function searchValue(value) {
+  return normalizeSearch(value).replace(/['\u2018\u2019\u02bc]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function searchParts(query) {
+  const text = String(query || "").replace(/[\u201c\u201d]/g, '"');
+  return [...text.matchAll(/"([^"]*)"?|(\S+)/g)].map(match => {
+    const value = searchValue(match[1] ?? match[2]);
+    const quoted = match[1] !== undefined;
+    return {
+      value, quoted, start: match.index, end: match.index + match[0].length,
+      phrase: quoted ? new RegExp(`(?:^|\\s)${value}(?=\\s|$)`, "u") : null,
+    };
+  }).filter(part => part.value);
+}
+
+function matchesSearchPart(text, part) {
+  return part.phrase ? part.phrase.test(text) : text.includes(part.value);
+}
+
+function journeySearchFields(journey) {
+  return [
+    { kind: "name", label: journey.name },
+    { kind: "place", label: journey.hometown },
+    ...journey.waypoints.map(place => ({ kind: "place", label: place.canonical, alias: place.asWritten })),
+    ...journey.conflicts.map(label => ({ kind: "period", label })),
+    ...journey.themes.map(label => ({ kind: "topic", label })),
+    { kind: "community", label: journey.group },
+  ].filter(field => field.label).map(field => ({
+    ...field, text: searchValue(field.label), aliasText: searchValue(field.alias),
+  }));
+}
+
 function journeySearchText(journey) {
-  return normalizeSearch([
-    journey.name, journey.hometown, journey.group, ...journey.conflicts, ...journey.themes,
-    ...journey.waypoints.flatMap((place) => [place.canonical, place.asWritten]),
-  ].join(" "));
+  // Quoted phrases must not bridge unrelated name, place or subject fields.
+  return journeySearchFields(journey).flatMap(field => [field.text, field.aliasText]).join("\n");
 }
 
 export function journeyFilter({ query, groupFilter, originCountry, placeFilter, savedOnly = false, savedIds = new Set(), sharedIds = null, captionedOnly = false }) {
-  const term = normalizeSearch(query);
+  const terms = searchParts(query);
+  const active = Boolean(String(query || "").trim());
   return (journey) => groupFilter.has(journey.group) &&
     (!originCountry || journey.originCountry === originCountry) &&
     (!placeFilter || journey.waypoints.some((place) => place.canonical === placeFilter)) &&
     (!savedOnly || savedIds.has(journey.id)) &&
     (!sharedIds || sharedIds.has(journey.id)) &&
     (!captionedOnly || journey.captionedVideoCount > 0) &&
-    (!term || (journey.searchText ?? journeySearchText(journey)).includes(term));
+    (!active || terms.length > 0 && terms.every(part => matchesSearchPart(journey.searchText ?? journeySearchText(journey), part)));
+}
+
+export function searchMatchLabels(journey, query, limit = 2) {
+  const remaining = new Set(searchParts(query));
+  const name = searchValue(journey.name);
+  for (const part of remaining) if (matchesSearchPart(name, part)) remaining.delete(part);
+  if (!remaining.size) return [];
+  const labels = [];
+  for (const field of journeySearchFields(journey)) {
+    if (field.kind === "name") continue;
+    const matched = [...remaining].filter(part => matchesSearchPart(field.text, part) || matchesSearchPart(field.aliasText, part));
+    if (!matched.length) continue;
+    const aliasOnly = matched.some(part => !matchesSearchPart(field.text, part));
+    const label = aliasOnly ? `${field.alias} (${field.label})` : field.label;
+    labels.push(field.kind === "place" ? label : `${field.kind[0].toUpperCase() + field.kind.slice(1)}: ${label}`);
+    for (const term of matched) remaining.delete(term);
+    if (!remaining.size || labels.length >= limit) break;
+  }
+  return labels;
 }
 
 export function collectionResults(store, state) {
@@ -105,33 +157,46 @@ export function evidenceCounts(journey) {
 }
 
 export function searchSuggestions(store, state) {
-  const query = normalizeSearch(state.query);
-  if (query.length < 4 || query.length > 60) return [];
-  const limit = query.length > 7 ? 2 : 1;
-  const labels = new Map();
-  for (const journey of store.journeys.filter(journeyFilter({ ...state, query: "" }))) {
-    for (const label of [journey.name, ...journey.waypoints.flatMap((place) => [
-      place.canonical.split(",")[0], place.asWritten,
-      ...place.canonical.split(/[ ,()]+/).filter((word) => word.length > 3),
-    ])]) {
-      const folded = normalizeSearch(label);
-      if (Math.abs(folded.length - query.length) <= limit && folded !== query) labels.set(folded, label);
-    }
-  }
+  const query = String(state.query || "");
+  if (query.length > 120) return [];
+  const parts = searchParts(query);
   const ranked = [];
-  for (const [folded, label] of labels) {
-    let row = Array.from({ length: folded.length + 1 }, (_, index) => index);
-    for (let i = 1; i <= query.length; i++) {
-      const next = [i];
-      for (let j = 1; j <= folded.length; j++) {
-        next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (query[i - 1] === folded[j - 1] ? 0 : 1));
+  for (const part of parts) {
+    if (part.value.length < 4 || part.value.length > 60) continue;
+    const limit = part.value.length > 7 ? 2 : 1;
+    const rest = `${query.slice(0, part.start)}${query.slice(part.end)}`.trim();
+    const labels = new Map();
+    const candidates = store.journeys.filter(journeyFilter({ ...state, query: rest }));
+    for (const journey of candidates) {
+      for (const field of journeySearchFields(journey)) {
+        for (const label of [field.label, field.alias, ...field.label.split(/[ ,()]+/)]) {
+          const folded = searchValue(label);
+          if (Math.abs(folded.length - part.value.length) <= limit && folded !== part.value) labels.set(folded, label);
+        }
       }
-      row = next;
     }
-    const distance = row[folded.length];
-    if (distance <= limit) ranked.push({ label, distance });
+    for (const [folded, label] of labels) {
+      const distance = searchDistance(part.value, folded);
+      if (distance > limit) continue;
+      const replacement = part.quoted ? `"${label.replaceAll('"', "")}"` : label;
+      const suggestion = `${query.slice(0, part.start)}${replacement}${query.slice(part.end)}`;
+      if (candidates.some(journeyFilter({ ...state, query: suggestion }))) ranked.push({ label: suggestion, distance });
+    }
   }
-  return ranked.sort((a, b) => a.distance - b.distance || a.label.localeCompare(b.label)).slice(0, 3).map((entry) => entry.label);
+  return [...new Set(ranked.sort((a, b) => a.distance - b.distance || a.label.localeCompare(b.label))
+    .map(entry => entry.label))].slice(0, 3);
+}
+
+function searchDistance(query, value) {
+  let row = Array.from({ length: value.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= query.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= value.length; j++) {
+      next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (query[i - 1] === value[j - 1] ? 0 : 1));
+    }
+    row = next;
+  }
+  return row[value.length];
 }
 
 async function getJSON(name, onRetry, mayRetry = true) {

@@ -1781,6 +1781,22 @@ function wireGlobal() {
     if (event.target.matches("[data-history-place-list]")) state.historyPlacesOpen = event.target.open;
   }, true);
   document.addEventListener("keydown", (e) => {
+    if (state.view === "explore" && e.target.id === "search" &&
+        ["Enter", "ArrowDown"].includes(e.key) && !e.isComposing &&
+        !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      document.querySelector(".collection-filters").open = false;
+      if (MOBILE.matches && !state.selectedId) setExplorePresentation("reader");
+      const result = document.querySelector(".rail-card");
+      if (result) restoreCollectionFocus(result.dataset.survivor);
+      else {
+        const empty = document.querySelector(".rail-empty");
+        if (!empty) { console.warn("The collection results have not rendered."); return; }
+        empty.focus({ preventScroll: true });
+        empty.scrollIntoView({ block: "nearest" });
+      }
+      return;
+    }
     if (e.key === "Escape") {
       if (document.querySelector(".research-dialog[open]")) return;
       const settings = document.querySelector(".history-settings[open]");

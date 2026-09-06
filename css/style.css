@@ -987,6 +987,7 @@ body[data-view="landing"] :focus-visible { outline-color:var(--on-binding); }
 .rail-card:hover { background:var(--accent-wash); }
 .rail-card.sel { background:var(--accent-wash); }
 .rail-card:is(.sel, :hover) .rail-intro { color:var(--ink-soft); }
+.rail-match { margin-top:var(--space-1); color:var(--ink-soft); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
 .medal {
   position:relative;
   width:44px;
@@ -1976,6 +1977,7 @@ body[data-view="landing"] :focus-visible { outline-color:var(--on-binding); }
   .reader-toggle { display:flex; }
   .ov-explore[data-presentation="reader"] .rail,
   .ov-explore[data-presentation="reader"] .panel-host { top:var(--header-height); height:auto; max-height:none; }
+  .ov-explore[data-presentation="reader"] .collection-map-toggle { display:flex; }
   .ov-explore[data-presentation="reader"] .panel,
   .ov-explore[data-presentation="reader"] .rail { border-radius:0; }
   .ov-explore[data-presentation="reader"] .map-tools,

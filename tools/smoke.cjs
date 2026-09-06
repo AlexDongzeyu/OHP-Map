@@ -21,6 +21,18 @@ function assertCounterMotion(label, { targets, samples }) {
   }
 }
 
+async function searchCollection(page, query) {
+  await page.$eval("#search", (input, value) => {
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }, query);
+  await page.waitForFunction(expected => {
+    const query = location.hash.includes("?") ? location.hash.slice(location.hash.indexOf("?") + 1) : location.search;
+    return (new URLSearchParams(query).get("q") || "") === expected;
+  }, { timeout: 10000 }, query);
+  return page.$$eval(".rail [data-survivor]", rows => rows.map(row => row.dataset.survivor));
+}
+
 (async () => {
   const errors = [];
   const browser = await puppeteer.launch({ executablePath: EDGE, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
@@ -3607,6 +3619,137 @@ function assertCounterMotion(label, { targets, samples }) {
     } finally {
       await context.close();
     }
+  });
+
+  await check("research search combines name order, places and quoted periods", async () => {
+    const context = await browser.createBrowserContext();
+    const research = await context.newPage();
+    research.on("pageerror", error => errors.push("research search: " + error.message));
+    let catalog;
+    research.on("response", response => {
+      if (new URL(response.url()).pathname === "/data/index.json") catalog = response.json();
+    });
+    try {
+      await research.goto(BASE + "/#/explore", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await research.waitForSelector("#search", { timeout: 15000 });
+      const normal = await searchCollection(research, "Amek Adler");
+      for (const query of ["Adler Amek", "Adler, Amek"]) {
+        const results = await searchCollection(research, query);
+        if (JSON.stringify(results) !== JSON.stringify(normal) || !results.includes("adler-amek")) {
+          throw new Error("surname-first research lost a matching account");
+        }
+      }
+      if (!(await searchCollection(research, "Adler Auschwitz")).includes("adler-amek")) {
+        throw new Error("name-plus-place search lost the matching account");
+      }
+      const expected = (await catalog).features.filter(feature => ["Warsaw", "Toronto"].every(name =>
+        feature.properties.waypoints.some(place => [place.canonical, place.as_written].some(value => value?.includes(name)))))
+        .map(feature => feature.properties.survivor_id).sort();
+      const places = (await searchCollection(research, "Warsaw Toronto")).sort();
+      if (!expected.length || JSON.stringify(places) !== JSON.stringify(expected)) {
+        throw new Error("multi-place research does not match the exact source-reference intersection");
+      }
+      if ((await searchCollection(research, '"Warsaw Toronto"')).length) {
+        throw new Error("a quoted phrase bridged unrelated place fields");
+      }
+      if (!(await searchCollection(research, '"The Holocaust" Warsaw')).length) {
+        throw new Error("a period and place could not be combined");
+      }
+    } finally { await context.close(); }
+  });
+
+  await check("research spelling recovery keeps the remaining query and private list scope", async () => {
+    const context = await browser.createBrowserContext();
+    const research = await context.newPage();
+    research.on("pageerror", error => errors.push("research spelling: " + error.message));
+    try {
+      await research.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await research.evaluate(() => localStorage.setItem("ohp-map.saved-accounts.v1",
+        JSON.stringify({ version: 1, ids: ["adler-amek", "adam-wally"] })));
+      await research.goto(BASE + "/#/explore?saved=1&q=Adler+aushwitz", { waitUntil: "domcontentloaded" });
+      await research.waitForSelector('[data-search-suggestion="Adler Auschwitz"]', { timeout: 15000 });
+      await research.click('[data-search-suggestion="Adler Auschwitz"]');
+      const result = await research.$$eval(".rail [data-survivor]", rows => rows.map(row => row.dataset.survivor));
+      if (JSON.stringify(result) !== '["adler-amek"]' || !research.url().includes("saved=1")) {
+        throw new Error("correcting a spelling discarded the name or saved scope");
+      }
+      const saved = await research.evaluate(() => localStorage.getItem("ohp-map.saved-accounts.v1"));
+      await research.goto(BASE + "/#/explore?list=adam-wally&q=Adler+aushwitz", { waitUntil: "domcontentloaded" });
+      await research.waitForSelector(".rail-empty", { timeout: 15000 });
+      if (await research.$("[data-search-suggestion]") || await research.$(".rail [data-survivor]") ||
+          await research.evaluate(() => localStorage.getItem("ohp-map.saved-accounts.v1")) !== saved) {
+        throw new Error("search recovery escaped the shared selection or changed private saves");
+      }
+    } finally { await context.close(); }
+  });
+
+  await check("research results explain matches and preserve quoted searches through account reloads", async () => {
+    const context = await browser.createBrowserContext();
+    const research = await context.newPage();
+    research.on("pageerror", error => errors.push("research context: " + error.message));
+    try {
+      await research.goto(BASE + "/#/explore", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await research.waitForSelector("#search", { timeout: 15000 });
+      const query = '"The Holocaust" Warsaw';
+      await searchCollection(research, query);
+      const reasons = await research.$$eval(".rail-match", elements => elements.map(element => element.textContent));
+      if (!reasons.some(reason => reason.includes("Warsaw") && reason.includes("Period: The Holocaust"))) {
+        throw new Error("the result does not explain its place and period matches");
+      }
+      await research.click(".rail [data-survivor]");
+      await research.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      const person = await research.$eval("#profile-name", element => element.textContent);
+      await research.reload({ waitUntil: "domcontentloaded" });
+      await research.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      if (await research.$eval("#search", input => input.value) !== query ||
+          await research.$eval("#profile-name", element => element.textContent) !== person) {
+        throw new Error("opening or reloading the account lost its research query");
+      }
+    } finally { await context.close(); }
+  });
+
+  await check("research search remains usable on small phones and landscape screens", async () => {
+    const context = await browser.createBrowserContext();
+    const research = await context.newPage();
+    research.on("pageerror", error => errors.push("research responsive: " + error.message));
+    try {
+      for (const viewport of [{ width: 320, height: 568 }, { width: 568, height: 320 }]) {
+        await research.setViewport(viewport);
+        await research.goto(BASE + "/#/explore?q=Warsaw+Toronto", { waitUntil: "domcontentloaded", timeout: 40000 });
+        await research.waitForSelector(".rail-match", { timeout: 15000 });
+        const fits = await research.evaluate(() => {
+          const input = document.getElementById("search"), box = input.getBoundingClientRect();
+          return document.documentElement.scrollWidth <= innerWidth && box.left >= 0 && box.right <= innerWidth &&
+            [...document.querySelectorAll(".rail-match")].every(label => label.scrollWidth <= label.clientWidth + 1);
+        });
+        if (!fits) throw new Error(`search or its result explanations overflow at ${viewport.width}px`);
+        await research.focus("#search");
+        await research.keyboard.press("Enter");
+        const reachable = await research.evaluate(() => {
+          const first = document.querySelector(".rail-card"), box = first.getBoundingClientRect();
+          const header = document.getElementById("topbar").getBoundingClientRect();
+          return document.activeElement === first && box.top >= header.bottom && box.bottom <= innerHeight &&
+            document.querySelector(".ov-explore").dataset.presentation === "reader";
+        });
+        if (!reachable) throw new Error("submitting the search did not reveal a complete, focused result");
+        await research.click("[data-act='show-explore-map']");
+        await research.click(".reader-return");
+        await research.click(".collection-filters > summary");
+        await research.waitForSelector(".collection-filters[open]");
+        const choices = await research.$$eval("[data-group]", inputs => inputs.length);
+        if (choices !== 5) throw new Error("the new search help displaced community choices");
+        await research.click("[data-act='close-filters']");
+        if (!(await searchCollection(research, "Adler Amek")).includes("adler-amek")) {
+          throw new Error("returning from filters lost usable research search");
+        }
+        await searchCollection(research, "no-such-research-account");
+        await research.focus("#search");
+        await research.keyboard.press("Enter");
+        if (!await research.$eval(".rail-empty", empty => empty === document.activeElement)) {
+          throw new Error("an empty submitted search did not focus its recovery instructions");
+        }
+      }
+    } finally { await context.close(); }
   });
 
   for (const transfer of dataTransfers.values()) {

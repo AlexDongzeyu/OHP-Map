@@ -64,7 +64,7 @@ def verify(base, output, executable):
                 assert normalized(biography) in text, f"{identifier}: the summary was clipped"
                 assert source_characters(full_biography) in source_characters(text), f"{identifier}: the full source biography was clipped"
                 assert "Accessed" in text and "not a verbatim interview transcript" in text
-                assert "Search names or places" not in text, "The interactive controls were printed"
+                assert "Name, place or period" not in text, "The interactive controls were printed"
                 assert all(normalized(name) in normalized(part.extract_text() or "") for part in document.pages), "A page lost its account identity"
                 if identifier == "ferguson-george":
                     assert len(document.pages) > 1, "The long account did not paginate"

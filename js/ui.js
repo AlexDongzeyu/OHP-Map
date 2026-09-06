@@ -5,7 +5,7 @@
 import { C, GROUP_COLOR, SYSTEM_REDUCED_MOTION, siteResource, esc } from "./config.js";
 import { captionStatus, playerURL } from "./media.js";
 import { FLAG_SOURCES, resourcesForYear } from "./historical-context.js";
-import { collectionResults, collectionPlaces, evidenceCounts, searchSuggestions, relatedAccounts } from "./data.js";
+import { collectionResults, collectionPlaces, evidenceCounts, searchSuggestions, searchMatchLabels, relatedAccounts } from "./data.js";
 import { accountLink, accountCitation } from "./research-tools.js";
 
 const RAIL_PAGE = 140;
@@ -147,8 +147,11 @@ export function explore(store, state) {
       <p class="saved-feedback" data-saved-feedback aria-live="${state.selectedId ? "off" : "polite"}"${state.savedError ? "" : " hidden"}>${esc(state.savedError || "")}</p>
       <div class="rail-search">
         ${icon("search")}
-        <input id="search" class="search-input" type="search" placeholder="Search names or places"
-          value="${esc(state.query || "")}" autocomplete="off" aria-label="Search people">
+        <input id="search" class="search-input" type="search" placeholder="Name, place or period"
+          value="${esc(state.query || "")}" autocomplete="off" enterkeyhint="search"
+          title="Combine words to narrow results. Use quotes for a phrase."
+          aria-label="Search the collection" aria-describedby="collection-search-help">
+        <p class="sr-only" id="collection-search-help">Every word must match. Use double quotes for a phrase. Press Enter or Down arrow to browse the results.</p>
       </div>
       <details class="collection-filters">
         <summary>Filters <span data-group-count>${filterSummary(store, state)}</span>${icon("chevron")}</summary>
@@ -224,13 +227,15 @@ export function railInner(store, state) {
     const emptySaved = state.savedOnly && !savedCount(store, state);
     const emptyShared = state.sharedIds && !store.journeys.some(journey => state.sharedIds.has(journey.id));
     const suggestions = state.query ? searchSuggestions(store, state) : [];
-    html = `<div class="rail-empty"><p>${emptyShared ? "These accounts are not available yet" : emptySaved
+    html = `<div class="rail-empty" tabindex="-1" role="region" aria-label="Collection results"><p>${emptyShared ? "These accounts are not available yet" : emptySaved
       ? (state.savedError ? "Saved accounts are unavailable" : "Keep an account for later")
-      : state.groupFilter.size ? "No matching accounts" : "No communities selected"}</p>
+      : state.groupFilter.size ? (state.query ? "No account matches every search term" : "No matching accounts") : "No communities selected"}</p>
       <span>${emptyShared ? "The link has been kept intact. Reload the collection to check for updates, or browse the available accounts."
         : emptySaved ? (state.savedError
         ? "Your existing list has not been changed. You can browse the collection and copy account links instead."
         : "Use the bookmark beside a name or Save account in the reader. You can return to your list here.")
+        : !state.groupFilter.size ? "Select at least one community to search this collection."
+        : state.query ? "Try fewer words or a different spelling. Double quotes keep a phrase together. Search covers names, places, periods and topics, not full biographies or transcripts."
         : "Try another name or place, or reset the collection filters."}</span>
       ${suggestions.length ? `<div class="search-suggestions"><span>Try a close spelling</span>${suggestions.map((suggestion) =>
         `<button class="link" data-search-suggestion="${esc(suggestion)}">Search ${esc(suggestion)}</button>`).join("")}</div>` : ""}
@@ -366,12 +371,14 @@ export function saveButton(journey, state, compact = false) {
 function railCard(j, state) {
   const isSel = j.id === state.selectedId;
   const col = GROUP_COLOR[j.group] || C.accent;
+  const matches = state.query ? searchMatchLabels(j, state.query) : [];
   return `<div class="rail-entry${isSel ? " sel" : ""}" role="listitem">
     <button class="rail-card ${isSel ? "sel" : ""}" data-survivor="${esc(j.id)}" aria-pressed="${isSel}">
     ${profileMedal(j, col)}
     <span class="rail-text">
       <span class="rail-name">${esc(j.name)}</span>
       <span class="rail-intro">${profileMeta(j) || esc(j.group)}</span>
+      ${matches.length ? `<span class="rail-match">Matches: ${matches.map(esc).join(" · ")}</span>` : ""}
     </span></button>${saveButton(j, state, true)}</div>`;
 }
 
@@ -989,7 +996,10 @@ export function about(store) {
         <div class="about-grid">
         <section><h2>Reading a recorded life</h2><p>Explore brings each person's account, photographs,
           interview chapters, and recorded places together. The historical atlas puts dated accounts
-          alongside changing territories from 1914 to 2026.</p></section>
+          alongside changing territories from 1914 to 2026.</p>
+          <p>Search can combine a name with a place, or several places in one account. Every word
+          must match; put an exact phrase in double quotes. Press Enter to browse the results.
+          Search covers recorded names, places, periods and topics, not full biographies or transcripts.</p></section>
         <section><h2>From testimony to map</h2><p>Each route uses places named on a public OHP
           page. Historical names are matched to current locations, so &quot;Lemberg&quot;
           resolves to Lviv. Dates determine the order when the source provides them.</p>
