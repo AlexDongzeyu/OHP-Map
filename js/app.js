@@ -4,6 +4,7 @@ import { loadData, journeyFilter, collectionResults } from "./data.js";
 import { createAtlas } from "./atlas.js";
 import * as ui from "./ui.js";
 import * as motion from "./motion.js";
+import { isReferenceKey, sourceReferenceTargets, referenceLink, ReferenceLinkError } from "./reference-links.js";
 import { motionEnabled, onMotionPreferenceChange, slug, normalizeSearch } from "./config.js";
 import { playerURL } from "./media.js";
 import {
@@ -20,6 +21,9 @@ const state = {
   view: "landing",
   selectedId: null,
   activePlaceIndex: null,
+  referenceKey: null,
+  referenceMessage: "",
+  referenceResolving: false,
   explorePresentation: "auto",
   missingKind: null,
   query: "",
@@ -62,6 +66,7 @@ let readingListSnapshot = null;
 let printJob = null;
 let printReturnFocus = null;
 let printMapSize = null;
+let referenceRequest = 0;
 let rendered = { view: null, selectedId: null, patternsLayer: null };
 
 async function main() {
@@ -265,9 +270,12 @@ function mountOverlay() {
 
 function afterExplore() {
   if (state.selectedId) {
+    const journey = store.byId.get(state.selectedId);
     const miniEl = document.querySelector("[data-mini]");
-    if (miniEl) atlas.drawMini(miniEl, store.byId.get(state.selectedId));
-    void loadSelectedProfile(state.selectedId);
+    if (miniEl) atlas.drawMini(miniEl, journey);
+    if (journey?.detailState === "ready" && state.referenceResolving && isReferenceKey(state.referenceKey)) {
+      void restoreLinkedReference(journey);
+    } else void loadSelectedProfile(state.selectedId);
   }
 }
 
@@ -288,6 +296,13 @@ async function loadSelectedProfile(id, retry = false) {
   }
   if (state.view !== "explore" || state.selectedId !== id) return;
   refreshProfilePanel(journey);
+  if (journey.detailState === "ready") {
+    if (state.referenceResolving && isReferenceKey(state.referenceKey)) void restoreLinkedReference(journey);
+    else if (state.activePlaceIndex != null && !state.referenceKey) void rememberReference(journey, state.activePlaceIndex);
+  } else if (state.referenceKey) {
+    state.referenceMessage = "Load this account's details to open the linked source reference.";
+    refreshReferenceControls();
+  }
 }
 
 function refreshProfilePanel(journey) {
@@ -326,6 +341,7 @@ function refreshProfilePanel(journey) {
 }
 
 function filterPlace(canonical) {
+  resetReferenceState();
   state.placeFilter = canonical;
   state.selectedId = null;
   state.activePlaceIndex = null;
@@ -399,6 +415,7 @@ function go(view) {
   stopHistoryPlayback();
   syncHistoryAddress(true);
   if (view === "explore") {
+    resetReferenceState();
     state.selectedId = null;
     state.activePlaceIndex = null;
     state.explorePresentation = "auto";
@@ -411,6 +428,7 @@ function go(view) {
   render();
 }
 function selectSurvivor(id, keepPresentation = false) {
+  resetReferenceState();
   stopHistoryPlayback();
   syncHistoryAddress(true);
   if (state.view !== "explore") {
@@ -481,6 +499,11 @@ function refreshResearchTools(message = "") {
   document.querySelectorAll("[data-result-navigation]").forEach((navigation) => {
     navigation.innerHTML = ui.resultNavigation(store, state);
   });
+  const related = document.querySelector("[data-related-reading]");
+  if (related && store.byId.get(state.selectedId)?.detailState === "ready") {
+    related.innerHTML = ui.relatedReading(store, state);
+    wireImages(related);
+  }
 }
 
 function toggleSavedAccount(id) {
@@ -523,6 +546,7 @@ function toggleSavedView() {
 }
 
 function leaveSharedList() {
+  resetReferenceState();
   state.sharedIds = null;
   state.savedOnly = false;
   state.selectedId = null;
@@ -765,6 +789,7 @@ function resetSavedList() {
   document.querySelector(".saved-view").focus({ preventScroll: true });
 }
 function clearSel() {
+  resetReferenceState();
   const id = state.selectedId;
   state.selectedId = null; state.activePlaceIndex = null;
   state.explorePresentation = "auto";
@@ -843,6 +868,7 @@ function collectionAddress(prefix) {
   if (state.captionedOnly) params.set("captions", "1");
   if (state.savedOnly) params.set("saved", "1");
   if (state.sharedIds) params.set("list", [...state.sharedIds].join(","));
+  if (prefix.startsWith("#/survivor/") && state.referenceKey !== null) params.set("ref", state.referenceKey);
   if (state.railLimit > RAIL_PAGE) params.set("limit", Math.min(state.railLimit, store.journeys.length));
   const query = params.toString();
   return `${prefix}${query ? `?${query}` : ""}`;
@@ -853,7 +879,11 @@ function accountHash(id) { return collectionAddress(`#/survivor/${id}`); }
 
 function syncCollectionAddress() {
   if (state.view === "explore") {
-    history.replaceState(null, "", state.selectedId ? accountHash(state.selectedId) : exploreHash());
+    const fragment = state.selectedId ? accountHash(state.selectedId) : exploreHash();
+    if (pathProfileId() && !location.hash && state.selectedId) {
+      const separator = fragment.indexOf("?");
+      history.replaceState(null, "", `/survivor/${state.selectedId}${separator < 0 ? "" : fragment.slice(separator)}`);
+    } else history.replaceState(null, "", fragment);
     updateDocumentTitle();
   }
 }
@@ -893,6 +923,7 @@ function openOrigin(name) {
     return;
   }
   stopHistoryPlayback();
+  resetReferenceState();
   state.originCountry = name;
   state.placeFilter = null;
   state.savedOnly = false;
@@ -918,18 +949,127 @@ function clearOrigin() {
   document.getElementById("search").focus({ preventScroll: true });
 }
 
-function focusPlace(index) {
+function resetReferenceState() {
+  referenceRequest++;
+  state.referenceKey = null;
+  state.referenceMessage = "";
+  state.referenceResolving = false;
+  state.activePlaceIndex = null;
+}
+
+function refreshReferenceControls() {
+  document.querySelectorAll("[data-place-step]").forEach(button => {
+    button.setAttribute("aria-pressed", String(Number(button.dataset.placeStep) === state.activePlaceIndex));
+  });
+  document.querySelectorAll("[data-reference-actions]").forEach(actions => {
+    actions.hidden = Number(actions.dataset.referenceActions) !== state.activePlaceIndex;
+  });
+  const notice = document.querySelector("[data-reference-notice]");
+  if (notice) {
+    notice.hidden = !state.referenceMessage;
+    notice.innerHTML = ui.referenceNotice(state);
+  }
+}
+
+async function rememberReference(journey, index) {
+  const request = ++referenceRequest;
+  try {
+    const targets = await sourceReferenceTargets(journey.sourceProperties);
+    const target = targets.find(item => item.collection === "waypoints" && item.index === index);
+    if (!target || targets.filter(item => item.key === target.key).length !== 1) {
+      throw new ReferenceLinkError("Several source entries share this identity. Copy the account link instead.");
+    }
+    if (request !== referenceRequest || state.view !== "explore" || state.selectedId !== journey.id || state.activePlaceIndex !== index) return;
+    state.referenceKey = target.key;
+    state.referenceMessage = "";
+    syncCollectionAddress();
+    refreshReferenceControls();
+  } catch (error) {
+    if (!(error instanceof ReferenceLinkError)) throw error;
+    if (request !== referenceRequest || state.selectedId !== journey.id) return;
+    state.referenceMessage = error.message;
+    console.warn("This source reference could not be linked:", error.message);
+    refreshReferenceControls();
+  }
+}
+
+async function restoreLinkedReference(journey) {
+  const key = state.referenceKey, request = ++referenceRequest;
+  try {
+    const targets = (await sourceReferenceTargets(journey.sourceProperties)).filter(target => target.key === key);
+    if (request !== referenceRequest || state.view !== "explore" || state.selectedId !== journey.id || state.referenceKey !== key) return;
+    state.referenceResolving = false;
+    if (targets.length !== 1) {
+      throw new ReferenceLinkError(targets.length
+        ? "Several source entries match this link. Choose a reference below rather than assuming which one was intended."
+        : "This reference no longer matches the current source. The account remains available; choose a recorded place below.");
+    }
+    const target = targets[0];
+    if (target.collection === "waypoints") {
+      state.referenceMessage = "";
+      focusPlace(target.index, false);
+      const button = document.querySelector(`[data-place-step="${target.index}"]`);
+      scrollProfileTo(button.closest(".recorded-place"), button, false);
+    } else {
+      state.activePlaceIndex = null;
+      state.referenceMessage = "This linked mention is now kept as source context, not this person's mapped journey.";
+      const context = document.querySelector("details.contextual-places");
+      context.open = true;
+      const entry = context.querySelector(`[data-context-places~="${target.index}"]`);
+      scrollProfileTo(entry, entry, false);
+      atlas.render("explore", atlasCtx());
+    }
+    refreshReferenceControls();
+  } catch (error) {
+    if (!(error instanceof ReferenceLinkError)) throw error;
+    if (request !== referenceRequest || state.selectedId !== journey.id) return;
+    state.referenceResolving = false;
+    state.referenceMessage = error.message;
+    console.warn("The linked source reference could not be resolved:", error.message);
+    refreshReferenceControls();
+  }
+}
+
+async function copyReference(index) {
+  const journey = store.byId.get(state.selectedId);
+  const actions = document.querySelector(`[data-reference-actions="${index}"]`);
+  if (journey?.detailState !== "ready" || !actions) {
+    console.warn("Load and select a recorded reference before copying its link.");
+    return;
+  }
+  const feedback = actions.querySelector("[data-reference-copy-status]");
+  try {
+    const targets = await sourceReferenceTargets(journey.sourceProperties);
+    const target = targets.find(item => item.collection === "waypoints" && item.index === index);
+    if (!target || targets.filter(item => item.key === target.key).length !== 1) {
+      throw new ReferenceLinkError("This reference is not uniquely identified. Use Share & cite to copy the account link.");
+    }
+    const url = referenceLink(journey, target.key, location.href);
+    const copied = await copyText(url, navigator.clipboard);
+    if (!actions.isConnected || state.selectedId !== journey.id) return;
+    feedback.textContent = copied ? "Reference link copied." : "Copying is unavailable. The link is selected for you.";
+    const field = actions.querySelector("textarea");
+    field.hidden = copied;
+    if (!copied) { field.value = url; field.focus(); field.select(); }
+  } catch (error) {
+    if (!(error instanceof ReferenceLinkError)) throw error;
+    console.warn("The source-reference link could not be copied:", error.message);
+    if (actions.isConnected) feedback.textContent = error.message;
+  }
+}
+
+function focusPlace(index, remember = true) {
   const journey = store.byId.get(state.selectedId);
   if (!Number.isInteger(index) || !journey?.waypoints[index]) {
     console.warn("The selected place is not in this account.");
     return;
   }
+  if (remember) resetReferenceState();
   state.activePlaceIndex = index;
-  document.querySelectorAll("[data-place-step]").forEach((button) => {
-    button.setAttribute("aria-pressed", String(Number(button.dataset.placeStep) === index));
-  });
+  refreshReferenceControls();
   atlas.render("explore", atlasCtx());
   updateBoundaryNotice();
+  if (remember && journey.detailState === "ready") void rememberReference(journey, index);
 }
 
 function inspectAccountPlace(index) {
@@ -1747,13 +1887,22 @@ function wireImages(host) {
   });
 }
 function onActivate(e) {
-  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match],[data-save-id],[data-copy-account],[data-search-suggestion],[data-browse-place]");
+  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match],[data-save-id],[data-copy-account],[data-search-suggestion],[data-browse-place],[data-copy-reference],[data-related-account]");
   if (!t || !e.currentTarget.contains(t)) return;
   if (t.dataset.view) return go(t.dataset.view);
   if (t.dataset.layer) return setLayer(t.dataset.layer);
   if (t.dataset.survivor != null) return selectSurvivor(t.dataset.survivor);
   if (t.dataset.saveId) return toggleSavedAccount(t.dataset.saveId);
   if (t.dataset.copyAccount) return copyAccountReference(t.dataset.copyAccount);
+  if (t.dataset.copyReference != null) return copyReference(Number(t.dataset.copyReference));
+  if (t.dataset.relatedAccount) {
+    if (!collectionResults(store, state).some(journey => journey.id === t.dataset.relatedAccount)) {
+      console.warn("This related account is no longer in the current results.");
+      refreshResearchTools("The results changed. Choose an available account.");
+      return;
+    }
+    return selectSurvivor(t.dataset.relatedAccount, true);
+  }
   if (t.dataset.browsePlace) {
     document.getElementById("place-browser").close();
     return filterPlace(t.dataset.browsePlace);
@@ -1820,12 +1969,20 @@ function onActivate(e) {
     case "zoom-in": state.pendingHistoryCamera = null; return atlas.zoomBy(1.5);
     case "zoom-out": state.pendingHistoryCamera = null; return atlas.zoomBy(1 / 1.5);
     case "reset-map":
-      state.activePlaceIndex = null;
+      resetReferenceState();
       state.pendingHistoryCamera = null;
       document.querySelectorAll("[data-place-step]").forEach((button) => button.setAttribute("aria-pressed", "false"));
       atlas.render(state.view, atlasCtx());
       updateBoundaryNotice();
+      refreshReferenceControls();
+      syncCollectionAddress();
       return atlas.resetCamera();
+    case "clear-reference":
+      resetReferenceState();
+      refreshReferenceControls();
+      syncCollectionAddress();
+      atlas.render("explore", atlasCtx());
+      return scrollProfileTo(document.getElementById("profile-places"));
     case "prev-year": return stepEventYear(-1);
     case "next-year": return stepEventYear(1);
     case "prev-event": return stepPatternEvent(-1);
@@ -1851,7 +2008,10 @@ function currentFragment() {
 }
 function setHash(h) {
   if (pathProfileId()) {
-    history.replaceState(history.state, "", `/${location.search}${currentFragment()}`);
+    const fragment = currentFragment();
+    const query = new URLSearchParams(location.search);
+    query.delete("ref");
+    history.replaceState(history.state, "", `/${query.size ? `?${query}` : ""}${fragment}`);
   }
   programmatic = true;
   if (location.hash !== h) location.hash = h;
@@ -1867,12 +2027,14 @@ function showMissing(kind) {
 function route() {
   if (programmatic) { programmatic = false; return; }
   stopHistoryPlayback();
+  resetReferenceState();
   const fragment = currentFragment();
   const separator = fragment.indexOf("?");
   const hash = separator < 0 ? fragment : fragment.slice(0, separator);
   const query = separator < 0 ? "" : fragment.slice(separator + 1);
   const params = new URLSearchParams(query);
   const [, kind, value] = hash.split("/");
+  if (params.has("ref") && kind !== "survivor") return showMissing("place");
   if (kind === "guided" || hash === "#map" || hash === "#overlay") {
     if (!restoreCollectionAddress(params)) return showMissing("filter");
     history.replaceState(null, "", exploreHash());
@@ -1889,6 +2051,12 @@ function route() {
     state.activePlaceIndex = null;
     state.explorePresentation = "auto";
     state.view = "explore";
+    if (params.has("ref")) {
+      state.referenceKey = params.get("ref");
+      state.referenceResolving = isReferenceKey(state.referenceKey);
+      state.referenceMessage = state.referenceResolving ? "Opening the linked source reference."
+        : "This source-reference link is invalid. The account remains available below.";
+    }
     if (state.selectedId !== value) history.replaceState(null, "", accountHash(state.selectedId));
     render();
     return;

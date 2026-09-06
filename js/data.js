@@ -75,6 +75,22 @@ export function collectionPlaces(store, state) {
   })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export function relatedAccounts(store, state, limit = 3) {
+  const selected = store.byId.get(state.selectedId);
+  if (!selected) return [];
+  const specificNames = journey => new Set(journey.waypoints
+    .filter(place => ["city", "site"].includes(place.locationPrecision)).map(place => place.canonical));
+  const names = specificNames(selected);
+  if (!names.size) return [];
+  return collectionResults(store, state).filter(journey => journey.id !== selected.id)
+    .map((journey, order) => ({
+      journey, order, places: [...specificNames(journey)].filter(name => names.has(name)),
+    }))
+    .filter(match => match.places.length)
+    .sort((a, b) => b.places.length - a.places.length || a.order - b.order)
+    .slice(0, limit);
+}
+
 export function evidenceCounts(journey) {
   const counts = { total: journey.waypoints.length, route: 0, broad: 0, review: 0, mapped: 0 };
   for (const place of journey.waypoints) {

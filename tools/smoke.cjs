@@ -3234,6 +3234,162 @@ function assertCounterMotion(label, { targets, samples }) {
     }
   });
 
+  await check("exact source references survive reloads and produce clean share links", async () => {
+    for (const viewport of [{ width: 1366, height: 850 }, { width: 390, height: 844 }]) {
+      const context = await browser.createBrowserContext();
+      const linked = await context.newPage();
+      linked.on("pageerror", error => errors.push("reference link: " + error.message));
+      try {
+        await linked.setViewport(viewport);
+        await linked.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+        await linked.goto(BASE + "/survivor/adam-wally?captions=1", { waitUntil: "domcontentloaded", timeout: 40000 });
+        await linked.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+        await linked.click("[data-profile-section='profile-places']");
+        await linked.click("[data-place-step='3']");
+        await linked.waitForFunction(() => location.href.includes("ref=sha256%3A"), { timeout: 5000 });
+        await linked.reload({ waitUntil: "domcontentloaded" });
+        await linked.waitForSelector(".place-focus[aria-pressed='true']", { timeout: 15000 });
+        if (await linked.$eval(".place-focus[aria-pressed='true'] .step-place", place => place.textContent) !== "Canada") {
+          throw new Error("reloading lost the exact source reference");
+        }
+        if (!await linked.$eval(".profile-current-name", name => name.textContent === "Wally Adam" && name.getBoundingClientRect().width > 0)) {
+          throw new Error("a deep reference lost the visible account identity");
+        }
+        await linked.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true,
+          value: { writeText: async () => { throw new DOMException("Denied", "NotAllowedError"); } } }));
+        await linked.click("[data-copy-reference='3']");
+        await linked.waitForSelector("#reference-address-3:not([hidden])", { timeout: 5000 });
+        const address = await linked.$eval("#reference-address-3", field => field.value);
+        const url = new URL(address);
+        if (url.pathname !== "/survivor/adam-wally" || [...url.searchParams.keys()].join() !== "ref" ||
+            url.hash || !/^sha256:[a-f0-9]{64}$/.test(url.searchParams.get("ref"))) {
+          throw new Error("the reference link exposed private browsing filters or lost its source key");
+        }
+        await linked.goto(address, { waitUntil: "domcontentloaded", timeout: 40000 });
+        await linked.waitForSelector(".place-focus[aria-pressed='true']", { timeout: 15000 });
+        if (await linked.$eval(".place-focus[aria-pressed='true'] .step-place", place => place.textContent) !== "Canada") {
+          throw new Error("the clean reference link did not restore its source");
+        }
+        await linked.click(".map-tools [data-act='reset-map']");
+        if (await linked.evaluate(() => location.href.includes("ref=")) || await linked.$(".place-focus[aria-pressed='true']")) {
+          throw new Error("clearing the reference left a stale bookmark target");
+        }
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  await check("reference identities survive reordering and safely disclose changed or contextual sources", async () => {
+    const { sourceReferenceKey } = await import("../js/reference-links.js");
+    const index = await (await fetch(BASE + "/data/index.json")).json();
+    const originalIndex = index.features.find(feature => feature.properties.survivor_id === "adam-wally");
+    const original = await (await fetch(BASE + originalIndex.properties.detail_url)).json();
+    const key = await sourceReferenceKey(original.properties, original.properties.waypoints[3]);
+    for (const mode of ["reordered", "changed", "context"]) {
+      const context = await browser.createBrowserContext();
+      const linked = await context.newPage();
+      linked.on("pageerror", error => errors.push("source identity: " + error.message));
+      const nextIndex = structuredClone(index), next = structuredClone(original);
+      const indexed = nextIndex.features.find(feature => feature.properties.survivor_id === "adam-wally");
+      if (mode === "reordered") {
+        indexed.properties.waypoints.reverse(); next.properties.waypoints.reverse();
+      } else if (mode === "changed") {
+        next.properties.waypoints[3].source_quote += " The source has changed.";
+      } else {
+        const mention = next.properties.waypoints.splice(3, 1)[0];
+        mention.evidence = { ...mention.evidence, scope: "contextual", reason: "comparison" };
+        next.properties.contextual_places = [...(next.properties.contextual_places || []), mention];
+        indexed.properties.waypoints.splice(3, 1);
+      }
+      await linked.setRequestInterception(true);
+      linked.on("request", request => {
+        const path = new URL(request.url()).pathname;
+        if (path === "/data/index.json") return request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(nextIndex) });
+        if (path.startsWith("/data/profiles/adam-wally.")) return request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(next) });
+        request.continue();
+      });
+      try {
+        await linked.setViewport({ width: 1366, height: 850 });
+        await linked.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+        await linked.goto(BASE + "/survivor/adam-wally?ref=" + encodeURIComponent(key), { waitUntil: "domcontentloaded", timeout: 40000 });
+        await linked.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+        if (mode === "reordered") {
+          await linked.waitForSelector(".place-focus[aria-pressed='true']", { timeout: 5000 });
+          const restored = await linked.$eval(".place-focus[aria-pressed='true']", place => ({
+            index: Number(place.dataset.placeStep), name: place.querySelector(".step-place").textContent,
+          }));
+          if (restored.name !== "Canada" || restored.index !== original.properties.waypoints.length - 4) {
+            throw new Error("a reordered source link guessed an array position");
+          }
+        } else {
+          const expected = mode === "changed" ? "no longer matches" : "source context";
+          await linked.waitForFunction(text => document.querySelector("[data-reference-notice]")?.textContent.includes(text), { timeout: 5000 }, expected);
+          if (await linked.$(".place-focus[aria-pressed='true']") || await linked.$("#missing-title")) {
+            throw new Error("a changed source was silently focused or replaced a valid account");
+          }
+          if (mode === "context" && !await linked.$eval("details.contextual-places", details => details.open)) {
+            throw new Error("the retained source context was not made readable");
+          }
+        }
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  await check("invalid reference links keep the account readable and offer a clean recovery", async () => {
+    const context = await browser.createBrowserContext();
+    const invalid = await context.newPage();
+    invalid.on("pageerror", error => errors.push("invalid source link: " + error.message));
+    try {
+      await invalid.goto(BASE + "/survivor/adam-wally?ref=not-a-source-key", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await invalid.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      if (!await invalid.$eval("[data-reference-notice]", notice => notice.textContent.includes("invalid")) ||
+          await invalid.$(".place-focus[aria-pressed='true']")) throw new Error("an invalid source key was ignored or guessed");
+      await invalid.click("[data-act='clear-reference']");
+      if (await invalid.evaluate(() => location.href.includes("ref=")) ||
+          await invalid.$eval("[data-reference-notice]", notice => !notice.hidden)) {
+        throw new Error("reference recovery left an invalid key in the address");
+      }
+      if (!await invalid.$(".bio")) throw new Error("reference recovery lost the account");
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("related reading explains shared places and preserves the current collection scope", async () => {
+    const context = await browser.createBrowserContext();
+    const related = await context.newPage();
+    related.on("pageerror", error => errors.push("related reading: " + error.message));
+    try {
+      await related.setViewport({ width: 1366, height: 850 });
+      await related.goto(BASE + "/?related-reading=1#/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await related.waitForSelector("[data-related-account]", { timeout: 15000 });
+      const rows = await related.$$eval("[data-related-account]", buttons => buttons.map(button => ({
+        id: button.dataset.relatedAccount, why: button.querySelector("small").textContent,
+      })));
+      if (!rows.length || rows.length > 3 || rows.some(row => row.id === "adam-wally" || !row.why.includes("Also names"))) {
+        throw new Error("related accounts lack a specific source-based reason");
+      }
+      if (!await related.$eval(".related-reading > p", note => note.textContent.includes("do not establish shared travel or contact"))) {
+        throw new Error("related reading implies an unsupported personal connection");
+      }
+      const target = rows[0].id;
+      const ids = ["adam-wally", target].join(",");
+      await related.goto(BASE + "/?related-scope=1#/survivor/adam-wally?list=" + ids, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await related.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      const scoped = await related.$$eval("[data-related-account]", buttons => buttons.map(button => button.dataset.relatedAccount));
+      if (scoped.join() !== target) throw new Error("related reading escaped the shared selection");
+      await related.click(`[data-related-account='${target}']`);
+      await related.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      const restoredIds = new URLSearchParams(new URL(await related.url()).hash.split("?")[1]).get("list");
+      if (!restoredIds?.includes("adam-wally") || !restoredIds.includes(target)) throw new Error("a related account discarded the reading-list context");
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const transfer of dataTransfers.values()) {
     if (transfer.failed < 0) continue;
     if (transfer.completed <= transfer.failed) errors.push(`unrecovered data request: ${transfer.url} (${transfer.reasons.join(", ")})`);

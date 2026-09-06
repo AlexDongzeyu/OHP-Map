@@ -5,7 +5,7 @@
 import { C, GROUP_COLOR, SYSTEM_REDUCED_MOTION, siteResource, esc } from "./config.js";
 import { captionStatus, playerURL } from "./media.js";
 import { FLAG_SOURCES, resourcesForYear } from "./historical-context.js";
-import { collectionResults, collectionPlaces, evidenceCounts, searchSuggestions } from "./data.js";
+import { collectionResults, collectionPlaces, evidenceCounts, searchSuggestions, relatedAccounts } from "./data.js";
 import { accountLink, accountCitation } from "./research-tools.js";
 
 const RAIL_PAGE = 140;
@@ -403,6 +403,12 @@ export function panel(store, state) {
       ${w.humanReview ? `<details class="review-audit"><summary>${!w.verified && w.humanReview.action === "approve" ? "Prior review needs rechecking" : "Human review record"} ${icon("chevron")}</summary>
         <p>${esc(w.humanReview.reviewer)}, ${esc(w.humanReview.reviewed_at)}. ${esc(w.humanReview.rationale)}</p>
         <a href="${esc(w.humanReview.source_url)}" target="_blank" rel="noopener">Review evidence ${icon("external-link")}</a></details>` : ""}
+      <div class="reference-actions" data-reference-actions="${i}"${state.activePlaceIndex === i ? "" : " hidden"}>
+        <button class="link" data-copy-reference="${i}"${ready ? "" : " disabled"}>${icon("copy")} Copy reference link</button>
+        <span data-reference-copy-status="${i}" role="status"></span>
+        <label class="sr-only" for="reference-address-${i}">Link to this source reference</label>
+        <textarea id="reference-address-${i}" rows="2" readonly hidden></textarea>
+      </div>
     </li>`;
   }).join("");
   const tags = (j.conflicts.concat(j.themes)).slice(0, 5).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
@@ -419,6 +425,7 @@ export function panel(store, state) {
       <div class="profile-toolbar">
         <div class="panel-topline"><button class="link" data-act="clear" aria-label="Back to the collection">
           <span class="profile-back-long">Back to the collection</span><span class="profile-back-short">Collection</span></button>
+          <span class="profile-current-name" title="${esc(j.name)}" aria-hidden="true">${esc(j.name)}</span>
           <button class="reader-toggle" data-act="expand-reader" aria-label="Expand account reader"><span data-reader-label>Expand</span>${icon("fit")}</button>
           <button class="panel-close" data-act="clear" aria-label="Close profile">${icon("close")}</button></div>
         <nav class="profile-nav" aria-label="In this account">${sections.map(([id, label]) =>
@@ -434,6 +441,7 @@ export function panel(store, state) {
       </div>
       <nav class="result-navigation" data-result-navigation aria-label="Browse matching accounts">${resultNavigation(store, state)}</nav>
       <p class="profile-route-status">${esc(profileRouteStatus(j))}</p>
+      <div class="reference-notice" data-reference-notice${state.referenceMessage ? "" : " hidden"}>${referenceNotice(state)}</div>
       ${!reviewed ? '<p class="account-review-note">Not fully reviewed. Markers locate source mentions, not confirmed presence.</p>' : ""}
       ${accountTools(j, state)}
       <div class="profile-actions">
@@ -464,6 +472,7 @@ export function panel(store, state) {
         ${wp.length ? `<ol class="journey">${steps}</ol>` : ""}
       </section>
       ${contextualPlaces(j)}
+      <div data-related-reading>${ready ? relatedReading(store, state) : ""}</div>
       ${ready ? `<details class="review-tools"><summary>Review these references ${icon("chevron")}</summary>
         <p>Download this account's source material for a student or teacher to check against the original interview. A trusted project maintainer prepares the review worksheet and imports attributed decisions; this page cannot approve its own claims.</p>
         <button class="link" data-act="download-review">Download source for review</button></details>` : ""}
@@ -472,6 +481,28 @@ export function panel(store, state) {
       </div>
       <nav class="result-navigation result-navigation-end" data-result-navigation aria-label="Continue through matching accounts">${resultNavigation(store, state)}</nav>
     </aside>`;
+}
+
+export function referenceNotice(state) {
+  if (!state.referenceMessage) return "";
+  return `<p role="status">${esc(state.referenceMessage)}</p>
+    <button class="link" data-act="clear-reference">Show all references</button>`;
+}
+
+export function relatedReading(store, state) {
+  const matches = relatedAccounts(store, state);
+  if (!matches.length) return "";
+  return `<section class="related-reading" aria-labelledby="related-reading-title">
+    <h3 id="related-reading-title">Continue through shared places</h3>
+    <p>Other accounts in the current results name these cities or sites. Shared names do not establish shared travel or contact.</p>
+    <ul>${matches.map(({ journey, places }) => `<li>
+      <button data-related-account="${esc(journey.id)}">
+        ${profileMedal(journey, GROUP_COLOR[journey.group] || C.accent)}
+        <span><strong>${esc(journey.name)}</strong><small>Also names ${esc(places.slice(0, 2).join("; "))}${places.length > 2 ? `, and ${places.length - 2} more` : ""}.</small></span>
+        ${icon("arrow-right")}
+      </button>
+    </li>`).join("")}</ul>
+  </section>`;
 }
 
 function profileRouteStatus(journey) {
@@ -524,17 +555,18 @@ function contextualPlaces(journey, printing = false) {
     comparison: "Comparison in the source",
   };
   const passages = new Map();
-  for (const place of journey.contextualPlaces) {
+  for (const [index, place] of journey.contextualPlaces.entries()) {
     const quote = sourcePassage(place.quote);
     const key = `${place.evidenceReason}|${quote || place.canonical}`;
-    if (!passages.has(key)) passages.set(key, { places: [], reason: place.evidenceReason, quote });
+    if (!passages.has(key)) passages.set(key, { places: [], indices: [], reason: place.evidenceReason, quote });
     passages.get(key).places.push(place.canonical);
+    passages.get(key).indices.push(index);
   }
   const wrapper = printing ? "section" : "details", heading = printing ? "h2" : "summary";
   return `<${wrapper} class="contextual-places">
     <${heading}>Other places in the source (${journey.contextualPlaces.length}) ${printing ? "" : icon("chevron")}</${heading}>
     <p class="section-note">These mentions concern other people or background context. They are retained here, but are not drawn as this person's route.</p>
-    <ul>${[...passages.values()].map((passage) => `<li>
+    <ul>${[...passages.values()].map((passage) => `<li data-context-places="${passage.indices.join(" ")}" tabindex="-1">
       <strong>${esc(passage.places.join("; "))}</strong>
       <span>${esc(reasons[passage.reason] || "Source context")}</span>
       ${passage.quote ? `<p>${esc(passage.quote)}</p>` : ""}

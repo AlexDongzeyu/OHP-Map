@@ -102,6 +102,21 @@ Unsupported community filters and dated-place/year combinations receive an expli
 link-recovery view instead of silently changing the selection.
 Browser tab and bookmark titles identify the account, search, or historical place/year.
 
+Selecting a recorded place now keeps a source-bound reference in the account's view
+address. **Copy reference link** creates a clean link to that exact source entry
+without private saved-list or search filters. The link uses the same fingerprint
+contract as human review, not the waypoint's array position. Reordering does not
+change the target; changed or ambiguous evidence produces a readable recovery notice
+instead of focusing the wrong place. A mention moved into retained source context
+opens there without being promoted back into a personal route.
+
+**Continue through shared places** offers up to three other accounts within the
+current results, with the shared city/site names shown explicitly. Country-level
+references and contextual-only mentions do not drive the suggestions. These are
+connections between source mentions, not claims of shared travel, contact or meetings.
+The account's name remains visible in the reader toolbar when arriving at a deep
+reference or reading farther down the page.
+
 ### Keeping and citing accounts
 
 Use the bookmark beside a name or **Save account** in the reader to build a private
