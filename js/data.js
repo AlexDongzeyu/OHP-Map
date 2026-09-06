@@ -33,12 +33,13 @@ function journeySearchText(journey) {
   ].join(" "));
 }
 
-export function journeyFilter({ query, groupFilter, originCountry, placeFilter, savedOnly = false, savedIds = new Set() }) {
+export function journeyFilter({ query, groupFilter, originCountry, placeFilter, savedOnly = false, savedIds = new Set(), sharedIds = null }) {
   const term = normalizeSearch(query);
   return (journey) => groupFilter.has(journey.group) &&
     (!originCountry || journey.originCountry === originCountry) &&
     (!placeFilter || journey.waypoints.some((place) => place.canonical === placeFilter)) &&
     (!savedOnly || savedIds.has(journey.id)) &&
+    (!sharedIds || sharedIds.has(journey.id)) &&
     (!term || (journey.searchText ?? journeySearchText(journey)).includes(term));
 }
 
@@ -46,6 +47,31 @@ export function collectionResults(store, state) {
   const matches = store.journeys.filter(journeyFilter(state));
   const order = new Map(store.groups.map((group, index) => [group.name, index]));
   return matches.sort((a, b) => order.get(a.group) - order.get(b.group));
+}
+
+export function collectionPlaces(store, state) {
+  const places = new Map();
+  for (const journey of collectionResults(store, { ...state, placeFilter: null })) {
+    for (const point of journey.waypoints) {
+      if (!point.canonical) {
+        console.warn("A source reference without a place name cannot appear in the place index.");
+        continue;
+      }
+      if (!places.has(point.canonical)) places.set(point.canonical, {
+        name: point.canonical, accounts: new Set(), names: new Set(), precisions: new Set(),
+      });
+      const place = places.get(point.canonical);
+      place.accounts.add(journey.id);
+      place.names.add(point.canonical);
+      if (point.asWritten) place.names.add(point.asWritten);
+      place.precisions.add(point.locationPrecision || "unknown");
+    }
+  }
+  return [...places.values()].map(place => ({
+    name: place.name, count: place.accounts.size,
+    searchText: normalizeSearch([...place.names].join(" ")),
+    precision: place.precisions.size === 1 ? [...place.precisions][0] : "mixed",
+  })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function evidenceCounts(journey) {

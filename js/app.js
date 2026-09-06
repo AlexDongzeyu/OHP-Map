@@ -4,10 +4,11 @@ import { loadData, journeyFilter, collectionResults } from "./data.js";
 import { createAtlas } from "./atlas.js";
 import * as ui from "./ui.js";
 import * as motion from "./motion.js";
-import { motionEnabled, onMotionPreferenceChange, slug } from "./config.js";
+import { motionEnabled, onMotionPreferenceChange, slug, normalizeSearch } from "./config.js";
 import { playerURL } from "./media.js";
 import {
   SAVED_ACCOUNTS_KEY, readSavedAccounts, updateSavedAccount, isSavedAccountsFailure, copyText,
+  addSavedAccounts, decodeCollectionIds, collectionLink, collectionCitations, CollectionLinkError, CitationError,
 } from "./research-tools.js";
 
 const VIEWS = ["landing", "explore", "patterns", "about", "not-found"];
@@ -27,6 +28,7 @@ const state = {
   placeFilter: null,
   savedIds: new Set(),
   savedOnly: false,
+  sharedIds: null,
   savedError: "",
   citationDate: new Date(),
   railLimit: RAIL_PAGE,
@@ -55,6 +57,7 @@ const state = {
 
 let store, atlas;
 let historyTimer = null;
+let readingListSnapshot = null;
 let rendered = { view: null, selectedId: null, patternsLayer: null };
 
 async function main() {
@@ -404,6 +407,7 @@ function selectSurvivor(id, keepPresentation = false) {
     state.groupFilter = new Set(store.groups.map((group) => group.name));
     state.railLimit = RAIL_PAGE;
     state.savedOnly = false;
+    state.sharedIds = null;
   }
   state.selectedId = id; state.activePlaceIndex = null;
   if (!keepPresentation) state.explorePresentation = "auto";
@@ -448,8 +452,13 @@ function refreshResearchTools(message = "") {
   const savedView = document.querySelector(".saved-view");
   if (savedView) {
     savedView.innerHTML = ui.savedViewLabel(store, state);
-    document.querySelector("[data-collection-title]").textContent = state.savedOnly ? "Saved accounts" : "The collection";
+    document.querySelector("[data-collection-title]").textContent = ui.collectionTitle(state);
     document.querySelector("[data-saved-privacy]").hidden = !state.savedOnly;
+  }
+  const listTools = document.querySelector("[data-reading-list-tools]");
+  if (listTools) {
+    listTools.hidden = !state.savedOnly && !state.sharedIds;
+    listTools.innerHTML = ui.readingListTools(store, state);
   }
   for (const feedback of document.querySelectorAll("[data-saved-feedback], [data-account-saved-feedback]")) {
     feedback.textContent = state.savedError || message;
@@ -485,6 +494,7 @@ function toggleSavedAccount(id) {
 }
 
 function toggleSavedView() {
+  if (state.sharedIds) return leaveSharedList();
   loadSavedList();
   state.savedOnly = !state.savedOnly;
   state.query = "";
@@ -495,6 +505,161 @@ function toggleSavedView() {
   document.querySelector(".collection-filters").open = false;
   refreshCollection();
   document.querySelector(".saved-view").focus({ preventScroll: true });
+}
+
+function leaveSharedList() {
+  state.sharedIds = null;
+  state.savedOnly = false;
+  state.selectedId = null;
+  state.activePlaceIndex = null;
+  state.explorePresentation = "auto";
+  state.query = "";
+  state.originCountry = null;
+  state.placeFilter = null;
+  state.groupFilter = new Set(store.groups.map(group => group.name));
+  state.railLimit = RAIL_PAGE;
+  setHash(exploreHash());
+  render();
+  document.getElementById("search").focus({ preventScroll: true });
+}
+
+function saveSharedList() {
+  const ids = collectionResults(store, state).map(journey => journey.id);
+  try {
+    state.savedIds = addSavedAccounts(window.localStorage, store.byId, ids);
+    state.savedError = "";
+    refreshResearchTools(`${ids.length} ${ids.length === 1 ? "account is" : "accounts are"} saved in this browser. Your other saved accounts have been kept.`);
+  } catch (error) {
+    if (!isSavedAccountsFailure(error)) throw error;
+    state.savedError = "This list could not be saved. Your existing saved accounts have not been changed.";
+    console.warn("Unable to add this reading list:", error.message);
+    refreshResearchTools();
+  }
+  document.getElementById("search").focus({ preventScroll: true });
+}
+
+function openResearchDialog(markup, returnAction) {
+  const template = document.createElement("template");
+  template.innerHTML = markup;
+  const dialog = template.content.querySelector("dialog");
+  document.getElementById("overlay").append(dialog);
+  dialog.addEventListener("close", () => {
+    const connected = dialog.isConnected;
+    if (dialog.id === "reading-list-dialog") readingListSnapshot = null;
+    dialog.remove();
+    if (connected) {
+      const opener = document.querySelector(`[data-act="${returnAction}"]`);
+      (opener && !opener.disabled ? opener : document.getElementById("search"))?.focus({ preventScroll: true });
+    }
+  }, { once: true });
+  dialog.showModal();
+  return dialog;
+}
+
+function openPlaceBrowser() {
+  const dialog = openResearchDialog(ui.placeBrowser(store, state), "browse-places");
+  const input = dialog.querySelector("#place-directory-search");
+  const buttons = () => [...dialog.querySelectorAll("[data-directory-row]:not([hidden]) button")];
+  const activate = button => {
+    dialog.querySelectorAll("[data-browse-place]").forEach(item => { item.tabIndex = item === button ? 0 : -1; });
+  };
+  const filter = () => {
+    const query = normalizeSearch(input.value);
+    dialog.querySelectorAll("[data-directory-row]").forEach(row => { row.hidden = !row.dataset.placeSearch.includes(query); });
+    const visible = buttons();
+    activate(visible[0]);
+    dialog.querySelector("[data-directory-count]").textContent = `${visible.length} ${visible.length === 1 ? "place name" : "place names"}`;
+    dialog.querySelector("[data-directory-empty]").hidden = visible.length > 0;
+  };
+  input.addEventListener("input", filter);
+  dialog.addEventListener("focusin", event => {
+    const button = event.target.closest("[data-browse-place]");
+    if (button) activate(button);
+  });
+  dialog.addEventListener("keydown", event => {
+    if (event.ctrlKey || event.altKey || event.metaKey) return;
+    const visible = buttons();
+    if (!visible.length) return;
+    const button = event.target.closest("[data-browse-place]");
+    if (event.target === input && event.key === "ArrowDown") {
+      event.preventDefault();
+      activate(visible[0]); visible[0].focus();
+    } else if (button && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      event.preventDefault();
+      const index = visible.indexOf(button);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? visible.length - 1
+        : Math.max(0, Math.min(visible.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
+      activate(visible[next]);
+      visible[next].focus({ preventScroll: true });
+      visible[next].scrollIntoView({ block: "nearest" });
+    }
+  });
+  filter();
+}
+
+function refreshOpenPlaceBrowser() {
+  const dialog = document.querySelector("#place-browser[open]");
+  if (!dialog) return;
+  const focusedPlace = dialog.contains(document.activeElement) ? document.activeElement.dataset.browsePlace : null;
+  const body = dialog.querySelector(".research-dialog-body");
+  const scroll = body.scrollTop;
+  const template = document.createElement("template");
+  template.innerHTML = ui.placeBrowser(store, state);
+  dialog.querySelector(".place-directory-list").replaceChildren(...template.content.querySelector(".place-directory-list").children);
+  dialog.querySelector("[data-directory-empty]").textContent = template.content.querySelector("[data-directory-empty]").textContent;
+  const input = dialog.querySelector("#place-directory-search");
+  input.dispatchEvent(new Event("input"));
+  body.scrollTop = scroll;
+  if (focusedPlace) {
+    const target = [...dialog.querySelectorAll("[data-directory-row]:not([hidden]) button")]
+      .find(button => button.dataset.browsePlace === focusedPlace);
+    (target || input).focus({ preventScroll: true });
+  }
+}
+
+function shareReadingList() {
+  const journeys = collectionResults(store, state).map(({ id, name, archiveUrl }) => ({ id, name, archiveUrl }));
+  if (!journeys.length) {
+    console.warn("There are no matching accounts to share.");
+    refreshResearchTools("There are no accounts in the current selection to share.");
+    return;
+  }
+  let url = "", message = "";
+  try { url = collectionLink(journeys.map(journey => journey.id), location.href); }
+  catch (error) {
+    if (!(error instanceof CollectionLinkError)) throw error;
+    message = error.message;
+    console.warn("The reading-list link could not be created:", message);
+  }
+  readingListSnapshot = { journeys, accessed: new Date() };
+  openResearchDialog(ui.readingListDialog(journeys, url, message), "share-reading-list");
+}
+
+async function copyReadingList() {
+  const dialog = document.getElementById("reading-list-dialog");
+  const field = dialog.querySelector("#reading-list-address");
+  const copied = await copyText(field.value, navigator.clipboard);
+  if (!dialog.isConnected) return;
+  if (!copied) { field.focus(); field.select(); }
+  dialog.querySelector("[data-reading-list-status]").textContent = copied ? "Reading-list link copied."
+    : "Copying is unavailable. The link is selected so you can copy it yourself.";
+}
+
+function downloadListSources(fromDialog = false) {
+  const journeys = fromDialog ? readingListSnapshot?.journeys : collectionResults(store, state);
+  const feedback = fromDialog ? document.querySelector("[data-reading-list-status]") : document.querySelector("[data-saved-feedback]");
+  let text;
+  try { text = collectionCitations(journeys || [], fromDialog ? readingListSnapshot.accessed : new Date()); }
+  catch (error) {
+    if (!(error instanceof CitationError)) throw error;
+    feedback.hidden = false;
+    feedback.textContent = error.message;
+    console.warn("Source citations could not be prepared:", error.message);
+    return;
+  }
+  downloadFile(new Blob([text], { type: "text/plain;charset=utf-8" }), "ohp-reading-list-sources.txt");
+  feedback.hidden = false;
+  feedback.textContent = `Source citations prepared for ${journeys.length} ${journeys.length === 1 ? "account" : "accounts"}.`;
 }
 
 function resetSavedList() {
@@ -586,6 +751,7 @@ function collectionAddress(prefix) {
   if (state.originCountry) params.set("origin", state.originCountry);
   if (state.placeFilter) params.set("place", state.placeFilter);
   if (state.savedOnly) params.set("saved", "1");
+  if (state.sharedIds) params.set("list", [...state.sharedIds].join(","));
   if (state.railLimit > RAIL_PAGE) params.set("limit", Math.min(state.railLimit, store.journeys.length));
   const query = params.toString();
   return `${prefix}${query ? `?${query}` : ""}`;
@@ -610,11 +776,20 @@ function restoreCollectionAddress(params) {
     return false;
   }
   if (params.has("saved") && params.get("saved") !== "1") return false;
+  if (params.has("saved") && params.has("list")) return false;
+  let sharedIds = null;
+  try { if (params.has("list")) sharedIds = decodeCollectionIds(params.get("list"), store.byId); }
+  catch (error) {
+    if (!(error instanceof CollectionLinkError)) throw error;
+    console.warn("The shared reading list could not be opened:", error.message);
+    return false;
+  }
   state.query = (params.get("q") || "").trim();
   state.groupFilter = new Set(requested.map((group) => groups.get(group)));
   state.originCountry = (params.get("origin") || "").trim() || null;
   state.placeFilter = (params.get("place") || "").trim() || null;
   state.savedOnly = params.get("saved") === "1";
+  state.sharedIds = sharedIds;
   state.railLimit = Math.max(RAIL_PAGE, Math.min(limit, store.journeys.length));
   return true;
 }
@@ -628,6 +803,7 @@ function openOrigin(name) {
   state.originCountry = name;
   state.placeFilter = null;
   state.savedOnly = false;
+  state.sharedIds = null;
   state.query = "";
   state.groupFilter = new Set(store.groups.map((group) => group.name));
   state.railLimit = RAIL_PAGE;
@@ -1139,7 +1315,7 @@ function updateDocumentTitle() {
   let label = "";
   if (state.view === "explore") {
     label = store.byId.get(state.selectedId)?.name ||
-      (state.query.trim() ? `Search: ${state.query.trim()}` : state.savedOnly ? "Saved accounts" : state.originCountry
+      (state.query.trim() ? `Search: ${state.query.trim()}` : state.sharedIds ? "Shared reading list" : state.savedOnly ? "Saved accounts" : state.originCountry
         ? `Routes starting in ${state.originCountry}` : state.groupFilter.size === 1
           ? [...state.groupFilter][0] : "The collection");
   } else if (state.view === "patterns") {
@@ -1266,11 +1442,14 @@ function downloadReviewSource() {
     },
     features: [{ type: "Feature", geometry: null, properties: journey.sourceProperties }],
   };
-  const blob = new Blob([JSON.stringify(sourcePackage, null, 2)], { type: "application/json" });
+  downloadFile(new Blob([JSON.stringify(sourcePackage, null, 2)], { type: "application/json" }), `${journey.id}-review-source.json`);
+}
+
+function downloadFile(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${journey.id}-review-source.json`;
+  link.download = filename;
   document.body.append(link);
   link.click();
   link.remove();
@@ -1294,7 +1473,7 @@ function wireGlobal() {
       const focused = document.activeElement;
       const savedId = focused.dataset.saveId;
       const accountId = focused.dataset.survivor;
-      if (state.savedOnly) refreshCollection();
+      if (state.savedOnly) { refreshCollection(); refreshOpenPlaceBrowser(); }
       else refreshResearchTools();
       const target = savedId ? document.querySelector(`[data-save-id="${CSS.escape(savedId)}"]`)
         : accountId ? document.querySelector(`[data-survivor="${CSS.escape(accountId)}"]`) : null;
@@ -1333,6 +1512,7 @@ function wireGlobal() {
   }, true);
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      if (document.querySelector(".research-dialog[open]")) return;
       const settings = document.querySelector(".history-settings[open]");
       const legend = document.querySelector(".map-legend[open]");
       if (state.view === "patterns" && state.historyMatches.length) {
@@ -1465,13 +1645,17 @@ function wireImages(host) {
   });
 }
 function onActivate(e) {
-  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match],[data-save-id],[data-copy-account],[data-search-suggestion]");
+  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match],[data-save-id],[data-copy-account],[data-search-suggestion],[data-browse-place]");
   if (!t || !e.currentTarget.contains(t)) return;
   if (t.dataset.view) return go(t.dataset.view);
   if (t.dataset.layer) return setLayer(t.dataset.layer);
   if (t.dataset.survivor != null) return selectSurvivor(t.dataset.survivor);
   if (t.dataset.saveId) return toggleSavedAccount(t.dataset.saveId);
   if (t.dataset.copyAccount) return copyAccountReference(t.dataset.copyAccount);
+  if (t.dataset.browsePlace) {
+    document.getElementById("place-browser").close();
+    return filterPlace(t.dataset.browsePlace);
+  }
   if (t.dataset.searchSuggestion) {
     onSearch(t.dataset.searchSuggestion);
     return document.getElementById("search").focus({ preventScroll: true });
@@ -1504,6 +1688,14 @@ function onActivate(e) {
     case "reload-collection": return location.reload();
     case "download-review": return downloadReviewSource();
     case "toggle-saved-view": return toggleSavedView();
+    case "browse-places": return openPlaceBrowser();
+    case "close-research-dialog": return t.closest("dialog").close();
+    case "share-reading-list": return shareReadingList();
+    case "copy-reading-list": return copyReadingList();
+    case "download-list-sources": return downloadListSources();
+    case "download-shared-sources": return downloadListSources(true);
+    case "save-shared-list": return saveSharedList();
+    case "leave-shared-list": return leaveSharedList();
     case "reset-saved-list": return resetSavedList();
     case "toggle-account-reference": return toggleAccountReference();
     case "close-account-reference": return toggleAccountReference(false);

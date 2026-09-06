@@ -59,6 +59,10 @@ needing review. Both maps include a key, and the reader reconciles these categor
 one place-count summary. **Full map** reveals more map space without losing the account.
 Nearby count labels appear as space becomes available when zooming; every place
 remains reachable with the keyboard even when its number is not shown.
+**Browse places** opens a searchable place-name index, including original spellings.
+Its counts respect the current search, communities and reading-list scope, and count
+people rather than repeated mentions. Choosing a place replaces the previous place
+filter; it does not turn a source mention into verified personal presence.
 
 Misspelled searches offer explicit suggestions rather than silently changing the query.
 History settings provide 1x, 2x and 4x playback. Route-origin shading uses a square-root
@@ -106,6 +110,20 @@ filters also work there. Saved IDs stay in local storage, not on the server, and
 across tabs. A saved-view URL refers to the receiving browser's own list, not the sender's.
 Blocked storage is reported without pretending a save succeeded. Clearing the list
 requires confirmation and does not change the public archive.
+
+In **Saved**, **Share list** creates an explicit link containing the public IDs of
+all accounts matching the current filters, not just the loaded page. Other saved
+accounts are excluded. A recipient opens a **Shared reading list**, can search or
+filter within that selection, and can choose **Save accounts** to merge the available
+results into their own list without replacing it. Opening the link alone writes
+nothing to browser storage. Missing accounts remain identified as unavailable rather
+than silently disappearing from the link. Oversized links give a clear recovery
+message instead of truncating the selection.
+
+**Download citations** creates a portable text file of original OHP source citations
+with an access date. It works for larger selections without loading each biography
+or media inventory. These are source-page citations, not downloaded transcripts or
+human verification of the mapped claims.
 
 **Share & cite** supplies a clean account link and a plain-text citation for the original
 OHP page, including an access date. It does not invent interview dates or claim that a

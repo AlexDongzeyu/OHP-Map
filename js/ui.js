@@ -5,7 +5,7 @@
 import { C, GROUP_COLOR, SYSTEM_REDUCED_MOTION, siteResource, esc } from "./config.js";
 import { captionStatus, playerURL } from "./media.js";
 import { FLAG_SOURCES, resourcesForYear } from "./historical-context.js";
-import { collectionResults, evidenceCounts, searchSuggestions } from "./data.js";
+import { collectionResults, collectionPlaces, evidenceCounts, searchSuggestions } from "./data.js";
 import { accountLink, accountCitation } from "./research-tools.js";
 
 const RAIL_PAGE = 140;
@@ -138,11 +138,12 @@ export function explore(store, state) {
   <div class="ov ov-explore ${state.selectedId ? "has-sel" : ""}">
     <h1 class="sr-only">${state.selectedId ? `${esc(store.byId.get(state.selectedId)?.name)}'s account` : "Explore the collection"}</h1>
     <aside class="rail scroll" aria-label="Browse the collection">
-      <div class="rail-heading"><h2 data-collection-title>${state.savedOnly ? "Saved accounts" : "The collection"}</h2>
+      <div class="rail-heading"><h2 data-collection-title>${collectionTitle(state)}</h2>
         <button class="saved-view" data-act="toggle-saved-view">${savedViewLabel(store, state)}</button></div>
       <div class="saved-privacy" data-saved-privacy${state.savedOnly ? "" : " hidden"}>
         <p>Saved only in this browser.</p>
       </div>
+      <div class="reading-list-tools" data-reading-list-tools${state.savedOnly || state.sharedIds ? "" : " hidden"}>${readingListTools(store, state)}</div>
       <p class="saved-feedback" data-saved-feedback aria-live="${state.selectedId ? "off" : "polite"}"${state.savedError ? "" : " hidden"}>${esc(state.savedError || "")}</p>
       <div class="rail-search">
         ${icon("search")}
@@ -173,6 +174,7 @@ export function explore(store, state) {
         <button data-act="clear-place-filter" aria-label="Clear place filter">${icon("close")}</button>
       </div>
       <div class="collection-shortcuts"><button class="link" data-act="focus-map">Skip to map ${icon("arrow-right")}</button>
+        <button class="link" data-act="browse-places" aria-haspopup="dialog">Browse places</button>
         ${state.selectedId ? '<button class="link" data-act="focus-reader">Skip to account</button>' : ""}</div>
       <p class="sr-only" id="collection-keyboard-help">Use Up and Down arrows to browse accounts. Tab moves to Save, then leaves the list.</p>
       <div class="rail-list" data-rail-list role="list" aria-describedby="collection-keyboard-help">${html}</div>
@@ -215,17 +217,20 @@ export function railInner(store, state) {
   }
   if (!html) {
     const emptySaved = state.savedOnly && !savedCount(store, state);
+    const emptyShared = state.sharedIds && !store.journeys.some(journey => state.sharedIds.has(journey.id));
     const suggestions = state.query ? searchSuggestions(store, state) : [];
-    html = `<div class="rail-empty"><p>${emptySaved
+    html = `<div class="rail-empty"><p>${emptyShared ? "These accounts are not available yet" : emptySaved
       ? (state.savedError ? "Saved accounts are unavailable" : "Keep an account for later")
       : state.groupFilter.size ? "No matching accounts" : "No communities selected"}</p>
-      <span>${emptySaved ? (state.savedError
+      <span>${emptyShared ? "The link has been kept intact. Reload the collection to check for updates, or browse the available accounts."
+        : emptySaved ? (state.savedError
         ? "Your existing list has not been changed. You can browse the collection and copy account links instead."
         : "Use the bookmark beside a name or Save account in the reader. You can return to your list here.")
         : "Try a surname or place, or reset the search and communities."}</span>
       ${suggestions.length ? `<div class="search-suggestions"><span>Try a close spelling</span>${suggestions.map((suggestion) =>
         `<button class="link" data-search-suggestion="${esc(suggestion)}">Search ${esc(suggestion)}</button>`).join("")}</div>` : ""}
-      <button class="link" data-act="reset-search">${state.savedOnly && !emptySaved ? "Show all saved accounts" : "Show the whole collection"}</button></div>`;
+      <button class="link" data-act="${emptyShared ? "leave-shared-list" : "reset-search"}">${emptyShared ? "Show the whole collection"
+        : state.sharedIds ? "Show all accounts in this list" : state.savedOnly && !emptySaved ? "Show all saved accounts" : "Show the whole collection"}</button></div>`;
   }
   else if (matched.length > slice.length)
     html += `<button class="rail-more" data-act="more">Show more (${matched.length - slice.length} more)</button>`;
@@ -238,8 +243,75 @@ function savedCount(store, state) {
 }
 
 export function savedViewLabel(store, state) {
-  return state.savedOnly ? `${icon("arrow-right")} All accounts`
+  return state.savedOnly || state.sharedIds ? `${icon("arrow-right")} All accounts`
     : `${icon("bookmark")} Saved <span>${savedCount(store, state)}</span>`;
+}
+
+export function collectionTitle(state) {
+  return state.sharedIds ? "Shared reading list" : state.savedOnly ? "Saved accounts" : "The collection";
+}
+
+export function readingListTools(store, state) {
+  if (!state.savedOnly && !state.sharedIds) return "";
+  const results = collectionResults(store, state);
+  const missing = state.sharedIds ? [...state.sharedIds].filter(id => !store.byId.has(id)).length : 0;
+  const allSaved = results.length && results.every(journey => state.savedIds.has(journey.id));
+  return `${state.sharedIds ? `<p class="shared-list-note">A shared selection of public accounts. Opening this link does not change your saved accounts.</p>` : ""}
+    ${missing ? `<p class="shared-list-warning" role="status">${missing} ${missing === 1 ? "account is" : "accounts are"} not available in this archive snapshot.
+      <button class="link" data-act="reload-collection">Check again</button></p>` : ""}
+    <div class="reading-list-actions">
+      ${state.sharedIds ? `<button class="link" data-act="save-shared-list"${!results.length || allSaved ? " disabled" : ""}>
+        ${allSaved ? "Saved here" : `Save ${results.length} ${results.length === 1 ? "account" : "accounts"}`}</button>` : ""}
+      <button class="link" data-act="share-reading-list" aria-haspopup="dialog"${results.length ? "" : " disabled"}>Share list</button>
+      <button class="link" data-act="download-list-sources"${results.length ? "" : " disabled"}>Download citations</button>
+    </div>`;
+}
+
+function researchDialog(id, title, body) {
+  return `<dialog class="research-dialog" id="${id}" aria-labelledby="${id}-title">
+    <header class="research-dialog-heading"><h2 id="${id}-title">${title}</h2>
+      <button data-act="close-research-dialog" aria-label="Close ${title.toLowerCase()}">${icon("close")}</button></header>
+    <div class="research-dialog-body">${body}</div>
+  </dialog>`;
+}
+
+export function placeBrowser(store, state) {
+  const places = collectionPlaces(store, state);
+  const precision = { city: "City reference", site: "Site reference", country: "Country reference",
+    region: "Regional reference", mixed: "Mixed precision", unknown: "Location needs review" };
+  return researchDialog("place-browser", "Place index", `
+    <p class="research-dialog-intro">Find a place named in the current search and selected communities${state.savedOnly ? ", within your saved accounts" : state.sharedIds ? ", within this reading list" : ""}.
+      Choosing a name replaces any active place filter.</p>
+    <label class="sr-only" for="place-directory-search">Search recorded place names and original spellings</label>
+    <input id="place-directory-search" class="search-input" type="search" placeholder="Search place names" autocomplete="off" autofocus>
+    <p class="directory-count" data-directory-count role="status">${places.length} place names</p>
+    <ul class="place-directory-list" aria-label="Recorded place names">${places.map(place => `
+      <li data-directory-row data-place-search="${esc(place.searchText)}">
+        <button data-browse-place="${esc(place.name)}" tabindex="-1">
+          <span><strong>${esc(place.name)}</strong><small>${esc(precision[place.precision] || "Map reference")}</small></span>
+          <span class="directory-account-count">${place.count} ${place.count === 1 ? "account" : "accounts"}</span>
+        </button>
+      </li>`).join("")}</ul>
+    <p class="directory-empty" data-directory-empty${places.length ? " hidden" : ""}>${places.length
+      ? "No place names match. Try an original spelling or clear the search."
+      : "No place names are available with these filters. Close the index and reset the collection filters to browse more accounts."}</p>
+    <p class="research-dialog-note">Counts refer to accounts naming a place, not verified presence there.</p>`);
+}
+
+export function readingListDialog(journeys, url, error = "") {
+  return researchDialog("reading-list-dialog", "Share a reading list", `
+    <p class="research-dialog-intro">This link contains the ${journeys.length} ${journeys.length === 1 ? "account" : "accounts"} matching your current filters, including results below the visible page.
+      Anyone with it can open this selection. Other saved accounts are not included.</p>
+    <ul class="reading-list-preview">${journeys.slice(0, 5).map(journey => `<li>${esc(journey.name)}</li>`).join("")}
+      ${journeys.length > 5 ? `<li class="reading-list-more">And ${journeys.length - 5} more accounts</li>` : ""}</ul>
+    <p class="reference-status" data-reading-list-status role="status">${esc(error)}</p>
+    <label for="reading-list-address">Link to this selection</label>
+    <textarea id="reading-list-address" rows="3" readonly>${esc(url)}</textarea>
+    <div class="research-dialog-actions">
+      <button class="btn btn-primary" data-act="copy-reading-list"${url ? "" : " disabled"}>${icon("copy")} Copy list link</button>
+      <button class="link" data-act="download-shared-sources">Download citations</button>
+    </div>
+    <p class="research-dialog-note">Recipients choose whether to save these accounts. Opening a link never changes their private list.</p>`);
 }
 
 export function saveButton(journey, state, compact = false) {

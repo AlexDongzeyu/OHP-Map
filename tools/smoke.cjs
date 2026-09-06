@@ -2815,6 +2815,274 @@ function assertCounterMotion(label, { targets, samples }) {
         !await page.evaluate(() => location.hash.includes("speed=4"))) throw new Error("timeline speed lost its state or could not pause");
   });
 
+  await check("the place index preserves city/site distinctions and exact filtered cohorts", async () => {
+    const context = await browser.createBrowserContext();
+    const discovery = await context.newPage();
+    discovery.on("pageerror", error => errors.push("place index: " + error.message));
+    const details = [];
+    discovery.on("request", request => { if (request.url().includes("/data/profiles/")) details.push(request.url()); });
+    try {
+      await discovery.setViewport({ width: 1366, height: 850 });
+      await discovery.goto(BASE + "/?place-index=1#/explore", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await discovery.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await discovery.click("[data-act='browse-places']");
+      const opened = await discovery.evaluate(() => ({
+        focus: document.activeElement.id,
+        places: document.querySelectorAll("[data-directory-row]").length,
+        stops: document.querySelectorAll("[data-browse-place][tabindex='0']").length,
+      }));
+      if (opened.focus !== "place-directory-search" || opened.places < 100 || opened.stops !== 1) {
+        throw new Error(`the place index is not discoverable by keyboard ${JSON.stringify(opened)}`);
+      }
+      await discovery.$eval("#place-directory-search", input => {
+        input.value = "Łódź"; input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      const matches = await discovery.$$eval("[data-directory-row]:not([hidden]) button", buttons =>
+        buttons.map(button => ({ name: button.dataset.browsePlace, count: Number(button.querySelector(".directory-account-count").textContent.split(" ")[0]) })));
+      if (matches.length !== 2 || !matches.some(place => place.name.includes("Ghetto"))) {
+        throw new Error(`the city and ghetto were silently conflated ${JSON.stringify(matches)}`);
+      }
+      await discovery.keyboard.press("ArrowDown");
+      if (!await discovery.evaluate(() => document.activeElement.hasAttribute("data-browse-place"))) throw new Error("the place search cannot reach its results");
+      await discovery.keyboard.press("End");
+      const chosen = await discovery.evaluate(() => document.activeElement.dataset.browsePlace);
+      const expected = matches.find(place => place.name === chosen).count;
+      await discovery.keyboard.press("Enter");
+      const result = await discovery.evaluate(() => ({
+        count: document.querySelectorAll(".rail-card").length,
+        place: document.querySelector("[data-place-filter-name]").textContent,
+        dialog: !!document.querySelector("dialog[open]"),
+      }));
+      if (result.dialog || result.place !== chosen || result.count !== expected || details.length) {
+        throw new Error(`a place did not open its exact lightweight cohort ${JSON.stringify({ result, expected, details })}`);
+      }
+      await discovery.click("[data-act='browse-places']");
+      await discovery.keyboard.press("Escape");
+      if (await discovery.evaluate(() => document.activeElement.dataset.act) !== "browse-places") throw new Error("closing the place index lost keyboard focus");
+      await discovery.evaluate(() => localStorage.setItem("ohp-map.saved-accounts.v1", JSON.stringify({ version: 1, ids: ["adler-amek"] })));
+      await discovery.click(".saved-view");
+      await discovery.click("[data-act='browse-places']");
+      await discovery.$eval("#place-directory-search", input => {
+        input.value = "Canada"; input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      const sibling = await context.newPage();
+      await sibling.goto(BASE + "/?place-index-storage=1#/explore", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await sibling.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await sibling.evaluate(() => localStorage.setItem("ohp-map.saved-accounts.v1", JSON.stringify({ version: 1, ids: ["adler-amek", "baranek-martin"] })));
+      await discovery.bringToFront();
+      await discovery.waitForFunction(() => document.querySelector("[data-browse-place='Canada'] .directory-account-count")?.textContent === "2 accounts", { timeout: 5000 });
+      if (await discovery.$eval("#place-directory-search", input => input.value) !== "Canada") throw new Error("a saved-list update erased the place search");
+      await sibling.close();
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("explicit reading-list links transfer exact accounts without exposing other private saves", async () => {
+    const senderContext = await browser.createBrowserContext();
+    const recipientContext = await browser.createBrowserContext();
+    const sender = await senderContext.newPage();
+    const recipient = await recipientContext.newPage();
+    sender.on("pageerror", error => errors.push("list sender: " + error.message));
+    recipient.on("pageerror", error => errors.push("list recipient: " + error.message));
+    try {
+      await sender.goto(BASE + "/?list-sender=1#/explore", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await sender.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await sender.evaluate(() => localStorage.setItem("ohp-map.saved-accounts.v1", JSON.stringify({
+        version: 1, ids: ["adler-amek", "baranek-martin", "adam-wally"],
+      })));
+      await sender.click(".saved-view");
+      await sender.$eval("#search", input => {
+        input.value = "Holocaust"; input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await sender.click("[data-act='share-reading-list']");
+      const address = await sender.$eval("#reading-list-address", field => field.value);
+      const ids = new URLSearchParams(new URL(address).hash.split("?")[1]).get("list")?.split(",");
+      if (ids?.join() !== "adler-amek,baranek-martin" || address.includes("Holocaust") || address.includes("saved=")) {
+        throw new Error(`the link exposed unselected or private filters ${address}`);
+      }
+      await sender.evaluate(() => {
+        Object.defineProperty(navigator, "clipboard", { configurable: true,
+          value: { writeText: async () => { throw new DOMException("Denied", "NotAllowedError"); } } });
+        const create = URL.createObjectURL.bind(URL);
+        URL.createObjectURL = blob => { window.__listSources = blob; return create(blob); };
+        const click = HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click = function () { if (!this.download) click.call(this); };
+      });
+      await sender.click("[data-act='copy-reading-list']");
+      const fallback = await sender.$eval("#reading-list-address", field =>
+        field === document.activeElement && field.selectionEnd - field.selectionStart === field.value.length);
+      if (!fallback) throw new Error("blocked copying did not select the portable list link");
+      await sender.click("[data-act='download-shared-sources']");
+      const citations = await sender.evaluate(() => window.__listSources.text());
+      if (!citations.includes('"Amek Adler."') || !citations.includes('"Martin Baranek."') ||
+          citations.includes("Wally Adam") || !citations.includes("not verbatim transcripts")) {
+        throw new Error("downloaded citations do not match the explicitly shared selection");
+      }
+      await recipient.goto(BASE + "/?list-recipient=1#/explore", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await recipient.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await recipient.evaluate(() => localStorage.setItem("ohp-map.saved-accounts.v1", JSON.stringify({ version: 1, ids: ["adam-wally"] })));
+      await recipient.goto(address, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await recipient.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      const received = await recipient.evaluate(() => ({
+        ids: [...document.querySelectorAll(".rail-card")].map(card => card.dataset.survivor),
+        mappedIds: [...new Set([...document.querySelectorAll(".place-cluster")]
+          .flatMap(marker => JSON.parse(marker.dataset.accountIds)))].sort(),
+        saved: JSON.parse(localStorage.getItem("ohp-map.saved-accounts.v1")).ids,
+        title: document.querySelector("[data-collection-title]").textContent,
+      }));
+      if (received.ids.join() !== ids.join() || received.mappedIds.join() !== [...ids].sort().join() ||
+          received.saved.join() !== "adam-wally" || received.title !== "Shared reading list") {
+        throw new Error(`receiving a link changed private state or lost accounts ${JSON.stringify(received)}`);
+      }
+      await recipient.click("[data-act='save-shared-list']");
+      if (await recipient.evaluate(() => JSON.parse(localStorage.getItem("ohp-map.saved-accounts.v1")).ids.length) !== 3) {
+        throw new Error("saving the shared list replaced the recipient's existing accounts");
+      }
+      await recipient.click(".rail-card");
+      await recipient.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await recipient.click(".result-navigation:not(.result-navigation-end) [data-act='next-account']");
+      if (!await recipient.evaluate(() => location.hash.includes("list=") && location.hash.includes("baranek-martin"))) {
+        throw new Error("reader navigation escaped the shared selection");
+      }
+      await recipient.reload({ waitUntil: "domcontentloaded" });
+      await recipient.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await recipient.click(".panel-close");
+      if (await recipient.$$eval(".rail-card", cards => cards.length) !== 2) throw new Error("reloading an account lost the shared collection");
+      await recipient.click(".saved-view");
+      if (await recipient.$$eval(".rail-card", cards => cards.length) < 100 || await recipient.evaluate(() => location.hash.includes("list="))) {
+        throw new Error("leaving a shared list did not restore the whole collection");
+      }
+    } finally {
+      await senderContext.close();
+      await recipientContext.close();
+    }
+  });
+
+  await check("shared-list errors remain explicit and failed imports preserve existing saves", async () => {
+    const context = await browser.createBrowserContext();
+    const shared = await context.newPage();
+    shared.on("pageerror", error => errors.push("shared list recovery: " + error.message));
+    try {
+      await shared.goto(BASE + "/?missing-shared=1#/explore?list=adler-amek,not-currently-public", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await shared.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      if (await shared.$$eval(".rail-card", cards => cards.length) !== 1 ||
+          !await shared.$eval(".shared-list-warning", warning => warning.textContent.includes("1 account"))) {
+        throw new Error("an unavailable shared account was silently dropped");
+      }
+      await shared.evaluate(() => {
+        localStorage.setItem("ohp-map.saved-accounts.v1", JSON.stringify({ version: 1, ids: ["adam-wally"] }));
+        Storage.prototype.setItem = () => { throw new DOMException("Blocked", "QuotaExceededError"); };
+      });
+      await shared.click("[data-act='save-shared-list']");
+      if (!await shared.$eval("[data-saved-feedback]", feedback => feedback.textContent.includes("could not be saved")) ||
+          await shared.evaluate(() => JSON.parse(localStorage.getItem("ohp-map.saved-accounts.v1")).ids.join()) !== "adam-wally") {
+        throw new Error("a failed shared-list save reported success or replaced private data");
+      }
+      for (const query of ["list=%3Cscript%3E", "list=adler-amek&saved=1", "list="]) {
+        await shared.goto(BASE + "/?invalid-shared=1#/explore?" + query, { waitUntil: "domcontentloaded", timeout: 40000 });
+        await shared.waitForSelector("#missing-title", { timeout: 15000 });
+      }
+      await shared.goto(BASE + "/?unavailable-list=1#/explore?list=not-currently-public", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await shared.waitForSelector(".rail-empty", { timeout: 15000 });
+      if (!await shared.$eval("[data-act='share-reading-list']", button => button.disabled)) throw new Error("an unavailable list can be silently reshared as empty");
+      await shared.click("[data-act='leave-shared-list']");
+      if (await shared.$$eval(".rail-card", cards => cards.length) < 100) throw new Error("an unavailable list has no recovery to the collection");
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("large reading lists offer citations instead of silently shortened links", async () => {
+    const context = await browser.createBrowserContext();
+    const large = await context.newPage();
+    large.on("pageerror", error => errors.push("large reading list: " + error.message));
+    try {
+      await large.goto(BASE + "/?large-reading-list=1#/explore", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await large.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      const total = await large.evaluate(async () => {
+        const index = await (await fetch("/data/index.json")).json();
+        const ids = index.features.map(feature => feature.properties.survivor_id);
+        localStorage.setItem("ohp-map.saved-accounts.v1", JSON.stringify({ version: 1, ids }));
+        return ids.length;
+      });
+      await large.click(".saved-view");
+      await large.click("[data-act='share-reading-list']");
+      const recovery = await large.evaluate(() => ({
+        text: document.querySelector(".research-dialog-intro").textContent,
+        status: document.querySelector("[data-reading-list-status]").textContent,
+        disabled: document.querySelector("[data-act='copy-reading-list']").disabled,
+        exportEnabled: !document.querySelector("[data-act='download-shared-sources']").disabled,
+      }));
+      if (!recovery.text.includes(String(total)) || !recovery.status.includes("too large") || !recovery.disabled || !recovery.exportEnabled) {
+        throw new Error(`the list was truncated or cannot be exported ${JSON.stringify(recovery)}`);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("research dialogs fit small and landscape screens with usable close and copy controls", async () => {
+    for (const viewport of [{ width: 320, height: 568 }, { width: 568, height: 320 }]) {
+      const context = await browser.createBrowserContext();
+      const compact = await context.newPage();
+      compact.on("pageerror", error => errors.push("compact research dialogs: " + error.message));
+      try {
+        await compact.setViewport(viewport);
+        await compact.goto(BASE + "/?research-dialog-layout=1#/explore", { waitUntil: "domcontentloaded", timeout: 40000 });
+        await compact.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+        await compact.click("[data-act='browse-places']");
+        const fits = () => compact.$eval("dialog[open]", dialog => {
+          const rect = dialog.getBoundingClientRect(), close = dialog.querySelector("[data-act='close-research-dialog']").getBoundingClientRect();
+          return rect.left >= 8 && rect.right <= innerWidth - 8 && rect.top >= 8 && rect.bottom <= innerHeight - 8 &&
+            close.width >= 44 && close.height >= 44 && close.top >= 8 && close.bottom <= innerHeight;
+        });
+        if (!await fits()) throw new Error(`the place index is clipped at ${viewport.width}px`);
+        await compact.keyboard.press("Escape");
+        await compact.evaluate(() => localStorage.setItem("ohp-map.saved-accounts.v1", JSON.stringify({ version: 1, ids: ["adler-amek", "baranek-martin"] })));
+        await compact.click(".saved-view");
+        await compact.click("[data-act='share-reading-list']");
+        if (!await fits()) throw new Error(`the share dialog is clipped at ${viewport.width}px`);
+        await compact.$eval("[data-act='copy-reading-list']", button => button.scrollIntoView({ block: "nearest" }));
+        if (!await compact.$eval("[data-act='copy-reading-list']", button => button.getBoundingClientRect().height >= 44)) {
+          throw new Error("the list-copy target is too small");
+        }
+        await compact.keyboard.press("Escape");
+        if (await compact.evaluate(() => document.activeElement.dataset.act) !== "share-reading-list") throw new Error("closing the small-screen dialog lost focus");
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  await check("closing the place index keeps an open account and its media intact", async () => {
+    const context = await browser.createBrowserContext();
+    const reading = await context.newPage();
+    reading.on("pageerror", error => errors.push("place index reader: " + error.message));
+    await reading.setRequestInterception(true);
+    reading.on("request", request => request.url().startsWith("https://player.vimeo.com/video/")
+      ? request.respond({ status: 200, contentType: "text/html", body: "<html><body>Player test</body></html>" })
+      : request.continue());
+    try {
+      await reading.setViewport({ width: 1366, height: 850 });
+      await reading.goto(BASE + "/?place-reader=1#/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await reading.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await reading.click("[data-act='show-interviews']");
+      await wait(600);
+      await reading.click(".video-chapter[data-video]");
+      await reading.waitForSelector(".player-frame iframe");
+      await reading.$eval(".player-frame iframe", frame => { frame.dataset.retained = "yes"; });
+      await reading.click("[data-act='browse-places']");
+      await reading.keyboard.press("Escape");
+      if (await reading.$eval(".player-frame iframe", frame => frame.dataset.retained) !== "yes" ||
+          await reading.$eval("#profile-name", name => name.textContent) !== "Wally Adam") {
+        throw new Error("dismissing the place index discarded the account or restarted its interview");
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const transfer of dataTransfers.values()) {
     if (transfer.failed < 0) continue;
     if (transfer.completed <= transfer.failed) errors.push(`unrecovered data request: ${transfer.url} (${transfer.reasons.join(", ")})`);
