@@ -7,6 +7,8 @@ import { ROLE_LABEL, GROUPS, parseYear, initials, slug, normalizeSearch, siteRes
 import { normalizeProfileMedia } from "./media.js";
 
 const BASE = "data";
+class ArchiveFetchError extends Error {}
+export class BiographyError extends Error {}
 const COUNTRY_ALIAS = {
   England: "United Kingdom", Scotland: "United Kingdom", "Great Britain": "United Kingdom",
   UK: "United Kingdom", USA: "United States of America", "United States": "United States of America",
@@ -142,7 +144,7 @@ async function getJSON(name, onRetry, mayRetry = true) {
     if (!(error instanceof TypeError) || !mayRetry) throw error;
     return retryJSON(name, onRetry, 600);
   }
-  const error = new Error(`Failed to load ${name}: ${response.status}`);
+  const error = new ArchiveFetchError(`Failed to load ${name}: ${response.status}`);
   if (!mayRetry || ![502, 503, 504].includes(response.status)) throw error;
   const retryAfter = response.headers.get("retry-after");
   const requestedDelay = retryAfter && (/^\d+$/.test(retryAfter)
@@ -321,6 +323,10 @@ function toJourney(props) {
     initials: initials(props.name),
     themes: props.theme_tags || [],
     bio: completeExcerpt(props.bio_excerpt),
+    fullBiography: typeof props.source_biography === "string" ? props.source_biography : "",
+    biographyState: typeof props.source_biography === "string" && props.source_biography.trim() ? "ready" : "unloaded",
+    biographyError: "",
+    biographyProvenance: typeof props.source_biography === "string" && props.source_biography.trim() ? "profile_snapshot" : null,
     archiveUrl: props.archive_url || "",
     portrait: props.portrait || null,
     portraitRights: props.portrait_rights || null,
@@ -426,6 +432,7 @@ export async function loadData({ onRetry, compact = false } = {}) {
     return warAt(journey.serviceYear);
   };
   const profileRequests = new Map();
+  const biographyRequests = new Map();
   async function loadProfile(id) {
     const journey = byId.get(id);
     if (!journey) throw new Error("The requested account is not in this collection.");
@@ -461,6 +468,38 @@ export async function loadData({ onRetry, compact = false } = {}) {
     profileRequests.set(journey.id, request);
     return request;
   }
+  async function loadBiography(id) {
+    const journey = byId.get(id);
+    if (!journey) throw new BiographyError("The requested account is not in this collection.");
+    if (journey.detailState !== "ready") throw new BiographyError("Load this account's details before opening its full biography.");
+    if (journey.biographyState === "ready") return journey;
+    if (biographyRequests.has(journey.id)) return biographyRequests.get(journey.id);
+    const match = /^\/data\/profiles\/([a-z0-9-]+)\.([a-f0-9]{64})\.json$/.exec(journey.detailUrl);
+    if (!match || match[1] !== journey.id) throw new BiographyError("This account has no supported source-biography address.");
+    journey.biographyState = "loading";
+    journey.biographyError = "";
+    const request = getJSON(`/data/biographies/${journey.id}.${match[2]}.json`, onRetry).then(source => {
+      if (source?.format !== 1 || source.survivor_id !== journey.id || source.profile_hash !== match[2] ||
+          source.source_url !== journey.archiveUrl || typeof source.text !== "string" || !source.text.trim() ||
+          !["profile_snapshot", "bundled_source_snapshot"].includes(source.provenance)) {
+        throw new BiographyError("The full biography does not match this source account. Reload the collection or open the original OHP page.");
+      }
+      journey.fullBiography = source.text;
+      journey.biographyProvenance = source.provenance;
+      journey.biographyState = "ready";
+      return journey;
+    }).catch(error => {
+      journey.biographyState = "error";
+      const expected = error instanceof BiographyError || error instanceof ArchiveFetchError ||
+        error instanceof SyntaxError || error instanceof TypeError;
+      if (!expected) throw error;
+      journey.biographyError = error instanceof BiographyError ? error.message
+        : "The full source biography could not load. Retry it or open the original OHP page.";
+      throw new BiographyError(journey.biographyError);
+    }).finally(() => biographyRequests.delete(journey.id));
+    biographyRequests.set(journey.id, request);
+    return request;
+  }
   return {
     meta,
     journeys,
@@ -487,6 +526,7 @@ export async function loadData({ onRetry, compact = false } = {}) {
     warForJourney,
     corridorsForYear,
     loadProfile,
+    loadBiography,
   };
 }
 

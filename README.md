@@ -75,6 +75,15 @@ and places. The map shows only that selected account, labels current versus hist
 borders, and explains when there is not enough evidence to draw a route. A chapter link
 to OHP is not a guarantee of available playback.
 
+The short **Brief excerpt** is a starting point, not the whole source biography.
+**Read full source biography** opens a wider, scrollable reading view with the
+complete saved public OHP text. It reuses text already present in the selected
+profile, or loads an explicitly matched source-biography resource on demand.
+The initial collection still does not download every biography. Source URL,
+profile version and bundled-excerpt checks prevent an unrelated biography from
+replacing the account; failed loads retain the excerpt and offer retry/OHP exits.
+The full written biography is not presented as an interview transcript.
+
 Historical search asks visitors to choose between ambiguous results. If the dated
 geometry fails to load, a visible notice identifies the neutral, present-day basemap and
 offers a retry without resetting the year or layers. About and the year-context sources
@@ -151,6 +160,9 @@ clipped application panels. It includes the public summary, source citation, sou
 spellings, qualified place references and retained context. **Print list** inside
 the sharing dialog prints its exact selected citations. Use the browser's print
 dialog to print on paper or save a PDF. These sheets are not interview transcripts.
+After the full biography has loaded, printing includes that complete source text;
+otherwise the sheet explicitly identifies its short excerpt. The full-biography
+view also provides a direct print action.
 The native browser print command also supports an open account or saved/shared
 reading list. Unloaded details are labelled incomplete, and server-readable profile
 pages remain printable without JavaScript.

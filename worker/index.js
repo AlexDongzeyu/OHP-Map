@@ -153,6 +153,56 @@ async function profileFeature(env, request, id, hash) {
   return feature;
 }
 
+async function sourceBiography(env, request, feature) {
+  const properties = feature.properties;
+  if (typeof properties.source_biography === "string" && properties.source_biography.trim()) {
+    return { text: properties.source_biography, source_url: properties.archive_url, provenance: "profile_snapshot" };
+  }
+  const response = await asset(env, new Request(request.url), `/data/biographies/${properties.survivor_id}.json`);
+  if (response.status === 404) {
+    await response.body?.cancel();
+    return null;
+  }
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error("The saved source biography is temporarily unavailable");
+  }
+  const source = await response.json();
+  if (source.source_url !== properties.archive_url || typeof source.text !== "string" || !source.text.trim()) return null;
+  return { ...source, provenance: "bundled_source_snapshot" };
+}
+
+async function biographyResponse(request, env, id, hash) {
+  if (!["GET", "HEAD"].includes(request.method)) return methodNotAllowed();
+  const snapshot = await detailResponse(new Request(request.url), env, id, hash);
+  if (!snapshot.ok) {
+    const status = snapshot.status;
+    await snapshot.body?.cancel();
+    return errorResponse(status, "The matching account version is unavailable. Reload the collection.", true);
+  }
+  const feature = await snapshot.json();
+  if (feature?.type !== "Feature" || feature.properties?.survivor_id !== id) {
+    return errorResponse(503, "The source account could not be validated.", true);
+  }
+  const source = await sourceBiography(env, request, feature);
+  if (!source) return errorResponse(404, "No full source biography is available for this account version.", true);
+  if (source.provenance === "bundled_source_snapshot" && source.kind !== "source_biography") {
+    return errorResponse(404, "Only a short excerpt is available for this account version. Open the original OHP page for more.", true);
+  }
+  if (source.provenance === "bundled_source_snapshot" && source.excerpt !== (feature.properties.bio_excerpt || "")) {
+    return errorResponse(409, "The saved biography and account excerpt differ. Open the original OHP page or reload the collection.", true);
+  }
+  const body = JSON.stringify({
+    format: 1, survivor_id: id, profile_hash: hash, source_url: source.source_url,
+    text: source.text, provenance: source.provenance,
+  });
+  return streamResponse(request, new Response(body).body, {
+    "content-type": JSON_HEADERS["content-type"],
+    "cache-control": "public, max-age=0, must-revalidate",
+    etag: `"${await contentHash(body)}"`,
+  });
+}
+
 async function profileResponse(request, env, ctx, match) {
   if (!["GET", "HEAD"].includes(request.method)) return methodNotAllowed();
   const requested = match[1];
@@ -173,14 +223,7 @@ async function profileResponse(request, env, ctx, match) {
   await bundled.body?.cancel();
   if (bundled.status !== 404) throw new Error("Profile HTML is unavailable");
   const feature = await profileFeature(env, request, id, hash);
-  let sourceText = feature.properties.source_biography;
-  if (sourceText === undefined) {
-    const biography = await asset(env, new Request(request.url), `/data/biographies/${id}.json`);
-    if (biography.ok) {
-      const source = await biography.json();
-      if (source.source_url === feature.properties.archive_url && typeof source.text === "string") sourceText = source.text;
-    } else await biography.body?.cancel();
-  }
+  const sourceText = (await sourceBiography(env, request, feature))?.text;
   const shell = await asset(env, new Request(request.url), "/index.html");
   if (!shell.ok) {
     await shell.body?.cancel();
@@ -203,6 +246,8 @@ async function route(request, env, ctx) {
   const detail = url.pathname.match(DETAIL_PATTERN);
   if (detail) return detailResponse(request, env, detail[1], detail[2]);
   if (url.pathname.startsWith("/data/profiles/")) return errorResponse(404, undefined, true);
+  const biography = url.pathname.match(/^\/data\/biographies\/([a-z0-9]+(?:-[a-z0-9]+)*)\.([a-f0-9]{64})\.json$/);
+  if (biography) return biographyResponse(request, env, biography[1], biography[2]);
   const profile = url.pathname.match(/^\/survivor\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/);
   if (profile) return profileResponse(request, env, ctx, profile);
   if (url.pathname === "/survivor" || url.pathname.startsWith("/survivor/")) return errorResponse();

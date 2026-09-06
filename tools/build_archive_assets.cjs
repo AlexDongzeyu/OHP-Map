@@ -54,9 +54,12 @@ async function buildArchiveAssets({
     const properties = feature.properties;
     const source = [id, ...(properties.source_aliases || [])]
       .map((key) => sourceProfiles[key]).find((record) => record?.source_status === "public");
-    const text = source?.quote_text ?? properties.source_biography ?? properties.bio_excerpt ?? "";
+    const biography = source?.quote_text ?? properties.source_biography;
+    const hasBiography = typeof biography === "string" && biography.trim().length > 0;
+    const text = hasBiography ? biography : properties.bio_excerpt || "";
     write(out, `/data/biographies/${id}.json`, JSON.stringify({
       excerpt: properties.bio_excerpt || "", text, source_url: properties.archive_url || "",
+      kind: hasBiography ? "source_biography" : "excerpt",
     }));
     write(out, `/data/profile-pages/${id}.${hash}.html`,
       pages.renderProfileHtml(shell, feature, { origin: base, sourceText: text }));

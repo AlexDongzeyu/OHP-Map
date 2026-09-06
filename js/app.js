@@ -1,6 +1,6 @@
 // app.js — orchestration. Owns the state machine, renders the persistent atlas
 // (atlas.js) + the per-view overlay (ui.js), and wires collection, media and history controls.
-import { loadData, journeyFilter, collectionResults } from "./data.js";
+import { loadData, journeyFilter, collectionResults, BiographyError } from "./data.js";
 import { createAtlas } from "./atlas.js";
 import * as ui from "./ui.js";
 import * as motion from "./motion.js";
@@ -582,6 +582,7 @@ function openResearchDialog(markup, returnAction) {
   const template = document.createElement("template");
   template.innerHTML = markup;
   const dialog = template.content.querySelector("dialog");
+  dialog.dataset.returnAction = returnAction;
   document.getElementById("overlay").append(dialog);
   dialog.addEventListener("close", () => {
     const connected = dialog.isConnected;
@@ -594,6 +595,38 @@ function openResearchDialog(markup, returnAction) {
   }, { once: true });
   dialog.showModal();
   return dialog;
+}
+
+async function fillBiographyDialog(dialog, journey) {
+  const content = dialog.querySelector("[data-biography-content]");
+  const focusedRetry = document.activeElement?.dataset.act === "retry-biography";
+  const request = store.loadBiography(journey.id);
+  content.innerHTML = ui.biographyContent(journey);
+  dialog.setAttribute("aria-busy", String(journey.biographyState === "loading"));
+  try { await request; }
+  catch (error) {
+    if (!(error instanceof BiographyError)) throw error;
+    journey.biographyState = "error";
+    journey.biographyError = error.message;
+    console.warn("The full source biography could not load:", error.message);
+  }
+  if (!dialog.isConnected || dialog.dataset.survivorId !== journey.id) return;
+  content.innerHTML = ui.biographyContent(journey);
+  dialog.setAttribute("aria-busy", "false");
+  dialog.querySelector("[data-act='print-account']").disabled = journey.biographyState !== "ready";
+  if (focusedRetry) (content.querySelector(".full-biography-text") || content.querySelector("button"))?.focus({ preventScroll: true });
+}
+
+function openBiography() {
+  const journey = store.byId.get(state.selectedId);
+  if (journey?.detailState !== "ready") {
+    console.warn("Load the account details before opening its source biography.");
+    refreshResearchTools("Wait for the account details to load before opening the full biography.");
+    return;
+  }
+  const dialog = openResearchDialog(ui.biographyDialog(journey), "read-full-biography");
+  dialog.dataset.survivorId = journey.id;
+  if (journey.biographyState !== "ready") void fillBiographyDialog(dialog, journey);
 }
 
 function openPlaceBrowser() {
@@ -722,7 +755,7 @@ function preparePrintSheet() {
     if (rect.width && rect.height) printMapSize = [rect.width, rect.height];
   }
   if (dialog) {
-    printReturnFocus = document.querySelector(`[data-act="${dialog.id === "reading-list-dialog" ? "share-reading-list" : "browse-places"}"]`);
+    printReturnFocus = document.querySelector(`[data-act="${dialog.dataset.returnAction}"]`);
     dialog.close();
   }
   let sheet = document.getElementById("print-sheet");
@@ -1946,6 +1979,11 @@ function onActivate(e) {
     case "download-list-sources": return downloadListSources();
     case "download-shared-sources": return downloadListSources(true);
     case "print-account": return printAccount();
+    case "read-full-biography": return openBiography();
+    case "retry-biography": {
+      const dialog = document.getElementById("biography-dialog");
+      return fillBiographyDialog(dialog, store.byId.get(dialog.dataset.survivorId));
+    }
     case "print-reading-list": return printReadingList();
     case "save-shared-list": return saveSharedList();
     case "leave-shared-list": return leaveSharedList();

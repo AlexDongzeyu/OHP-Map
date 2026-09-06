@@ -283,10 +283,36 @@ export function readingListTools(store, state) {
 
 function researchDialog(id, title, body) {
   return `<dialog class="research-dialog" id="${id}" aria-labelledby="${id}-title">
-    <header class="research-dialog-heading"><h2 id="${id}-title">${title}</h2>
-      <button data-act="close-research-dialog" aria-label="Close ${title.toLowerCase()}">${icon("close")}</button></header>
+    <header class="research-dialog-heading"><h2 id="${id}-title">${esc(title)}</h2>
+      <button data-act="close-research-dialog" aria-label="Close ${esc(title.toLowerCase())}">${icon("close")}</button></header>
     <div class="research-dialog-body">${body}</div>
   </dialog>`;
+}
+
+export function biographyContent(journey) {
+  if (journey.biographyState === "ready") {
+    const paragraphs = journey.fullBiography.trim().split(/\n\s*\n/);
+    const words = journey.fullBiography.trim().split(/\s+/).length;
+    return `<p class="biography-source-label">Public OHP biography · ${words} words</p>
+      <p class="research-dialog-note">This is the saved text of the original OHP biography, not a verbatim interview transcript. Map references remain separately qualified.</p>
+      <div class="full-biography-text" tabindex="0" aria-label="Full source biography">${paragraphs.map(paragraph => `<p>${esc(paragraph)}</p>`).join("")}</div>`;
+  }
+  if (journey.biographyState === "error") {
+    return `<div class="biography-recovery" role="status"><h3>The full biography could not load</h3>
+      <p>${esc(journey.biographyError || "The source text is not available in this snapshot.")}</p>
+      <button class="link" data-act="retry-biography">Try again</button></div>`;
+  }
+  return `<div class="biography-loading" role="status"><p>Loading the full source biography</p>
+    <p>The excerpt, recorded places and original OHP page remain available.</p></div>`;
+}
+
+export function biographyDialog(journey) {
+  return researchDialog("biography-dialog", journey.name, `
+    <div data-biography-content>${biographyContent(journey)}</div>
+    <div class="biography-source-actions">
+      <a class="link" href="${esc(journey.archiveUrl)}" target="_blank" rel="noopener">Read at OHP ${icon("external-link")}</a>
+      <button class="link" data-act="print-account"${journey.biographyState === "ready" ? "" : " disabled"}>${icon("printer")} Print biography</button>
+    </div>`);
 }
 
 export function placeBrowser(store, state) {
@@ -450,7 +476,9 @@ export function panel(store, state) {
       </div>
       <div class="profile-content">
       <section id="profile-story" tabindex="-1" aria-label="Account">
-        ${ready ? `<p class="bio">${esc(j.bio || "The original OHP page contains this person's account.")}</p>`
+        ${ready ? `<p class="biography-excerpt-label">Brief excerpt</p>
+          <p class="bio">${esc(j.bio || "The original OHP page contains this person's account.")}</p>
+          <button class="link biography-open" data-act="read-full-biography" aria-haspopup="dialog">Read full source biography ${icon("arrow-right")}</button>`
           : `<div class="profile-loading" role="status">
             <h3>${j.detailState === "error" ? "Account details could not load" : "Loading this account"}</h3>
             <p>${j.detailState === "error" ? "The map remains available. Retry the biography and interview chapters, or open the original OHP page." : "The biography, photographs and interview chapters load only for the account you open."}</p>
@@ -576,6 +604,8 @@ function contextualPlaces(journey, printing = false) {
 
 export function printAccount(journey, address, accessed = new Date()) {
   const ready = journey.detailState === "ready";
+  const fullBiography = ready && journey.biographyState === "ready" ? journey.fullBiography : "";
+  const biography = fullBiography || journey.bio;
   const portrait = ready ? clearedPortrait(journey) : null;
   const passages = accountSourcePassages(journey);
   const reviewed = journey.reviewStatus === "reviewed";
@@ -590,8 +620,12 @@ export function printAccount(journey, address, accessed = new Date()) {
     </header>
     <p class="print-caveat">${reviewed ? "This map record is marked reviewed. Coordinates remain approximate; connections are not exact travel paths."
       : "Not fully reviewed. Mapped references locate source mentions, not confirmed presence or exact travel paths."}
-      This sheet uses a public source summary, not a verbatim interview transcript.</p>
-    ${ready ? `<section><h2>Public OHP summary</h2><p class="print-biography">${esc(journey.bio || "No public summary is available in this snapshot. Read the original OHP page.")}</p></section>
+      This sheet uses a public source biography or excerpt, not a verbatim interview transcript.</p>
+    ${ready ? `<section><h2>${fullBiography ? "Public OHP biography" : "Public OHP summary excerpt"}</h2>
+        <p class="print-biography">${esc(biography || "No public summary is available in this snapshot. Read the original OHP page.")}</p>
+        ${fullBiography && journey.bio && !fullBiography.includes(journey.bio) ? `<h3>Collection introduction</h3><p>${esc(journey.bio)}</p>` : ""}
+        ${!fullBiography ? '<p class="print-source-note">This is the short collection excerpt. Open Read full source biography before printing to include the longer source text.</p>' : ""}
+      </section>
       <section><h2>Interview material</h2><p>${journey.videoCount} recorded ${journey.videoCount === 1 ? "chapter" : "chapters"}.
         ${journey.captionedVideoCount} ${journey.captionedVideoCount === 1 ? "chapter has" : "chapters have"} listed captions.
         Playback and caption access depend on the video provider. Open the original OHP page for the interview.</p>

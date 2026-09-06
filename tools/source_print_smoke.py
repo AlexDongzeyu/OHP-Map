@@ -13,13 +13,19 @@ def normalized(value):
     return " ".join(unicodedata.normalize("NFKC", value).split())
 
 
-def pdf_text(path):
+def pdf_text(path, footer=None):
     reader = PdfReader(path)
     pages = []
     for index, page in enumerate(reader.pages, 1):
         lines = (page.extract_text() or "").splitlines()
         if lines and lines[0].strip() == str(index):
             lines.pop(0)
+        if footer:
+            if lines and source_characters(lines[0]) in {
+                str(index) + source_characters(footer), source_characters(footer) + str(index),
+            }:
+                lines.pop(0)
+            lines = [line for line in lines if source_characters(line) != source_characters(footer)]
         pages.append("\n".join(lines))
     return reader, normalized("\n".join(pages))
 
@@ -44,14 +50,19 @@ def verify(base, output, executable):
                 name = page.locator("#profile-name").inner_text()
                 places = page.locator(".profile-places .step-place").all_text_contents()
                 biography = page.locator(".bio").inner_text()
+                page.locator("[data-act='read-full-biography']").click()
+                page.locator(".full-biography-text").wait_for()
+                full_biography = page.locator(".full-biography-text").inner_text()
+                page.keyboard.press("Escape")
                 page.locator(".map-tools [data-act='zoom-in']").click()
                 page.wait_for_timeout(200)
                 camera = page.locator(".camera").get_attribute("transform")
                 path = output / f"{identifier}-reading-sheet.pdf"
                 page.pdf(path=str(path), format="A4", print_background=True)
-                document, text = pdf_text(path)
+                document, text = pdf_text(path, f"{name} · Crestwood Oral History Project")
                 assert all(normalized(place) in text for place in places), f"{identifier}: a place was clipped"
                 assert normalized(biography) in text, f"{identifier}: the summary was clipped"
+                assert source_characters(full_biography) in source_characters(text), f"{identifier}: the full source biography was clipped"
                 assert "Accessed" in text and "not a verbatim interview transcript" in text
                 assert "Search names or places" not in text, "The interactive controls were printed"
                 assert all(normalized(name) in normalized(part.extract_text() or "") for part in document.pages), "A page lost its account identity"
@@ -60,7 +71,8 @@ def verify(base, output, executable):
                 page.wait_for_timeout(250)
                 assert page.locator("#print-sheet").count() == 0
                 assert page.locator(".camera").get_attribute("transform") == camera
-                results.append({"account": identifier, "pages": len(document.pages), "references": len(places), "complete": True})
+                results.append({"account": identifier, "pages": len(document.pages), "references": len(places),
+                                "biography_characters": len(full_biography), "complete": True})
 
             page.goto(f"{base}/?print-list-test=1#/explore?list=adler-amek,baranek-martin", wait_until="networkidle")
             page.locator("#loading").wait_for(state="hidden")

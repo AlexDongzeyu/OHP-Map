@@ -3414,6 +3414,201 @@ function assertCounterMotion(label, { targets, samples }) {
     }
   });
 
+  await check("full source biographies are available without inflating initial account loads", async () => {
+    const context = await browser.createBrowserContext();
+    const biography = await context.newPage();
+    biography.on("pageerror", error => errors.push("full biography: " + error.message));
+    const requests = [];
+    biography.on("request", request => { if (new URL(request.url()).pathname.startsWith("/data/biographies/")) requests.push(request.url()); });
+    try {
+      await biography.setViewport({ width: 1366, height: 850 });
+      await biography.goto(BASE + "/survivor/ferguson-george", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await biography.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      if (requests.length) throw new Error("the full biography was fetched before it was requested");
+      const excerpt = await biography.$eval(".bio", paragraph => paragraph.textContent);
+      await biography.click("[data-act='read-full-biography']");
+      await biography.waitForSelector(".full-biography-text", { timeout: 15000 });
+      const source = await biography.evaluate(async () => {
+        const response = await fetch("/survivor/ferguson-george");
+        if (!response.ok) throw new Error("the source-readable profile failed");
+        const doc = new DOMParser().parseFromString(await response.text(), "text/html");
+        return doc.querySelector("#server-profile blockquote").textContent;
+      });
+      const full = await biography.$eval(".full-biography-text", text => text.innerText);
+      if (full.trim() !== source.trim() || full.length <= excerpt.length * 2) {
+        throw new Error("the reader still displays only a short excerpt or different source text");
+      }
+      if (!await biography.$eval("#biography-dialog", dialog => dialog.textContent.includes("not a verbatim interview transcript"))) {
+        throw new Error("the full source biography is presented as an interview transcript");
+      }
+      const loaded = requests.length;
+      await biography.keyboard.press("Escape");
+      await biography.click("[data-act='read-full-biography']");
+      await biography.waitForSelector(".full-biography-text");
+      if (requests.length !== loaded) throw new Error("reopening a loaded biography fetched it again");
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("biography failures and mismatched sources recover without replacing the account", async () => {
+    const context = await browser.createBrowserContext();
+    const biography = await context.newPage();
+    biography.on("pageerror", error => errors.push("biography recovery: " + error.message));
+    const index = await (await fetch(BASE + "/data/index.json")).json();
+    const item = index.features.find(feature => feature.properties.survivor_id === "ferguson-george");
+    const feature = await (await fetch(BASE + item.properties.detail_url)).json();
+    delete feature.properties.source_biography;
+    const hash = item.properties.detail_url.match(/\.([a-f0-9]{64})\.json$/)[1];
+    let stage = "failed", calls = 0;
+    await biography.setRequestInterception(true);
+    biography.on("request", request => {
+      const path = new URL(request.url()).pathname;
+      if (path === item.properties.detail_url) return request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(feature) });
+      if (path.startsWith("/data/biographies/ferguson-george.")) {
+        calls++;
+        if (stage === "failed") return request.respond({ status: 500, contentType: "application/json", body: "{}" });
+        return request.respond({ status: 200, contentType: "application/json", body: JSON.stringify({
+          format: 1, survivor_id: stage === "mismatched" ? "another-person" : "ferguson-george",
+          profile_hash: hash, source_url: feature.properties.archive_url,
+          text: "The matching source biography is now available.", provenance: "bundled_source_snapshot",
+        }) });
+      }
+      request.continue();
+    });
+    try {
+      await biography.goto(BASE + "/?biography-retry=1#/survivor/ferguson-george", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await biography.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      const excerpt = await biography.$eval(".bio", paragraph => paragraph.textContent);
+      await biography.click("[data-act='read-full-biography']");
+      await biography.waitForSelector(".biography-recovery", { timeout: 15000 });
+      stage = "mismatched";
+      await biography.click("[data-act='retry-biography']");
+      await biography.waitForFunction(() => document.querySelector(".biography-recovery")?.textContent.includes("does not match"), { timeout: 15000 });
+      if (await biography.$(".full-biography-text")) throw new Error("an unrelated biography was displayed");
+      stage = "ready";
+      await biography.click("[data-act='retry-biography']");
+      await biography.waitForSelector(".full-biography-text", { timeout: 15000 });
+      if (calls !== 3 || await biography.$eval(".bio", paragraph => paragraph.textContent) !== excerpt) {
+        throw new Error("biography recovery discarded the excerpt or retried without a bound");
+      }
+      await biography.keyboard.press("Escape");
+      if (await biography.evaluate(() => document.activeElement.dataset.act) !== "read-full-biography") {
+        throw new Error("closing biography recovery lost the reader's focus");
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("full-biography reading fits small screens and does not restart interviews", async () => {
+    const context = await browser.createBrowserContext();
+    const biography = await context.newPage();
+    biography.on("pageerror", error => errors.push("biography reader: " + error.message));
+    await biography.setRequestInterception(true);
+    biography.on("request", request => request.url().startsWith("https://player.vimeo.com/video/")
+      ? request.respond({ status: 200, contentType: "text/html", body: "<html><body>Player test</body></html>" })
+      : request.continue());
+    try {
+      await biography.setViewport({ width: 1366, height: 850 });
+      await biography.goto(BASE + "/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await biography.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await biography.click("[data-act='show-interviews']");
+      await wait(600);
+      await biography.click(".video-chapter[data-video]");
+      await biography.waitForSelector(".player-frame iframe");
+      await biography.$eval(".player-frame iframe", frame => { frame.dataset.retained = "yes"; });
+      await biography.click("[data-act='read-full-biography']");
+      await biography.waitForSelector(".full-biography-text", { timeout: 15000 });
+      await biography.keyboard.press("Escape");
+      if (await biography.$eval(".player-frame iframe", frame => frame.dataset.retained) !== "yes") {
+        throw new Error("opening the full biography replaced the playing interview");
+      }
+      for (const viewport of [{ width: 320, height: 568 }, { width: 568, height: 320 }]) {
+        await biography.setViewport(viewport);
+        await biography.goto(BASE + `/?biography-size=${viewport.width}#/survivor/ferguson-george`, { waitUntil: "domcontentloaded", timeout: 40000 });
+        await biography.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+        await biography.click("[data-act='read-full-biography']");
+        await biography.waitForSelector(".full-biography-text", { timeout: 15000 });
+        const fits = await biography.$eval("#biography-dialog", dialog => {
+          const rect = dialog.getBoundingClientRect(), close = dialog.querySelector("[data-act='close-research-dialog']").getBoundingClientRect();
+          return rect.left >= 8 && rect.right <= innerWidth - 8 && rect.bottom <= innerHeight - 8 &&
+            rect.top >= 8 && close.width >= 44 && close.height >= 44 &&
+            dialog.querySelector(".research-dialog-body").scrollHeight > dialog.querySelector(".research-dialog-body").clientHeight;
+        });
+        if (!fits) throw new Error(`the full biography is clipped at ${viewport.width}px`);
+        await biography.keyboard.press("Escape");
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("a late biography response cannot replace a newer account", async () => {
+    const context = await browser.createBrowserContext();
+    const reading = await context.newPage();
+    reading.on("pageerror", error => errors.push("late biography: " + error.message));
+    const index = await (await fetch(BASE + "/data/index.json")).json();
+    const item = index.features.find(feature => feature.properties.survivor_id === "ferguson-george");
+    const feature = await (await fetch(BASE + item.properties.detail_url)).json();
+    delete feature.properties.source_biography;
+    let held;
+    await reading.setRequestInterception(true);
+    reading.on("request", request => {
+      const path = new URL(request.url()).pathname;
+      if (path === item.properties.detail_url) return request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(feature) });
+      if (path.startsWith("/data/biographies/ferguson-george.")) { held = request; return; }
+      request.continue();
+    });
+    try {
+      await reading.goto(BASE + "/?late-biography=1#/survivor/ferguson-george", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await reading.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await reading.click("[data-act='read-full-biography']");
+      await reading.waitForSelector(".biography-loading");
+      await reading.keyboard.press("Escape");
+      await reading.evaluate(() => { location.hash = "#/survivor/adam-wally"; });
+      await reading.waitForFunction(() => document.getElementById("profile-name")?.textContent === "Wally Adam", { timeout: 15000 });
+      if (!held) throw new Error("the biography request was not observed");
+      await held.continue();
+      await wait(300);
+      if (await reading.$("#biography-dialog") || await reading.$eval("#profile-name", name => name.textContent) !== "Wally Adam") {
+        throw new Error("a late source response replaced the current reader");
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("printing a loaded full biography includes the full source and restores the reader", async () => {
+    const context = await browser.createBrowserContext();
+    const biography = await context.newPage();
+    biography.on("pageerror", error => errors.push("biography printing: " + error.message));
+    try {
+      await biography.setViewport({ width: 1366, height: 850 });
+      await biography.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+      await biography.goto(BASE + "/survivor/ferguson-george", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await biography.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await biography.click(".map-tools [data-act='zoom-in']");
+      const camera = await biography.$eval(".camera", element => element.getAttribute("transform"));
+      await biography.click("[data-act='read-full-biography']");
+      await biography.waitForSelector(".full-biography-text", { timeout: 15000 });
+      const full = await biography.$eval(".full-biography-text", text => text.innerText);
+      await biography.evaluate(() => { window.print = () => window.dispatchEvent(new Event("beforeprint")); });
+      await biography.click("#biography-dialog [data-act='print-account']");
+      if (!await biography.$eval("#print-sheet", (sheet, text) => sheet.textContent.includes(text) && sheet.textContent.includes("Public OHP biography"), full)) {
+        throw new Error("printing fell back to the short excerpt after loading the full biography");
+      }
+      await biography.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+      await wait(250);
+      if (await biography.$("#print-sheet") || await biography.$eval(".camera", element => element.getAttribute("transform")) !== camera ||
+          await biography.evaluate(() => document.activeElement.dataset.act) !== "read-full-biography") {
+        throw new Error("printing the full biography lost map or reader context");
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const transfer of dataTransfers.values()) {
     if (transfer.failed < 0) continue;
     if (transfer.completed <= transfer.failed) errors.push(`unrecovered data request: ${transfer.url} (${transfer.reasons.join(", ")})`);
