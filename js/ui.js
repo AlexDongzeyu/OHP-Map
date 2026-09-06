@@ -133,7 +133,7 @@ export function explore(store, state) {
   }).join("");
 
   const { html, shown, total } = railInner(store, state);
-  const filtered = state.query || state.originCountry || state.placeFilter || state.groupFilter.size !== store.groups.length;
+  const filtered = state.query || state.originCountry || state.placeFilter || state.captionedOnly || state.groupFilter.size !== store.groups.length;
   return `
   <div class="ov ov-explore ${state.selectedId ? "has-sel" : ""}">
     <h1 class="sr-only">${state.selectedId ? `${esc(store.byId.get(state.selectedId)?.name)}'s account` : "Explore the collection"}</h1>
@@ -151,13 +151,18 @@ export function explore(store, state) {
           value="${esc(state.query || "")}" autocomplete="off" aria-label="Search people">
       </div>
       <details class="collection-filters">
-        <summary>Communities <span data-group-count>${state.groupFilter.size === store.groups.length ? "All" : `${state.groupFilter.size} selected`}</span>${icon("chevron")}</summary>
+        <summary>Filters <span data-group-count>${filterSummary(store, state)}</span>${icon("chevron")}</summary>
         <div class="filter-actions">
           <button class="link" data-act="all-groups">Select all</button>
           <button class="link" data-act="no-groups">Clear selection</button>
           <button class="link filter-done" data-act="close-filters">Done</button>
         </div>
         <fieldset class="gchips"><legend class="sr-only">Include communities</legend>${groupChips}</fieldset>
+        <fieldset class="resource-filters"><legend class="sr-only">Interview material</legend>
+          <label class="resource-choice"><input type="checkbox" data-caption-filter${state.captionedOnly ? " checked" : ""}>
+            <span>Captioned chapters</span><span data-caption-count>${captionedResultCount(store, state)}</span></label>
+          <p>Uses recorded caption listings. Playback and caption access still depend on the video provider.</p>
+        </fieldset>
       </details>
       <div class="origin-filter" data-origin-filter${state.originCountry ? "" : " hidden"}>
         <span>Routes starting in <strong data-origin-name>${esc(state.originCountry || "")}</strong></span>
@@ -226,7 +231,7 @@ export function railInner(store, state) {
         : emptySaved ? (state.savedError
         ? "Your existing list has not been changed. You can browse the collection and copy account links instead."
         : "Use the bookmark beside a name or Save account in the reader. You can return to your list here.")
-        : "Try a surname or place, or reset the search and communities."}</span>
+        : "Try another name or place, or reset the collection filters."}</span>
       ${suggestions.length ? `<div class="search-suggestions"><span>Try a close spelling</span>${suggestions.map((suggestion) =>
         `<button class="link" data-search-suggestion="${esc(suggestion)}">Search ${esc(suggestion)}</button>`).join("")}</div>` : ""}
       <button class="link" data-act="${emptyShared ? "leave-shared-list" : "reset-search"}">${emptyShared ? "Show the whole collection"
@@ -249,6 +254,15 @@ export function savedViewLabel(store, state) {
 
 export function collectionTitle(state) {
   return state.sharedIds ? "Shared reading list" : state.savedOnly ? "Saved accounts" : "The collection";
+}
+
+export function filterSummary(store, state) {
+  const communities = state.groupFilter.size === store.groups.length ? "All" : `${state.groupFilter.size} selected`;
+  return `${communities}${state.captionedOnly ? " + captions" : ""}`;
+}
+
+export function captionedResultCount(store, state) {
+  return collectionResults(store, { ...state, captionedOnly: true }).length;
 }
 
 export function readingListTools(store, state) {
@@ -280,7 +294,7 @@ export function placeBrowser(store, state) {
   const precision = { city: "City reference", site: "Site reference", country: "Country reference",
     region: "Regional reference", mixed: "Mixed precision", unknown: "Location needs review" };
   return researchDialog("place-browser", "Place index", `
-    <p class="research-dialog-intro">Find a place named in the current search and selected communities${state.savedOnly ? ", within your saved accounts" : state.sharedIds ? ", within this reading list" : ""}.
+    <p class="research-dialog-intro">Find a place named in the current search and selected communities${state.savedOnly ? ", within your saved accounts" : state.sharedIds ? ", within this reading list" : ""}${state.captionedOnly ? ", among accounts with listed captions" : ""}.
       Choosing a name replaces any active place filter.</p>
     <label class="sr-only" for="place-directory-search">Search recorded place names and original spellings</label>
     <input id="place-directory-search" class="search-input" type="search" placeholder="Search place names" autocomplete="off" autofocus>
@@ -310,6 +324,7 @@ export function readingListDialog(journeys, url, error = "") {
     <div class="research-dialog-actions">
       <button class="btn btn-primary" data-act="copy-reading-list"${url ? "" : " disabled"}>${icon("copy")} Copy list link</button>
       <button class="link" data-act="download-shared-sources">Download citations</button>
+      <button class="link" data-act="print-reading-list">${icon("printer")} Print list</button>
     </div>
     <p class="research-dialog-note">Recipients choose whether to save these accounts. Opening a link never changes their private list.</p>`);
 }
@@ -348,6 +363,7 @@ function accountTools(journey, state) {
   return `<section class="account-tools" aria-label="Keep or reference this account">
     <div class="account-tool-row">${saveButton(journey, state)}
       <button data-act="toggle-account-reference" aria-expanded="false" aria-controls="account-reference">${icon("share")} Share &amp; cite</button>
+      <button data-act="print-account" aria-label="Print account"${journey.detailState === "ready" ? "" : " disabled"}>${icon("printer")} Print</button>
     </div>
     <p class="saved-feedback" data-account-saved-feedback role="status"${state.savedError ? "" : " hidden"}>${esc(state.savedError || "")}</p>
     <div class="account-reference" id="account-reference" hidden>
@@ -371,11 +387,9 @@ export function panel(store, state) {
   const col = GROUP_COLOR[j.group] || C.accent;
   const wp = j.waypoints;
   const ready = j.detailState === "ready";
-  const usedPassages = new Set();
+  const passages = accountSourcePassages(j);
   const steps = wp.map((w, i) => {
-    const passage = sourcePassage(w.quote);
-    const showPassage = passage && !usedPassages.has(passage) && !j.bio.includes(passage);
-    if (showPassage) usedPassages.add(passage);
+    const passage = passages.get(w);
     return `<li class="recorded-place">
       <button class="place-focus" data-place-step="${i}" aria-pressed="${state.activePlaceIndex === i}">
         <span class="place-order">${i + 1}</span>
@@ -384,7 +398,7 @@ export function panel(store, state) {
       </button>
       <p class="place-precision"><span class="reference-kind">${!w.verified && w.evidenceScope !== "personal" ? "Needs review" : ["country", "region", "unknown"].includes(w.locationPrecision) ? "Broad area" : "Route reference"}</span>
         ${esc(precisionLabel(w))}${w.locationNote ? `. ${esc(w.locationNote)}` : "."}</p>
-      ${showPassage ? `<p class="place-account">${esc(passage)}</p>` : ""}
+      ${passage ? `<p class="place-account">${esc(passage)}</p>` : ""}
       ${w.locationSourceUrl ? `<a class="location-source" href="${esc(w.locationSourceUrl)}" target="_blank" rel="noopener">Location reference ${icon("external-link")}</a>` : ""}
       ${w.humanReview ? `<details class="review-audit"><summary>${!w.verified && w.humanReview.action === "approve" ? "Prior review needs rechecking" : "Human review record"} ${icon("chevron")}</summary>
         <p>${esc(w.humanReview.reviewer)}, ${esc(w.humanReview.reviewed_at)}. ${esc(w.humanReview.rationale)}</p>
@@ -488,7 +502,19 @@ function sourcePassage(value) {
   return /^[\p{Lu}0-9"'(\u201c\u2018]/u.test(text) && /[.!?][\u201d\u2019"')\]]*$/.test(text) ? text : "";
 }
 
-function contextualPlaces(journey) {
+function accountSourcePassages(journey) {
+  const passages = new Map(), used = new Set();
+  for (const place of journey.waypoints) {
+    const passage = sourcePassage(place.quote);
+    if (passage && !used.has(passage) && !journey.bio.includes(passage)) {
+      passages.set(place, passage);
+      used.add(passage);
+    }
+  }
+  return passages;
+}
+
+function contextualPlaces(journey, printing = false) {
   if (!journey.contextualPlaces.length) return "";
   const reasons = {
     "ancestor-only": "Family background",
@@ -504,15 +530,71 @@ function contextualPlaces(journey) {
     if (!passages.has(key)) passages.set(key, { places: [], reason: place.evidenceReason, quote });
     passages.get(key).places.push(place.canonical);
   }
-  return `<details class="contextual-places">
-    <summary>Other places in the source (${journey.contextualPlaces.length}) ${icon("chevron")}</summary>
+  const wrapper = printing ? "section" : "details", heading = printing ? "h2" : "summary";
+  return `<${wrapper} class="contextual-places">
+    <${heading}>Other places in the source (${journey.contextualPlaces.length}) ${printing ? "" : icon("chevron")}</${heading}>
     <p class="section-note">These mentions concern other people or background context. They are retained here, but are not drawn as this person's route.</p>
     <ul>${[...passages.values()].map((passage) => `<li>
       <strong>${esc(passage.places.join("; "))}</strong>
       <span>${esc(reasons[passage.reason] || "Source context")}</span>
       ${passage.quote ? `<p>${esc(passage.quote)}</p>` : ""}
     </li>`).join("")}</ul>
-  </details>`;
+  </${wrapper}>`;
+}
+
+export function printAccount(journey, address, accessed = new Date()) {
+  const ready = journey.detailState === "ready";
+  const portrait = ready ? clearedPortrait(journey) : null;
+  const passages = accountSourcePassages(journey);
+  const reviewed = journey.reviewStatus === "reviewed";
+  return `<article class="print-account">
+    <header class="print-header">
+      ${portrait ? `<figure class="print-portrait"><img src="${esc(siteResource(portrait))}" alt="${esc(journey.name)}">
+        <figcaption>${esc(journey.portraitRights || "Crestwood Oral History Project")}</figcaption></figure>` : ""}
+      <p class="print-kicker">Crestwood Oral History Project · Account reading sheet</p>
+      <h1>${esc(journey.name)}</h1><p>${esc(journey.group)}${journey.born ? ` · Born ${esc(journey.born)}` : ""}</p>
+      <p class="print-citation">${esc(accountCitation(journey, accessed))}</p>
+      <p class="print-link">Interactive account: <a href="${esc(accountLink(journey, address))}">${esc(accountLink(journey, address))}</a></p>
+    </header>
+    <p class="print-caveat">${reviewed ? "This map record is marked reviewed. Coordinates remain approximate; connections are not exact travel paths."
+      : "Not fully reviewed. Mapped references locate source mentions, not confirmed presence or exact travel paths."}
+      This sheet uses a public source summary, not a verbatim interview transcript.</p>
+    ${ready ? `<section><h2>Public OHP summary</h2><p class="print-biography">${esc(journey.bio || "No public summary is available in this snapshot. Read the original OHP page.")}</p></section>
+      <section><h2>Interview material</h2><p>${journey.videoCount} recorded ${journey.videoCount === 1 ? "chapter" : "chapters"}.
+        ${journey.captionedVideoCount} ${journey.captionedVideoCount === 1 ? "chapter has" : "chapters have"} listed captions.
+        Playback and caption access depend on the video provider. Open the original OHP page for the interview.</p>
+        <p class="print-link"><a href="${esc(journey.archiveUrl)}">${esc(journey.archiveUrl)}</a></p></section>
+      <section><h2>Recorded place references</h2><p>${esc(profileRouteStatus(journey))}</p>
+        <ol class="print-references">${journey.waypoints.map(place => `<li>
+          <h3>${esc(place.canonical)}</h3><p>${esc(wpMeta(place))}</p>
+          <p>${esc(precisionLabel(place))}${place.locationNote ? `. ${esc(place.locationNote)}` : "."}
+            ${place.verified ? "Human-checked reference." : place.evidenceScope === "personal"
+              ? "Person-linked source reference; not human-verified." : "Unreviewed mention; not confirmed personal presence."}</p>
+          ${passages.get(place) ? `<blockquote>${esc(passages.get(place))}</blockquote>` : ""}
+          ${place.locationSourceUrl ? `<p class="print-link">Location reference: <a href="${esc(place.locationSourceUrl)}">${esc(place.locationSourceUrl)}</a></p>` : ""}
+          ${place.humanReview ? `<p>${!place.verified && place.humanReview.action === "approve" ? "Prior review needs rechecking" : "Human review"}:
+            ${esc(place.humanReview.reviewer)}, ${esc(place.humanReview.reviewed_at)}. ${esc(place.humanReview.rationale)}</p>
+            <p class="print-link"><a href="${esc(place.humanReview.source_url)}">${esc(place.humanReview.source_url)}</a></p>` : ""}
+        </li>`).join("")}</ol>
+      </section>${contextualPlaces(journey, true)}`
+      : `<p class="print-incomplete">The complete account details have not loaded. This is not a complete reading sheet. Reload the interactive account or read the original OHP page before printing again.</p>`}
+    <footer class="print-footer">${esc(journey.name)} · Crestwood Oral History Project</footer>
+  </article>`;
+}
+
+export function printReadingList(journeys, address, accessed = new Date(), missing = 0) {
+  return `<article class="print-reading-list"><header class="print-header">
+    <p class="print-kicker">Crestwood Oral History Project · Reading list</p>
+    <h1>Sources for ${journeys.length} ${journeys.length === 1 ? "account" : "accounts"}</h1>
+    <p>These are the accounts in the selected reading list, in collection order.</p></header>
+    ${missing ? `<p class="print-caveat">${missing} ${missing === 1 ? "account in the shared link is" : "accounts in the shared link are"} not available in this archive snapshot and cannot be cited here.</p>` : ""}
+    <ol class="print-references">${journeys.map(journey => `<li><h2>${esc(journey.name)}</h2>
+      <p>${esc(accountCitation(journey, accessed))}</p>
+      <p class="print-link">Interactive account: <a href="${esc(accountLink(journey, address))}">${esc(accountLink(journey, address))}</a></p>
+    </li>`).join("")}</ol>
+    <p class="print-caveat">These citations refer to original OHP source pages, not verbatim transcripts.
+      No interview dates are inferred. Mapped references may require human review.</p>
+    <footer class="print-footer">Reading list · ${journeys.length} accounts · Crestwood Oral History Project</footer></article>`;
 }
 
 function precisionLabel(place) {
@@ -925,7 +1007,8 @@ function wpMeta(w) {
 }
 function profileMeta(journey) {
   const places = `${journey.waypoints.length} matched ${journey.waypoints.length === 1 ? "place" : "places"}`;
-  return journey.born ? `Born ${journey.born}. ${places}.` : `${places}.`;
+  return (journey.born ? `Born ${journey.born}. ${places}.` : `${places}.`) +
+    (journey.captionedVideoCount ? " Captions listed." : "");
 }
 function recordingMeta(journey) {
   if (!journey.videoCount) return "";

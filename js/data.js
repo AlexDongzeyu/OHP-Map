@@ -33,13 +33,14 @@ function journeySearchText(journey) {
   ].join(" "));
 }
 
-export function journeyFilter({ query, groupFilter, originCountry, placeFilter, savedOnly = false, savedIds = new Set(), sharedIds = null }) {
+export function journeyFilter({ query, groupFilter, originCountry, placeFilter, savedOnly = false, savedIds = new Set(), sharedIds = null, captionedOnly = false }) {
   const term = normalizeSearch(query);
   return (journey) => groupFilter.has(journey.group) &&
     (!originCountry || journey.originCountry === originCountry) &&
     (!placeFilter || journey.waypoints.some((place) => place.canonical === placeFilter)) &&
     (!savedOnly || savedIds.has(journey.id)) &&
     (!sharedIds || sharedIds.has(journey.id)) &&
+    (!captionedOnly || journey.captionedVideoCount > 0) &&
     (!term || (journey.searchText ?? journeySearchText(journey)).includes(term));
 }
 

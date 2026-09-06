@@ -27,3 +27,14 @@ body:has(#server-profile) #stage { visibility: hidden; }
   background: transparent; color: #175366; font: inherit; cursor: pointer;
 }
 #server-profile [data-server-profile-retry]:focus-visible { outline: 3px solid #175366; outline-offset: 4px; }
+@media print {
+  body:has(#server-profile) { height:auto !important; overflow:visible !important; background:white; }
+  body:has(#server-profile) #stage { display:none !important; }
+  #server-profile { position:static; height:auto; overflow:visible; background:white; font-size:10.5pt; }
+  #server-profile .server-profile-inner { max-width:none; padding:0; }
+  #server-profile nav, #server-profile .server-profile-loading { display:none; }
+  #server-profile h1 { font-size:28pt; }
+  #server-profile h2 { font-size:16pt; break-after:avoid; }
+  #server-profile li { break-inside:avoid-page; }
+  #server-profile a { overflow-wrap:anywhere; }
+}

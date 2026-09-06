@@ -111,6 +111,12 @@ across tabs. A saved-view URL refers to the receiving browser's own list, not th
 Blocked storage is reported without pretending a save succeeded. Clearing the list
 requires confirmation and does not change the public archive.
 
+**Filters → Captioned chapters** narrows the collection using recorded caption
+metadata. The filter works with search, communities, places and saved/shared lists,
+and survives account navigation and shared view URLs. Counts refer to accounts,
+not individual caption tracks. A listed caption is not a guarantee that a provider
+will allow current playback or access; those limitations remain visible.
+
 In **Saved**, **Share list** creates an explicit link containing the public IDs of
 all accounts matching the current filters, not just the loaded page. Other saved
 accounts are excluded. A recipient opens a **Shared reading list**, can search or
@@ -124,6 +130,15 @@ message instead of truncating the selection.
 with an access date. It works for larger selections without loading each biography
 or media inventory. These are source-page citations, not downloaded transcripts or
 human verification of the mapped claims.
+
+**Print** in a loaded account prepares a reading sheet instead of printing the
+clipped application panels. It includes the public summary, source citation, source
+spellings, qualified place references and retained context. **Print list** inside
+the sharing dialog prints its exact selected citations. Use the browser's print
+dialog to print on paper or save a PDF. These sheets are not interview transcripts.
+The native browser print command also supports an open account or saved/shared
+reading list. Unloaded details are labelled incomplete, and server-readable profile
+pages remain printable without JavaScript.
 
 **Share & cite** supplies a clean account link and a plain-text citation for the original
 OHP page, including an access date. It does not invent interview dates or claim that a
@@ -262,6 +277,10 @@ Run the tests with `python -m pytest -q`. A headless browser smoke test is in
 `tools/smoke.cjs` (`node tools\smoke.cjs http://127.0.0.1:8124` against a running
 Worker preview; puppeteer-core + Edge). The complete smoke suite requires Worker
 routing, not only a static file server.
+`python tools\source_print_smoke.py --base http://127.0.0.1:8124` verifies actual
+multi-page account/list PDFs with the existing Playwright and pypdf setup. Pass
+`--output` to keep the PDFs for visual inspection; otherwise temporary output is
+removed automatically.
 
 ---
 

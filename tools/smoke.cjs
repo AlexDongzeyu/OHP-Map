@@ -3083,6 +3083,157 @@ function assertCounterMotion(label, { targets, samples }) {
     }
   });
 
+  await check("caption discovery filters real accounts, map references and saved URLs", async () => {
+    const context = await browser.createBrowserContext();
+    const captions = await context.newPage();
+    captions.on("pageerror", error => errors.push("caption discovery: " + error.message));
+    try {
+      await captions.setViewport({ width: 1366, height: 850 });
+      await captions.goto(BASE + "/?caption-discovery=1#/explore", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await captions.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      const expected = await captions.evaluate(async () => {
+        const data = await (await fetch("/data/index.json")).json();
+        const features = data.features.filter(feature => feature.properties.captioned_video_count > 0);
+        return { count: features.length, ids: features.map(feature => feature.properties.survivor_id),
+          mapped: features.filter(feature => feature.properties.waypoints.some(place => Number.isFinite(place.lat) && Number.isFinite(place.lng))).map(feature => feature.properties.survivor_id) };
+      });
+      await captions.click(".collection-filters summary");
+      await captions.click("[data-caption-filter]");
+      await captions.click(".collection-filters summary");
+      const results = await captions.evaluate(() => ({
+        count: document.querySelector("[data-rail-count]").textContent,
+        ids: [...document.querySelectorAll(".rail-card")].map(card => card.dataset.survivor),
+        mapped: [...new Set([...document.querySelectorAll(".place-cluster")].flatMap(marker => JSON.parse(marker.dataset.accountIds)))],
+        hash: location.hash,
+        summary: document.querySelector("[data-group-count]").textContent,
+      }));
+      if (!expected.count || !results.count.includes(`of ${expected.count} shown`) ||
+          results.ids.some(id => !expected.ids.includes(id)) || results.mapped.length !== expected.mapped.length ||
+          !results.hash.includes("captions=1") || !results.summary.includes("captions")) {
+        throw new Error(`caption filtering lost its source cohort ${JSON.stringify({ expected: expected.count, results })}`);
+      }
+      await captions.click(".rail-card");
+      await captions.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await captions.reload({ waitUntil: "domcontentloaded" });
+      await captions.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await captions.click(".panel-close");
+      if (!await captions.$eval("[data-caption-filter]", input => input.checked)) throw new Error("an account link lost its caption filter");
+      await captions.click("[data-act='reset-search']");
+      if (await captions.$eval("[data-caption-filter]", input => input.checked) ||
+          await captions.evaluate(() => location.hash.includes("captions="))) throw new Error("resetting filters kept a hidden caption restriction");
+      await captions.goto(BASE + "/?bad-caption-filter=1#/explore?captions=unknown", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await captions.waitForSelector("#missing-title", { timeout: 15000 });
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("caption-filter controls remain reachable on small phones and landscape screens", async () => {
+    for (const viewport of [{ width: 320, height: 568 }, { width: 568, height: 320 }]) {
+      const context = await browser.createBrowserContext();
+      const compact = await context.newPage();
+      compact.on("pageerror", error => errors.push("compact caption filter: " + error.message));
+      try {
+        await compact.setViewport(viewport);
+        await compact.goto(BASE + `/?caption-layout=${viewport.width}#/explore`, { waitUntil: "domcontentloaded", timeout: 40000 });
+        await compact.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+        await compact.click(".collection-filters summary");
+        await compact.click("[data-caption-filter]");
+        await compact.click("[data-act='close-filters']");
+        const usable = await compact.evaluate(() => ({
+          overflow: document.documentElement.scrollWidth > innerWidth,
+          closed: !document.querySelector(".collection-filters").open,
+          selected: document.querySelector("[data-caption-filter]").checked,
+          rows: document.querySelectorAll(".rail-card").length,
+          listHeight: document.querySelector("[data-rail-list]").getBoundingClientRect().height,
+        }));
+        if (usable.overflow || !usable.closed || !usable.selected || !usable.rows || usable.listHeight < 60) {
+          throw new Error(`caption controls leave no usable results ${JSON.stringify({ viewport, usable })}`);
+        }
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  await check("account printing exposes complete source content and restores reader focus and camera", async () => {
+    const context = await browser.createBrowserContext();
+    const reading = await context.newPage();
+    reading.on("pageerror", error => errors.push("account print: " + error.message));
+    try {
+      await reading.setViewport({ width: 1366, height: 850 });
+      await reading.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+      await reading.goto(BASE + "/?print-account=1#/survivor/ferguson-george", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await reading.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await reading.click(".map-tools [data-act='zoom-in']");
+      await wait(200);
+      const before = await reading.evaluate(() => {
+        window.__printReader = document.querySelector(".panel");
+        window.print = () => window.dispatchEvent(new Event("beforeprint"));
+        return { camera: document.querySelector(".camera").getAttribute("transform"),
+          places: [...document.querySelectorAll(".profile-places .step-place")].map(place => place.textContent),
+          bio: document.querySelector(".bio").textContent };
+      });
+      await reading.click("[data-act='print-account']");
+      await reading.emulateMediaType("print");
+      const print = await reading.evaluate(() => {
+        const sheet = document.getElementById("print-sheet");
+        return { text: sheet.textContent, stageHidden: getComputedStyle(document.getElementById("stage")).display === "none",
+          overflow: getComputedStyle(sheet).overflow, controls: sheet.querySelectorAll("button,iframe").length };
+      });
+      if (!print.stageHidden || print.overflow !== "visible" || print.controls ||
+          !print.text.includes(before.bio) || before.places.some(place => !print.text.includes(place)) ||
+          !print.text.includes("Accessed") || !print.text.includes("not a verbatim interview transcript")) {
+        throw new Error("the account print sheet clipped, omitted or overstated source material");
+      }
+      await reading.emulateMediaType("screen");
+      await reading.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+      await wait(250);
+      const restored = await reading.evaluate(() => ({
+        sameReader: document.querySelector(".panel") === window.__printReader,
+        sheet: !!document.getElementById("print-sheet"), focus: document.activeElement.dataset.act,
+        camera: document.querySelector(".camera").getAttribute("transform"),
+      }));
+      if (!restored.sameReader || restored.sheet || restored.focus !== "print-account" || restored.camera !== before.camera) {
+        throw new Error(`finishing or cancelling print changed the reader ${JSON.stringify(restored)}`);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("reading-list printing uses the chosen snapshot without changing private saves", async () => {
+    const context = await browser.createBrowserContext();
+    const reading = await context.newPage();
+    reading.on("pageerror", error => errors.push("reading-list print: " + error.message));
+    try {
+      await reading.goto(BASE + "/?print-list=1#/explore?list=adler-amek,baranek-martin", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await reading.waitForSelector("#loading", { hidden: true, timeout: 15000 });
+      await reading.evaluate(() => {
+        window.print = () => window.dispatchEvent(new Event("beforeprint"));
+        window.__savedBeforePrint = localStorage.getItem("ohp-map.saved-accounts.v1");
+      });
+      await reading.click("[data-act='share-reading-list']");
+      await reading.click("[data-act='print-reading-list']");
+      const print = await reading.evaluate(() => ({
+        text: document.querySelector(".print-reading-list").textContent,
+        count: document.querySelectorAll(".print-reading-list .print-references > li").length,
+        dialog: !!document.querySelector("dialog[open]"),
+        unchanged: localStorage.getItem("ohp-map.saved-accounts.v1") === window.__savedBeforePrint,
+      }));
+      if (print.count !== 2 || !print.text.includes("Amek Adler") || !print.text.includes("Martin Baranek") ||
+          print.text.includes("Wally Adam") || print.dialog || !print.unchanged) {
+        throw new Error(`printing changed or lost the selected reading list ${JSON.stringify(print)}`);
+      }
+      await reading.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+      if (await reading.$("#print-sheet") || await reading.evaluate(() => document.activeElement.dataset.act) !== "share-reading-list") {
+        throw new Error("printing the reading list left an orphaned sheet or lost focus");
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const transfer of dataTransfers.values()) {
     if (transfer.failed < 0) continue;
     if (transfer.completed <= transfer.failed) errors.push(`unrecovered data request: ${transfer.url} (${transfer.reasons.join(", ")})`);

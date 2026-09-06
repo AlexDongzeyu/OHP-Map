@@ -29,6 +29,7 @@ const state = {
   savedIds: new Set(),
   savedOnly: false,
   sharedIds: null,
+  captionedOnly: false,
   savedError: "",
   citationDate: new Date(),
   railLimit: RAIL_PAGE,
@@ -58,6 +59,9 @@ const state = {
 let store, atlas;
 let historyTimer = null;
 let readingListSnapshot = null;
+let printJob = null;
+let printReturnFocus = null;
+let printMapSize = null;
 let rendered = { view: null, selectedId: null, patternsLayer: null };
 
 async function main() {
@@ -118,9 +122,17 @@ async function main() {
 
   if (window.ResizeObserver) {
     let t;
-    new ResizeObserver(() => {
+    new ResizeObserver(([entry]) => {
+      // Native print temporarily removes the map from layout; keep its camera intact.
+      if (printJob || window.matchMedia("print").matches) return;
+      if (printMapSize && entry.contentRect.width === printMapSize[0] && entry.contentRect.height === printMapSize[1]) {
+        printMapSize = null;
+        return;
+      }
+      printMapSize = null;
       clearTimeout(t);
       t = setTimeout(() => {
+        if (printJob || window.matchMedia("print").matches) return;
         syncPresentation();
         atlas.resize();
         restoreHistoryCamera();
@@ -296,6 +308,7 @@ function refreshProfilePanel(journey) {
   content.replaceWith(nextContent);
   panel.dataset.profileState = journey.detailState;
   panel.setAttribute("aria-busy", fresh.getAttribute("aria-busy"));
+  panel.querySelector("[data-act='print-account']").disabled = journey.detailState !== "ready";
   panel.querySelector(".profile-route-status").textContent = fresh.querySelector(".profile-route-status").textContent;
   const nav = panel.querySelector(".profile-nav");
   for (const button of fresh.querySelectorAll("[data-profile-section]")) {
@@ -408,6 +421,7 @@ function selectSurvivor(id, keepPresentation = false) {
     state.railLimit = RAIL_PAGE;
     state.savedOnly = false;
     state.sharedIds = null;
+    state.captionedOnly = false;
   }
   state.selectedId = id; state.activePlaceIndex = null;
   if (!keepPresentation) state.explorePresentation = "auto";
@@ -500,6 +514,7 @@ function toggleSavedView() {
   state.query = "";
   state.originCountry = null;
   state.placeFilter = null;
+  state.captionedOnly = false;
   state.groupFilter = new Set(store.groups.map((group) => group.name));
   state.railLimit = RAIL_PAGE;
   document.querySelector(".collection-filters").open = false;
@@ -516,6 +531,7 @@ function leaveSharedList() {
   state.query = "";
   state.originCountry = null;
   state.placeFilter = null;
+  state.captionedOnly = false;
   state.groupFilter = new Set(store.groups.map(group => group.name));
   state.railLimit = RAIL_PAGE;
   setHash(exploreHash());
@@ -662,6 +678,78 @@ function downloadListSources(fromDialog = false) {
   feedback.textContent = `Source citations prepared for ${journeys.length} ${journeys.length === 1 ? "account" : "accounts"}.`;
 }
 
+function preparePrintSheet() {
+  const dialog = document.querySelector(".research-dialog[open]");
+  if (!printJob) {
+    if (dialog?.id === "reading-list-dialog" && readingListSnapshot) {
+      printJob = { type: "list", ...readingListSnapshot };
+    } else if (state.view === "explore" && state.selectedId) {
+      printJob = { type: "account", journey: store.byId.get(state.selectedId), accessed: new Date() };
+    } else if (state.view === "explore" && (state.savedOnly || state.sharedIds)) {
+      printJob = {
+        type: "list", journeys: collectionResults(store, state), accessed: new Date(),
+        missing: state.sharedIds ? [...state.sharedIds].filter(id => !store.byId.has(id)).length : 0,
+      };
+    } else return;
+  }
+  if (!printReturnFocus) printReturnFocus = document.activeElement;
+  if (!printMapSize) {
+    const rect = document.getElementById("map").getBoundingClientRect();
+    if (rect.width && rect.height) printMapSize = [rect.width, rect.height];
+  }
+  if (dialog) {
+    printReturnFocus = document.querySelector(`[data-act="${dialog.id === "reading-list-dialog" ? "share-reading-list" : "browse-places"}"]`);
+    dialog.close();
+  }
+  let sheet = document.getElementById("print-sheet");
+  if (!sheet) {
+    sheet = document.createElement("section");
+    sheet.id = "print-sheet";
+    document.body.append(sheet);
+  }
+  sheet.innerHTML = printJob.type === "account"
+    ? ui.printAccount(printJob.journey, location.href, printJob.accessed)
+    : ui.printReadingList(printJob.journeys, location.href, printJob.accessed, printJob.missing || 0);
+  const footer = sheet.querySelector(".print-footer").textContent.replace(/\s+/g, " ").trim();
+  const pageStyles = document.createElement("style");
+  pageStyles.textContent = `@media print { @page { @bottom-left { content:${JSON.stringify(footer)}; font:7.5pt "Public Sans", sans-serif; } } }`;
+  sheet.append(pageStyles);
+  sheet.querySelectorAll("img").forEach(image => image.addEventListener("error", () => {
+    image.closest("figure").remove();
+    console.warn("The portrait could not be included in this reading sheet.");
+  }, { once: true }));
+}
+
+function finishPrinting() {
+  document.getElementById("print-sheet")?.remove();
+  printJob = null;
+  if (printReturnFocus?.isConnected && !printReturnFocus.disabled) printReturnFocus.focus({ preventScroll: true });
+  printReturnFocus = null;
+}
+
+function printAccount() {
+  const journey = store.byId.get(state.selectedId);
+  if (journey?.detailState !== "ready") {
+    console.warn("The complete account must load before printing a reading sheet.");
+    refreshResearchTools("Wait for the account details to load before printing.");
+    return;
+  }
+  printJob = { type: "account", journey, accessed: new Date() };
+  preparePrintSheet();
+  window.print();
+}
+
+function printReadingList() {
+  if (!readingListSnapshot) {
+    console.warn("Open a reading list before printing its sources.");
+    refreshResearchTools("Open Share list to choose the accounts to print.");
+    return;
+  }
+  printJob = { type: "list", ...readingListSnapshot };
+  preparePrintSheet();
+  window.print();
+}
+
 function resetSavedList() {
   if (!window.confirm("Remove this browser's saved-account list? This cannot be undone.")) return;
   try {
@@ -712,6 +800,7 @@ function resetSearch() {
   state.query = "";
   state.originCountry = null;
   state.placeFilter = null;
+  state.captionedOnly = false;
   state.groupFilter = new Set(store.groups.map((group) => group.name));
   state.railLimit = RAIL_PAGE;
   document.querySelector(".collection-filters").open = false;
@@ -727,10 +816,11 @@ function refreshCollection() {
   document.querySelectorAll("[data-group]").forEach((input) => {
     input.checked = state.groupFilter.has(input.dataset.group);
   });
-  document.querySelector("[data-group-count]").textContent = state.groupFilter.size === store.groups.length
-    ? "All" : `${state.groupFilter.size} selected`;
+  document.querySelector("[data-group-count]").textContent = ui.filterSummary(store, state);
+  document.querySelector("[data-caption-filter]").checked = state.captionedOnly;
+  document.querySelector("[data-caption-count]").textContent = ui.captionedResultCount(store, state);
   document.querySelector(".filter-reset").hidden = !state.query && !state.originCountry &&
-    !state.placeFilter && state.groupFilter.size === store.groups.length;
+    !state.placeFilter && !state.captionedOnly && state.groupFilter.size === store.groups.length;
   document.querySelector("[data-origin-filter]").hidden = !state.originCountry;
   document.querySelector("[data-origin-name]").textContent = state.originCountry || "";
   document.querySelector("[data-place-filter]").hidden = !state.placeFilter;
@@ -750,6 +840,7 @@ function collectionAddress(prefix) {
   }
   if (state.originCountry) params.set("origin", state.originCountry);
   if (state.placeFilter) params.set("place", state.placeFilter);
+  if (state.captionedOnly) params.set("captions", "1");
   if (state.savedOnly) params.set("saved", "1");
   if (state.sharedIds) params.set("list", [...state.sharedIds].join(","));
   if (state.railLimit > RAIL_PAGE) params.set("limit", Math.min(state.railLimit, store.journeys.length));
@@ -776,6 +867,7 @@ function restoreCollectionAddress(params) {
     return false;
   }
   if (params.has("saved") && params.get("saved") !== "1") return false;
+  if (params.has("captions") && params.get("captions") !== "1") return false;
   if (params.has("saved") && params.has("list")) return false;
   let sharedIds = null;
   try { if (params.has("list")) sharedIds = decodeCollectionIds(params.get("list"), store.byId); }
@@ -790,6 +882,7 @@ function restoreCollectionAddress(params) {
   state.placeFilter = (params.get("place") || "").trim() || null;
   state.savedOnly = params.get("saved") === "1";
   state.sharedIds = sharedIds;
+  state.captionedOnly = params.get("captions") === "1";
   state.railLimit = Math.max(RAIL_PAGE, Math.min(limit, store.journeys.length));
   return true;
 }
@@ -804,6 +897,7 @@ function openOrigin(name) {
   state.placeFilter = null;
   state.savedOnly = false;
   state.sharedIds = null;
+  state.captionedOnly = false;
   state.query = "";
   state.groupFilter = new Set(store.groups.map((group) => group.name));
   state.railLimit = RAIL_PAGE;
@@ -1315,7 +1409,8 @@ function updateDocumentTitle() {
   let label = "";
   if (state.view === "explore") {
     label = store.byId.get(state.selectedId)?.name ||
-      (state.query.trim() ? `Search: ${state.query.trim()}` : state.sharedIds ? "Shared reading list" : state.savedOnly ? "Saved accounts" : state.originCountry
+      (state.query.trim() ? `Search: ${state.query.trim()}` : state.sharedIds ? "Shared reading list" : state.savedOnly ? "Saved accounts"
+        : state.captionedOnly ? "Accounts with captioned chapters" : state.originCountry
         ? `Routes starting in ${state.originCountry}` : state.groupFilter.size === 1
           ? [...state.groupFilter][0] : "The collection");
   } else if (state.view === "patterns") {
@@ -1466,6 +1561,8 @@ function closeShare(restoreFocus = true) {
 
 // ---- event wiring ------------------------------------------------------------
 function wireGlobal() {
+  window.addEventListener("beforeprint", preparePrintSheet);
+  window.addEventListener("afterprint", finishPrinting);
   window.addEventListener("storage", (event) => {
     if (event.key !== SAVED_ACCOUNTS_KEY && event.key !== null) return;
     loadSavedList();
@@ -1632,6 +1729,11 @@ function wireOverlay() {
   host.querySelectorAll("[data-group]").forEach((input) => {
     input.addEventListener("change", () => toggleGroup(input.dataset.group, input.checked));
   });
+  host.querySelector("[data-caption-filter]")?.addEventListener("change", event => {
+    state.captionedOnly = event.target.checked;
+    state.railLimit = RAIL_PAGE;
+    refreshCollection();
+  });
 }
 function wireImages(host) {
   host.querySelectorAll(".medal img").forEach((image) => {
@@ -1694,6 +1796,8 @@ function onActivate(e) {
     case "copy-reading-list": return copyReadingList();
     case "download-list-sources": return downloadListSources();
     case "download-shared-sources": return downloadListSources(true);
+    case "print-account": return printAccount();
+    case "print-reading-list": return printReadingList();
     case "save-shared-list": return saveSharedList();
     case "leave-shared-list": return leaveSharedList();
     case "reset-saved-list": return resetSavedList();
