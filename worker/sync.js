@@ -1251,7 +1251,7 @@ function countGroups(features) {
   return counts;
 }
 
-function sentenceExcerpt(text, limit = 520) {
+export function sentenceExcerpt(text, limit = 520) {
   const clean = String(text || "").replace(/\s+/g, " ").trim().replace(/\s*…\s*$/, "");
   if (!clean) return clean;
   const endings = sentenceEndings(clean);

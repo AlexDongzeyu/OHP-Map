@@ -31,7 +31,7 @@ def _worker(code, payload=None):
         .replace('from "./media.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/media.js').href)}`)
         .replace('from "./publication.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/publication.js').href)}`)
         .replace('from "./live-publication.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/live-publication.js').href)}`);
-      source += '\nexport { extract, extractEvidence, deriveConflicts, extractSlugs, parseEntry, toFeature, mergeFeature, migrateCachedData, sanitizeCachedFeature, sourceSentence, sentenceExcerpt, repairSourceQuote };';
+      source += '\nexport { extract, extractEvidence, deriveConflicts, extractSlugs, parseEntry, toFeature, mergeFeature, migrateCachedData, sanitizeCachedFeature, sourceSentence, repairSourceQuote };';
       const worker = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
     """
     result = subprocess.run(

@@ -2,7 +2,7 @@
 // Only the small routing catalog and an individual selected profile are parsed here.
 import {
   DATA_KEY, PUBLIC_DATA_KEY, INDEX_KEY, CATALOG_KEY, SITEMAP_KEY, STATUS_KEY,
-  isCurrentPublication,
+  isCurrentPublication, sentenceExcerpt,
 } from "./sync.js";
 import {
   DETAIL_PATTERN, INDEX_FORMAT, contentHash, profilePath, profileKey, seedCatalog, validCatalog,
@@ -189,7 +189,12 @@ async function biographyResponse(request, env, id, hash) {
   if (source.provenance === "bundled_source_snapshot" && source.kind !== "source_biography") {
     return errorResponse(404, "Only a short excerpt is available for this account version. Open the original OHP page for more.", true);
   }
-  if (source.provenance === "bundled_source_snapshot" && source.excerpt !== (feature.properties.bio_excerpt || "")) {
+  const excerpt = feature.properties.bio_excerpt || "";
+  // Older live records can retain a shorter, complete-sentence source excerpt.
+  const matchingShorterExcerpt = typeof source.excerpt === "string" && excerpt.length > 0 &&
+    source.excerpt.length > excerpt.length && sentenceExcerpt(source.excerpt, excerpt.length) === excerpt &&
+    source.text.startsWith(excerpt) && (source.text.length === excerpt.length || /^\s/.test(source.text.slice(excerpt.length)));
+  if (source.provenance === "bundled_source_snapshot" && source.excerpt !== excerpt && !matchingShorterExcerpt) {
     return errorResponse(409, "The saved biography and account excerpt differ. Open the original OHP page or reload the collection.", true);
   }
   const body = JSON.stringify({

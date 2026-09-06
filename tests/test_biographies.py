@@ -63,6 +63,40 @@ console.log(JSON.stringify({status:response.status,body:await response.json(),in
         assert "error" in result["body"]
 
 
+@pytest.mark.parametrize("kind,status", [
+    ("shorter-sentence", 200), ("paragraph-break", 200), ("complete-text", 200),
+    ("partial-sentence", 409), ("abbreviation", 409), ("wrong-text", 409), ("empty", 409),
+])
+def test_older_excerpt_must_be_a_complete_source_prefix(kind, status):
+    result = _worker(PUBLICATION_SETUP + r"""
+const original='Mr. Example returned to Canada. He described his journey to students.';
+const shortened='Mr. Example returned to Canada.';
+const excerpts={
+ 'partial-sentence':'Mr. Example returned',abbreviation:'Mr.',empty:'',
+};
+const excerpt=Object.hasOwn(excerpts,payload)?excerpts[payload]:shortened;
+const feature=makeFeature('person',{bio_excerpt:excerpt});
+const env=await bindings(archive([feature]));
+const text=payload==='wrong-text'?'A different biography.':
+ payload==='complete-text'?shortened:
+ payload==='paragraph-break'?original.replace('. He','.\n\nHe'):original;
+env.bodies.set('/data/biographies/person.json',JSON.stringify({
+ source_url:feature.properties.archive_url,excerpt:original,text,kind:'source_biography',
+}));
+const index=JSON.parse(env.bodies.get('/data/index.json'));
+const hash=index.features[0].properties.detail_url.match(/\.([a-f0-9]{64})\.json$/)[1];
+const response=await entry.fetch(new Request(`https://test.local/data/biographies/person.${hash}.json`),env,{});
+console.log(JSON.stringify({status:response.status,body:await response.json(),text,hash}));
+""", kind)
+    assert result["status"] == status
+    if status == 200:
+        assert result["body"]["text"] == result["text"]
+        assert result["body"]["profile_hash"] == result["hash"]
+        assert result["body"]["provenance"] == "bundled_source_snapshot"
+    else:
+        assert "error" in result["body"]
+
+
 def test_reader_loads_full_biography_only_on_demand_and_rejects_wrong_identity():
     script = r"""
 import fs from 'node:fs';

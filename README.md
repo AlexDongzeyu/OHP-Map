@@ -81,7 +81,9 @@ complete saved public OHP text. It reuses text already present in the selected
 profile, or loads an explicitly matched source-biography resource on demand.
 The initial collection still does not download every biography. Source URL,
 profile version and bundled-excerpt checks prevent an unrelated biography from
-replacing the account; failed loads retain the excerpt and offer retry/OHP exits.
+replacing the account. Older, shorter excerpts must match a complete-sentence
+prefix of both the saved introduction and full source text; arbitrary partial or
+changed excerpts are rejected. Failed loads retain the excerpt and offer retry/OHP exits.
 The full written biography is not presented as an interview transcript.
 
 Historical search asks visitors to choose between ambiguous results. If the dated
