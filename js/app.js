@@ -4,7 +4,7 @@ import { loadData, journeyFilter, collectionResults } from "./data.js";
 import { createAtlas } from "./atlas.js";
 import * as ui from "./ui.js";
 import * as motion from "./motion.js";
-import { motionEnabled, landingMotionEnabled, setLandingMotion, onMotionPreferenceChange, slug } from "./config.js";
+import { motionEnabled, onMotionPreferenceChange, slug } from "./config.js";
 import { playerURL } from "./media.js";
 import {
   SAVED_ACCOUNTS_KEY, readSavedAccounts, updateSavedAccount, isSavedAccountsFailure, copyText,
@@ -1107,21 +1107,6 @@ function closeShare(restoreFocus = true) {
   if (restoreFocus) button.focus({ preventScroll: true });
 }
 
-function setLandingMotionAddress(enabled = null) {
-  const url = new URL(location.href);
-  if (enabled === null) url.searchParams.delete("motion");
-  else url.searchParams.set("motion", enabled ? "on" : "off");
-  history.replaceState(history.state, "", url);
-}
-
-function toggleLandingMotion() {
-  const enabled = !landingMotionEnabled();
-  setLandingMotion(enabled);
-  setLandingMotionAddress(enabled);
-  motion.syncLandingMotion();
-  atlas.syncMotion();
-}
-
 // ---- event wiring ------------------------------------------------------------
 function wireGlobal() {
   window.addEventListener("storage", (event) => {
@@ -1139,7 +1124,6 @@ function wireGlobal() {
     }
   });
   onMotionPreferenceChange((reduced) => {
-    setLandingMotionAddress();
     motion.syncPreference();
     atlas.syncMotion();
     if (reduced) stopHistoryPlayback();
@@ -1301,7 +1285,6 @@ function onActivate(e) {
     case "explore": return go("explore");
     case "about": return go("about");
     case "home": return go("landing");
-    case "toggle-landing-motion": return toggleLandingMotion();
     case "clear": return clearSel();
     case "more": return showMore();
     case "reset-search": return resetSearch();

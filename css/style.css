@@ -565,9 +565,6 @@ body[data-view="landing"] :focus-visible { outline-color:var(--on-binding); }
 }
 .lede.sm { font-size:15px; line-height:1.6; }
 .cta-row { display:flex; flex-wrap:wrap; gap:var(--space-3); margin-bottom:var(--space-8); }
-.landing-motion { display:flex; align-items:center; gap:var(--space-2); min-height:44px; margin-top:var(--space-2); padding:0; border:0; color:var(--on-binding-muted); background:none; font-size:12px; cursor:pointer; }
-.landing-motion .icon { width:15px; height:15px; }
-.landing-motion:hover { color:var(--on-binding); }
 .archive-register {
   width:min(570px, 100%);
   overflow:hidden;

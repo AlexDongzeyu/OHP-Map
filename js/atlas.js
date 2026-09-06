@@ -10,7 +10,7 @@
 // The 2D map is the canonical product; the globe is a calm overview with a graceful
 // reduced-motion fallback. People are coloured quietly by archive group — equal, never
 // a hierarchy (doc 13 §4.3).
-import { C, GROUP_COLOR, motionEnabled, landingMotionEnabled, normalizeSearch } from "./config.js";
+import { C, GROUP_COLOR, motionEnabled, normalizeSearch } from "./config.js";
 import { flagFor } from "./historical-context.js";
 import { alignmentKey, datedTerritories } from "./historical-identity.js";
 
@@ -484,7 +484,7 @@ export function createAtlas(container) {
       if (target) svg.call(zoom.transform, target);
       overlayG.selectAll("[stroke-dashoffset]").interrupt().attr("stroke-dashoffset", 0);
     }
-    if (view === "landing" && landingMotionEnabled() && !document.hidden) startRotate();
+    if (view === "landing" && !document.hidden) startRotate();
     else stopRotate();
   };
 
@@ -984,7 +984,7 @@ export function createAtlas(container) {
     const land = globeG._land, graticule = globeG._graticule, routes = globeG._routes;
     const travelers = globeG._travelers, dots = globeG._dots;
     if (!land) return;
-    if (landingMotionEnabled() && now - globeRouteChangedAt > 11000) rotateGlobeRoutes();
+    if (now - globeRouteChangedAt > 11000) rotateGlobeRoutes();
     gProjection.rotate(rot);
     land.selectAll("path").attr("d", gPath);
     graticule.attr("d", gPath);
@@ -1021,7 +1021,7 @@ export function createAtlas(container) {
   }
   function startRotate() {
     stopRotate();
-    if (!landingMotionEnabled() || document.hidden) { redrawGlobe(); return; }
+    if (document.hidden) { redrawGlobe(); return; }
     let previous = performance.now();
     const step = (now) => {
       const elapsed = Math.max(0, Math.min(64, now - previous));

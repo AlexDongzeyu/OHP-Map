@@ -37,19 +37,17 @@ console.log(JSON.stringify({states,notices}));
     assert data["notices"] == [True]
 
 
-def test_landing_can_be_explicitly_played_without_disabling_reduced_interface_motion():
+def test_retired_motion_query_does_not_override_interface_preferences():
     script = r"""
 let change;
 globalThis.window={
-  location:{search:'?release=test&motion=on'},
+  location:{search:'?release=test&motion=off'},
   matchMedia:()=>({matches:true,addEventListener:(name,callback)=>{change=callback}}),
 };
 const config=await import('./js/config.js');
 const states=[];
-const capture=()=>states.push({landing:config.landingMotionEnabled(),interface:config.motionEnabled()});
+const capture=()=>states.push(config.motionEnabled());
 capture();
-config.setLandingMotion(false);capture();
-config.setLandingMotion(true);capture();
 change({matches:false});capture();
 change({matches:true});capture();
 console.log(JSON.stringify(states));
@@ -58,10 +56,4 @@ console.log(JSON.stringify(states));
         ["node", "--input-type=module", "-e", script],
         cwd=ROOT, check=True, capture_output=True, text=True, encoding="utf-8",
     )
-    assert json.loads(result.stdout) == [
-        {"landing": True, "interface": False},
-        {"landing": False, "interface": False},
-        {"landing": True, "interface": False},
-        {"landing": True, "interface": True},
-        {"landing": False, "interface": False},
-    ]
+    assert json.loads(result.stdout) == [False, True, False]

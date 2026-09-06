@@ -97,14 +97,12 @@ summary is a transcript. Both fields remain selectable when clipboard access is 
 **Previous** and **Next** follow the same community/surname order as the filtered
 collection, including saved accounts; browsing onward loads further results when needed.
 
-Changes to the system's reduced-motion preference apply immediately without a reload.
-Counters and route drawing settle to their readable final state, ambient motion pauses,
+The landing page's rotating globe and moving portrait belts play automatically while
+the page is visible, with no start/pause control or motion URL setting. They pause in
+hidden tabs and resume when the visitor returns. The rest of the interface continues
+to respect reduced motion: counters and route drawing settle to their final state,
 and ongoing history playback stops. Escape closes an open interview player before
 leaving its account, returning keyboard focus to the selected chapter.
-The landing page retains its rotating globe and moving portrait belts. **Play/Pause
-animation** controls only that background, including an explicit opt-in when the browser
-requests reduced motion. `?motion=on` or `?motion=off` carries that choice in the current
-address; a new system-preference change returns to the system default.
 
 Collection and atlas searches fold source spellings such as Lodz / Łódź consistently.
 Collection search text is prepared once when loading the archive. The dated-place list

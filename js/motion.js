@@ -1,4 +1,4 @@
-import { motionEnabled, landingMotionEnabled, SYSTEM_REDUCED_MOTION } from "./config.js";
+import { motionEnabled, SYSTEM_REDUCED_MOTION } from "./config.js";
 
 const gsap = window.gsap;
 let warned = false;
@@ -8,7 +8,7 @@ let landingTimeline = null;
 const entranceTweens = new Set();
 
 function canAnimate(ambient = false) {
-  if (!(ambient ? landingMotionEnabled() : motionEnabled())) return false;
+  if (!ambient && !motionEnabled()) return false;
   if (gsap) return true;
   if (!warned) {
     console.warn("GSAP did not load; interface motion is disabled.");
@@ -72,17 +72,9 @@ export function syncPreference() {
   syncLandingMotion();
 }
 
-export function syncLandingMotion() {
+function syncLandingMotion() {
   if (document.body.dataset.view === "landing") startMosaic();
   else pauseMosaic();
-  const button = document.querySelector("[data-act='toggle-landing-motion']");
-  if (button) {
-    const enabled = landingMotionEnabled();
-    button.setAttribute("aria-pressed", String(enabled));
-    button.setAttribute("aria-label", `${enabled ? "Pause" : "Play"} background animation`);
-    button.querySelector("span").textContent = `${enabled ? "Pause" : "Play"} animation`;
-    button.querySelector("use").setAttribute("href", enabled ? "#icon-pause" : "#icon-play");
-  }
 }
 
 function updateMotionMode() {

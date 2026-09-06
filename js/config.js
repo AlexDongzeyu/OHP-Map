@@ -58,12 +58,9 @@ export const TIME = { min: 1914, max: 2026 };
 const motionPreference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
 const motionListeners = new Set();
 export let SYSTEM_REDUCED_MOTION = Boolean(motionPreference?.matches);
-const requestedMotion = new URLSearchParams(window.location?.search || "").get("motion");
-let landingMotionOverride = requestedMotion === "on" ? true : requestedMotion === "off" ? false : null;
 
 const updateMotionPreference = (event) => {
   SYSTEM_REDUCED_MOTION = event.matches;
-  landingMotionOverride = null;
   for (const listener of motionListeners) listener(SYSTEM_REDUCED_MOTION);
 };
 if (motionPreference?.addEventListener) motionPreference.addEventListener("change", updateMotionPreference);
@@ -76,14 +73,6 @@ export function onMotionPreferenceChange(listener) {
 
 export function motionEnabled() {
   return !SYSTEM_REDUCED_MOTION;
-}
-
-export function landingMotionEnabled() {
-  return landingMotionOverride ?? motionEnabled();
-}
-
-export function setLandingMotion(enabled) {
-  landingMotionOverride = enabled;
 }
 
 export function slug(text) {

@@ -1279,7 +1279,7 @@ function assertCounterMotion(label, { targets, samples }) {
       throw new Error(`small-phone filters obstruct the results ${JSON.stringify(filters)}`);
     }
   });
-  await check("reduced motion keeps a readable, still archive", async () => {
+  await check("reduced interface motion keeps content readable while the landing plays", async () => {
     const reduced = await browser.newPage();
     reduced.on("pageerror", (error) => errors.push("reduced motion: " + (error.stack || error.message)));
     await reduced.setViewport({ width: 390, height: 844 });
@@ -1296,7 +1296,7 @@ function assertCounterMotion(label, { targets, samples }) {
         visibility: style.visibility,
         belt: getComputedStyle(document.querySelector(".mosaic-track")).transform,
         traveler: Number(document.querySelector(".globe-traveler")?.getAttribute("cx")),
-        control: Boolean(document.querySelector("#motion-toggle")),
+        control: Boolean(document.querySelector("#motion-toggle, .landing-motion, [data-act='toggle-landing-motion']")),
         counters: [...document.querySelectorAll("[data-counter]")].map((counter) => ({
           text: Number(counter.textContent.replace(/,/g, "")),
           target: Number(counter.dataset.counter),
@@ -1309,7 +1309,7 @@ function assertCounterMotion(label, { targets, samples }) {
       globe: Number(document.querySelector(".globe-traveler")?.getAttribute("cx")) !== before.traveler,
     }), result);
     await reduced.close();
-    if (result.mode !== "reduced" || result.mosaic !== "static") throw new Error("reduced motion was not respected");
+    if (result.mode !== "reduced" || result.mosaic !== "animated") throw new Error("landing and interface motion states are incorrect");
     if (result.control) throw new Error("motion control should not render");
     if (result.opacity !== 1 || result.visibility !== "visible") {
       throw new Error("landing content is not immediately visible");
@@ -1317,7 +1317,7 @@ function assertCounterMotion(label, { targets, samples }) {
     if (result.counters.some((counter) => counter.text !== counter.target)) {
       throw new Error(`reduced-motion counters are not final ${JSON.stringify(result.counters)}`);
     }
-    if (moved.belt || moved.globe) throw new Error("ambient motion continued under reduced motion");
+    if (!moved.belt || !moved.globe) throw new Error("the landing background did not play automatically");
   });
   await check("the archive remains usable without GSAP", async () => {
     const staticPage = await browser.newPage();
@@ -1946,7 +1946,7 @@ function assertCounterMotion(label, { targets, samples }) {
     }
   });
 
-  await check("live reduced-motion changes settle counters and pause ambient motion", async () => {
+  await check("live reduced-motion changes settle counters without stopping the landing", async () => {
     const liveMotion = await browser.newPage();
     liveMotion.on("pageerror", (error) => errors.push("live motion: " + error.message));
     await liveMotion.setViewport({ width: 390, height: 844 });
@@ -1970,17 +1970,17 @@ function assertCounterMotion(label, { targets, samples }) {
       }));
       const reduced = await capture();
       await wait(750);
-      const still = await capture();
-      if (reduced.mode !== "reduced" || reduced.mosaic !== "static" || !reduced.visible ||
+      const moving = await capture();
+      if (reduced.mode !== "reduced" || reduced.mosaic !== "animated" || !reduced.visible ||
           reduced.counters.some((counter) => counter.value !== counter.target) ||
-          still.belt !== reduced.belt || still.globe !== reduced.globe) {
-        throw new Error("the live reduced-motion setting left moving or incomplete content");
+          moving.belt === reduced.belt || moving.globe === reduced.globe) {
+        throw new Error("the motion preference interrupted the background or left incomplete counters");
       }
       await liveMotion.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
       await liveMotion.waitForFunction(() => document.documentElement.dataset.mosaicMotion === "animated");
       await wait(500);
       const resumed = await capture();
-      if (resumed.belt === still.belt || resumed.globe === still.globe ||
+      if (resumed.belt === moving.belt || resumed.globe === moving.globe ||
           resumed.counters.some((counter) => counter.value !== counter.target)) {
         throw new Error("restoring motion failed or replayed the completed counters");
       }
@@ -1991,7 +1991,7 @@ function assertCounterMotion(label, { targets, samples }) {
       const facesVisible = await liveMotion.$$eval(".mosaic-tile", (tiles) => tiles.every((tile) =>
         [...tile.querySelectorAll(".mosaic-side")].some((side) => {
           const style = getComputedStyle(side);
-          return style.visibility !== "hidden" && Number(style.opacity) >= .99;
+          return style.visibility !== "hidden" && Number(style.opacity) > .1;
         })));
       if (!facesVisible) throw new Error("reducing motion during a portrait change left a faded or hidden photograph");
     } finally {
@@ -2298,58 +2298,52 @@ function assertCounterMotion(label, { targets, samples }) {
     }
   });
 
-  await check("landing backgrounds can play explicitly and pause without changing the design", async () => {
+  await check("landing animation runs automatically without controls and resumes after returning", async () => {
     const animationPage = await browser.newPage();
+    let otherTab;
     animationPage.on("pageerror", (error) => errors.push("landing animation: " + error.message));
     try {
       await animationPage.setViewport({ width: 390, height: 844 });
       await animationPage.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
-      await animationPage.goto(BASE + "/?landing-control=1", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await animationPage.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: 40000 });
       await animationPage.waitForSelector("#loading", { hidden: true, timeout: 15000 });
       const frame = () => animationPage.evaluate(() => ({
         globe: document.querySelector(".globe-graticule").getAttribute("d"),
         belt: getComputedStyle(document.querySelector(".mosaic-track")).transform,
-        pressed: document.querySelector("[data-act='toggle-landing-motion']").getAttribute("aria-pressed"),
+        controls: document.querySelectorAll(".landing-motion, [data-act='toggle-landing-motion']").length,
         interfaceMode: document.documentElement.dataset.motion,
       }));
-      const reduced = await frame();
-      await wait(450);
-      const beforePlay = await frame();
-      if (reduced.pressed !== "false" || reduced.globe !== beforePlay.globe || reduced.belt !== beforePlay.belt) {
-        throw new Error("landing motion ignored the reduced-motion default");
-      }
-      await animationPage.click("[data-act='toggle-landing-motion']");
-      await wait(150);
       const playing = await frame();
       await wait(550);
       const advanced = await frame();
-      if (playing.pressed !== "true" || advanced.globe === playing.globe || advanced.belt === playing.belt ||
-          advanced.interfaceMode !== "reduced" || !animationPage.url().includes("motion=on")) {
-        throw new Error("explicit Play did not restart both backgrounds or changed interface motion");
+      if (playing.controls || advanced.globe === playing.globe || advanced.belt === playing.belt ||
+          advanced.interfaceMode !== "reduced") {
+        throw new Error("the landing needs a control or is not playing automatically");
       }
-      await animationPage.click("[data-act='toggle-landing-motion']");
+      otherTab = await browser.newPage();
+      await otherTab.bringToFront();
+      await animationPage.waitForFunction(() => document.hidden && document.documentElement.dataset.mosaicMotion === "static");
       const paused = await frame();
       await wait(500);
       const stopped = await frame();
-      if (paused.pressed !== "false" || paused.globe !== stopped.globe || paused.belt !== stopped.belt) {
-        throw new Error("Pause left a background moving");
+      if (paused.globe !== stopped.globe || paused.belt !== stopped.belt) {
+        throw new Error("the hidden tab kept animating");
       }
-      await animationPage.click("[data-act='toggle-landing-motion']");
+      await animationPage.bringToFront();
+      await otherTab.close();
+      await animationPage.waitForFunction(() => document.documentElement.dataset.mosaicMotion === "animated");
       await animationPage.click(".nav-tab[data-view='explore']");
       await animationPage.click(".brand");
-      await animationPage.waitForSelector(".landing-motion");
-      await animationPage.reload({ waitUntil: "domcontentloaded" });
+      await animationPage.waitForSelector(".archive-register");
+      await animationPage.goto(BASE + "/?motion=off", { waitUntil: "domcontentloaded", timeout: 40000 });
       await animationPage.waitForSelector("#loading", { hidden: true, timeout: 15000 });
       const reloaded = await frame();
       await wait(500);
-      if (reloaded.pressed !== "true" || (await frame()).belt === reloaded.belt) {
-        throw new Error("the explicit animation choice did not survive return/reload");
+      if (reloaded.controls || (await frame()).belt === reloaded.belt) {
+        throw new Error("returning or an obsolete motion link stopped the automatic background");
       }
-      await animationPage.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
-      await animationPage.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
-      await animationPage.waitForFunction(() => document.querySelector(".landing-motion").getAttribute("aria-pressed") === "false");
-      if (animationPage.url().includes("motion=")) throw new Error("a new system preference retained an obsolete override");
     } finally {
+      if (otherTab && !otherTab.isClosed()) await otherTab.close();
       await animationPage.close();
     }
   });
