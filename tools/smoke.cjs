@@ -2493,12 +2493,36 @@ function assertCounterMotion(label, { targets, samples }) {
 
   await check("unreviewed accounts frame all mapped mentions without inventing solid routes", async () => {
     await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+    const currentIndex = await (await fetch(BASE + "/data/index.json")).json();
+    const unreviewed = currentIndex.features.find(feature => {
+      const points = feature.properties.waypoints;
+      return points.length > 1 && points.every(point => !point.verified && point.evidence?.scope !== "personal") &&
+        Math.max(...points.map(point => point.lng)) - Math.min(...points.map(point => point.lng)) > 30;
+    });
+    if (!unreviewed) throw new Error("no all-unreviewed source fixture is available for the negative route check");
+    const accounts = [...new Set(["baranek-martin", "adler-amek", unreviewed.properties.survivor_id])];
     for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
       await page.setViewport(viewport);
-      for (const [id, expectedCount] of [["baranek-martin", 7], ["adler-amek", 9]]) {
+      for (const id of accounts) {
         await page.goto(BASE + `/?source-frame=${viewport.width}#/survivor/${id}`, { waitUntil: "domcontentloaded", timeout: 40000 });
         await page.waitForSelector("#loading", { hidden: true, timeout: 15000 });
         await page.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+        const expected = await page.evaluate(async accountId => {
+          const detail = performance.getEntriesByType("resource").find(entry =>
+            new URL(entry.name).pathname.startsWith(`/data/profiles/${accountId}.`));
+          if (!detail) throw new Error("the selected immutable source version was not observed");
+          const response = await fetch(detail.name, { cache: "force-cache" });
+          if (!response.ok) throw new Error(`the selected source version returned ${response.status}`);
+          const source = await response.json();
+          const all = source.properties.waypoints;
+          const mapped = all.filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+          return {
+            count: all.length, mapped: mapped.length,
+            review: mapped.filter(point => !point.verified && point.evidence?.scope !== "personal").length,
+            route: mapped.filter(point => (point.verified || point.evidence?.scope === "personal") &&
+              ["city", "site"].includes(point.location_precision)).length > 1,
+          };
+        }, id);
         await wait(200);
         const frame = await page.evaluate(() => {
           const panel = document.querySelector(".panel").getBoundingClientRect();
@@ -2515,9 +2539,9 @@ function assertCounterMotion(label, { targets, samples }) {
             routes: document.querySelectorAll(".explore-route").length,
           };
         });
-        if (frame.points.length !== expectedCount || !frame.summary.startsWith(`${expectedCount} matched place mentions:`) ||
-            !frame.review || (id === "baranek-martin" && frame.routes)) {
-          throw new Error(`source references were hidden or promoted ${JSON.stringify({ id, frame })}`);
+        if (frame.points.length !== expected.mapped || !frame.summary.startsWith(`${expected.count} matched place mentions:`) ||
+            frame.review !== expected.review || Boolean(frame.routes) !== expected.route) {
+          throw new Error(`source references were hidden or promoted ${JSON.stringify({ id, expected, frame })}`);
         }
         if (frame.points.some(point => viewport.width <= 820
           ? point.y >= frame.panel.top - 4 || point.y <= 100

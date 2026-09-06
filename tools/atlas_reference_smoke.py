@@ -151,7 +151,10 @@ COLLECTION = """() => {
 SELECTION = """() => {
   fixture(true);
   document.activeElement.blur();
-  const journey = store.byId.get('baranek-martin');
+  const journey = store.journeys.find(account => account.waypoints.length >= 3 &&
+    account.waypoints.every(point => !point.verified && point.evidenceScope !== 'personal' &&
+      Number.isFinite(point.lng) && Number.isFinite(point.lat)));
+  assert(journey, 'No entirely unreviewed account is available for the negative route check');
   atlas.render('explore', context({selectedId:journey.id}));
   assert(!document.querySelector('.explore-route'), 'Unreviewed mentions became a route');
   const markers = [...document.querySelectorAll('.account-place-marker')];
