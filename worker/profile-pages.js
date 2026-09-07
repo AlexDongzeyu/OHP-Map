@@ -98,9 +98,9 @@ export function renderProfileHtml(shell, feature, { origin = DEFAULT_ORIGIN, sou
   <meta name="twitter:image:alt" content="${esc(sharedPortrait ? name : "Crestwood Oral History Project")}" />
   <link rel="stylesheet" href="/server-profile.css" />`;
   const article = `
-  <article id="server-profile" data-survivor-id="${esc(properties.survivor_id)}" aria-labelledby="server-profile-name">
+  <main id="server-profile" data-survivor-id="${esc(properties.survivor_id)}" aria-labelledby="server-profile-name">
     <div class="server-profile-inner">
-      <nav aria-label="Archive navigation"><a href="/#/explore">Explore the collection</a> · <a href="/#/about">About the project</a></nav>
+      <nav aria-label="Archive navigation"><a href="/collection">Source catalogue</a> <a href="/#/explore">Interactive collection</a></nav>
       <p class="server-profile-kicker">Crestwood Oral History Project · ${esc(properties.group || "Recorded account")}</p>
       <h1 id="server-profile-name">${esc(name)}</h1>
       ${portrait ? `<figure><img src="${esc(portrait)}" alt="${esc(name)}" width="192" height="192" /><figcaption>${esc(properties.portrait_rights)}</figcaption></figure>` : ""}
@@ -114,9 +114,9 @@ export function renderProfileHtml(shell, feature, { origin = DEFAULT_ORIGIN, sou
         ${source ? `<p><a href="${esc(source)}" rel="noopener">Read the original account and interview at OHP</a></p>` : ""}
       </section>
       <section aria-labelledby="server-places"><h2 id="server-places">Recorded place references</h2>${recordedPlaces(properties)}</section>
-      <p><a href="/#/explore">Return to the collection</a></p>
+      <p><a href="/collection">Return to the collection</a></p>
     </div>
-  </article>`;
+  </main>`;
   const html = rootAssetReferences(shell)
     .replace(/<title\b[^>]*>[\s\S]*?<\/title\s*>/gi, "")
     .replace(/<meta\b[^>]*(?:name|property)=["'](?:description|og:[^"']+|twitter:[^"']+)["'][^>]*>/gi, "")

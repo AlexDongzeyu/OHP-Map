@@ -105,6 +105,15 @@ an account's undated or other-year references remain in Explore, not on that yea
 Account-map markers also open their matching source entries. Broken account and place
 links show an explanation and recovery actions rather than silently returning home.
 
+**Browse source accounts without the map** opens `/collection`, a server-rendered
+catalogue with the same word/phrase and diacritic search rules, community filtering,
+and 40 accounts per page. It works without JavaScript and does not fetch the live
+archive, map, profile media or every biography to produce a results page. The catalogue
+is explicitly a published snapshot, so new hourly source arrivals may appear in the
+interactive collection before the next published catalogue. Source readers return to
+this catalogue instead of a JavaScript-only route. Loading and failure screens keep
+the same escape route when the map or application scripts cannot start.
+
 Every account with located references has a geographic overview under **Places**,
 including accounts with just one place or no source-supported connecting route.
 The overview reuses the loaded world geography, adds country outlines and place names,

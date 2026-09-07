@@ -25,6 +25,7 @@ const entrySource = fs.readFileSync('worker/index.js','utf8')
   .replace('from "./archive-sync.js"', `from ${JSON.stringify(runnerURL)}`)
   .replace('from "./publication.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/publication.js').href)}`)
   .replace('from "./profile-pages.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/profile-pages.js').href)}`)
+  .replace('from "./collection-pages.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/collection-pages.js').href)}`)
   .replace('from "./headers.js"', `from ${JSON.stringify(pathToFileURL(process.cwd() + '/worker/headers.js').href)}`);
 const entry = (await import(`data:text/javascript;base64,${Buffer.from(entrySource).toString('base64')}`)).default;
 """

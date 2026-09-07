@@ -11,6 +11,14 @@ body {
   text-rendering:optimizeLegibility;
   overflow:hidden;
 }
+body:has(#no-js-fallback) { overflow:auto; }
+body:has(#no-js-fallback) #stage, body:has(#no-js-fallback) > .skip-link { display:none; }
+.no-js-fallback { max-width:680px; margin:0 auto; padding:clamp(24px, 8vw, 72px) 24px; }
+.no-js-fallback h1 { font:400 clamp(32px, 6vw, 48px)/1.15 var(--serif); }
+.no-js-fallback p { line-height:1.7; }
+.no-js-fallback > a { display:flex; align-items:center; min-height:44px; width:fit-content; margin-top:16px; }
+.loading-source-link { display:inline-flex; align-items:center; min-height:44px; margin-top:12px; font-size:12px; }
+.recovery-source-link { display:flex; justify-content:center; align-items:center; min-height:44px; margin-top:12px; font-size:12px; }
 button, input, textarea { font:inherit; }
 button { color:inherit; }
 ::selection { background:#CBD9E4; color:var(--ink); }

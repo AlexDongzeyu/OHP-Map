@@ -33,6 +33,12 @@ async function searchCollection(page, query) {
   return page.$$eval(".rail [data-survivor]", rows => rows.map(row => row.dataset.survivor));
 }
 
+async function navigateSource(page, action) {
+  const navigation = page.waitForNavigation({ waitUntil: "networkidle0", timeout: 40000 });
+  await action();
+  await navigation;
+}
+
 (async () => {
   const errors = [];
   const browser = await puppeteer.launch({ executablePath: EDGE, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
@@ -3998,6 +4004,126 @@ async function searchCollection(page, query) {
       }));
       if (source.href !== unlocated.properties.archive_url || source.height < 44 || !source.text.includes("original OHP account")) {
         throw new Error("the unmapped account has no usable original-source action");
+      }
+    } finally { await context.close(); }
+  });
+
+  await check("source catalogue and account round trips work without JavaScript", async () => {
+    const context = await browser.createBrowserContext();
+    const source = await context.newPage();
+    await source.setJavaScriptEnabled(false);
+    const requests = [];
+    source.on("request", request => requests.push(new URL(request.url()).pathname));
+    try {
+      await source.goto(BASE + "/", { waitUntil: "networkidle0", timeout: 40000 });
+      await navigateSource(source, () => source.click("#no-js-fallback a[href='/collection']"));
+      if (await source.$$eval(".catalogue-accounts li", rows => rows.length) !== 40) throw new Error("the native catalogue did not paginate");
+      await source.type("input[name='q']", "Adler Amek");
+      await navigateSource(source, () => source.click(".catalogue-search button"));
+      if (await source.$$eval(".catalogue-accounts a", links => links.length) !== 1) throw new Error("native search does not combine name terms");
+      await navigateSource(source, () => source.click(".catalogue-accounts a"));
+      if (await source.$eval("#server-profile-name", heading => heading.textContent) !== "Amek Adler") throw new Error("the source link opens the wrong account");
+      await navigateSource(source, () => source.click("#server-profile .server-profile-inner > p > a[href='/collection']"));
+      if (new URL(source.url()).pathname !== "/collection" || await source.$$eval(".catalogue-accounts li", rows => rows.length) !== 40) {
+        throw new Error("the source reader returned to a JavaScript-only dead end");
+      }
+      await navigateSource(source, () => source.click("[rel='next']"));
+      await source.reload({ waitUntil: "networkidle0" });
+      if (!source.url().includes("page=2#catalogue-results")) throw new Error("refresh lost the native results page");
+      await source.goBack({ waitUntil: "networkidle0" });
+      if (new URL(source.url()).search) throw new Error("Back did not restore the preceding catalogue page");
+      if (requests.some(path => path.endsWith("/data/index.json") || path.endsWith("/data/atlas-world.json"))) {
+        throw new Error("native source browsing downloaded interactive map data");
+      }
+    } finally { await context.close(); }
+  });
+
+  await check("source accounts remain reachable when the map, index or application module fails", async () => {
+    for (const failure of ["map", "index", "module"]) {
+      const context = await browser.createBrowserContext();
+      const source = await context.newPage();
+      await source.setRequestInterception(true);
+      source.on("request", request => {
+        const path = new URL(request.url()).pathname;
+        const blocked = failure === "map" ? path.endsWith("/data/atlas-world.json")
+          : failure === "index" ? path.endsWith("/data/index.json") : path.endsWith("/js/app.js");
+        return blocked ? request.respond({ status: 503, contentType: "text/plain", body: "Deliberate recovery test" }) : request.continue();
+      });
+      try {
+        await source.goto(BASE + "/#/explore", { waitUntil: "networkidle0", timeout: 40000 });
+        const root = failure === "map" ? "#error" : failure === "index" ? "#fatal" : "#loading";
+        await source.waitForSelector(root + " a[href='/collection']", { visible: true, timeout: 15000 });
+        await navigateSource(source, () => source.click(root + " a[href='/collection']"));
+        if (await source.$$eval(".catalogue-accounts li", rows => rows.length) !== 40) throw new Error(`${failure} failure also blocked the source catalogue`);
+      } finally { await context.close(); }
+    }
+  });
+
+  await check("native source results and reader controls stay accessible at 320, 768 and 1440 pixels", async () => {
+    for (const viewport of [{ width: 320, height: 568 }, { width: 768, height: 1024 }, { width: 1440, height: 900 }]) {
+      const context = await browser.createBrowserContext();
+      const source = await context.newPage();
+      await source.setJavaScriptEnabled(false);
+      await source.setViewport(viewport);
+      try {
+        await source.goto(BASE + "/collection", { waitUntil: "networkidle0", timeout: 40000 });
+        const placeholderContrast = await source.evaluate(() => {
+          const rgb = value => value.match(/[\d.]+/g).slice(0, 3).map(Number);
+          const luminance = color => {
+            const [r, g, b] = rgb(color).map(value => {
+              value /= 255;
+              return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4;
+            });
+            return .2126 * r + .7152 * g + .0722 * b;
+          };
+          const input = document.querySelector("input[name='q']");
+          const foreground = luminance(getComputedStyle(input, "::placeholder").color);
+          const background = luminance(getComputedStyle(input).backgroundColor);
+          return (Math.max(foreground, background) + .05) / (Math.min(foreground, background) + .05);
+        });
+        if (placeholderContrast < 4.5) throw new Error("the source search placeholder fails 4.5:1 text contrast");
+        await source.keyboard.press("Tab");
+        if (!await source.evaluate(() => document.activeElement.classList.contains("catalogue-skip"))) throw new Error("native browsing has no keyboard skip path");
+        await source.keyboard.press("Enter");
+        if (await source.evaluate(() => document.activeElement.id) !== "catalogue-results") throw new Error("the source skip link does not focus its results landmark");
+        await source.type("input[name='q']", "Adler Amek");
+        await navigateSource(source, () => source.click(".catalogue-search button"));
+        const resultVisible = await source.$eval(".catalogue-accounts a", link => {
+          const box = link.getBoundingClientRect();
+          return box.top >= 0 && box.bottom <= innerHeight && document.documentElement.scrollWidth <= innerWidth;
+        });
+        if (!resultVisible) throw new Error("a submitted source search leaves its result off screen");
+        await navigateSource(source, () => source.click(".catalogue-accounts a"));
+        const accessible = await source.evaluate(() => {
+          const mains = [...document.querySelectorAll("main")].filter(node =>
+            node.getBoundingClientRect().width && getComputedStyle(node).visibility !== "hidden");
+          const actions = [...document.querySelectorAll("#server-profile nav a,#server-profile section>p>a,#server-profile .server-profile-inner>p>a")];
+          return mains.length === 1 && actions.every(link => link.getBoundingClientRect().height >= 44) &&
+            document.documentElement.scrollWidth <= innerWidth;
+        });
+        if (!accessible) throw new Error("the source reader lacks a main landmark or usable touch targets");
+      } finally { await context.close(); }
+    }
+  });
+
+  await check("native source search handles empty and invalid states without altering private saves", async () => {
+    const context = await browser.createBrowserContext();
+    const source = await context.newPage();
+    await source.setJavaScriptEnabled(false);
+    try {
+      await source.goto(BASE + "/collection", { waitUntil: "networkidle0", timeout: 40000 });
+      await source.evaluate(() => localStorage.setItem("ohp-map.saved-accounts.v1", JSON.stringify({ version: 1, ids: ["adam-wally"] })));
+      const saved = await source.evaluate(() => localStorage.getItem("ohp-map.saved-accounts.v1"));
+      for (const query of ["?q=no-such-public-account", "?page=0", "?page=100000", "?group=Unknown", "?q=one&q=two"]) {
+        const response = await source.goto(BASE + "/collection" + query, { waitUntil: "networkidle0", timeout: 40000 });
+        const expected = query.startsWith("?q=no-such") ? 200 : query === "?page=100000" ? 404 : 400;
+        if (response.status() !== expected || await source.$(".catalogue-accounts li")) throw new Error("invalid or empty catalogue state returned real-looking results");
+        if (!await source.$("a[href='/collection']")) throw new Error("native search has no recovery action");
+      }
+      await source.goto(BASE + "/collection?q=" + encodeURIComponent("Łódź"), { waitUntil: "networkidle0" });
+      if (!await source.$(".catalogue-accounts li")) throw new Error("source catalogue dropped Unicode place matching");
+      if (await source.evaluate(() => localStorage.getItem("ohp-map.saved-accounts.v1")) !== saved) {
+        throw new Error("browsing source accounts changed a private saved list");
       }
     } finally { await context.close(); }
   });

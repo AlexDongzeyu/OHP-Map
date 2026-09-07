@@ -8,6 +8,7 @@ const ROOT = path.resolve(__dirname, "..");
 const helpers = Promise.all([
   import(pathToFileURL(path.join(ROOT, "worker", "publication.js")).href),
   import(pathToFileURL(path.join(ROOT, "worker", "profile-pages.js")).href),
+  import(pathToFileURL(path.join(ROOT, "worker", "collection-pages.js")).href),
 ]);
 
 function write(out, name, body) {
@@ -34,9 +35,9 @@ function priorArchives(root) {
 
 async function buildArchiveAssets({
   root = ROOT, out = path.join(root, "public"), doc, shell,
-  sourceProfiles, origin, previousDocuments = [],
+  sourceProfiles, origin, previousDocuments = [], releaseHash = null,
 } = {}) {
-  const [publication, pages] = await helpers;
+  const [publication, pages, collection] = await helpers;
   const sourceBody = doc ? JSON.stringify(doc) : fs.readFileSync(path.join(root, "data", "survivors.geojson"), "utf8");
   doc ||= JSON.parse(sourceBody);
   shell ??= fs.readFileSync(path.join(root, "index.html"), "utf8");
@@ -80,6 +81,7 @@ async function buildArchiveAssets({
   }
   const body = JSON.stringify(index);
   write(out, "/data/index.json", body);
+  write(out, collection.SOURCE_CATALOGUE_PATH, JSON.stringify(collection.buildSourceCatalogue(doc.features, releaseHash)));
   write(out, publication.SEED_CATALOG_PATH, JSON.stringify(catalog));
   write(out, "/sitemap.xml", publication.renderSitemap(catalog, base));
   write(out, "/robots.txt", `User-agent: *\nAllow: /\nDisallow: /data/\nSitemap: ${base}/sitemap.xml\n`);

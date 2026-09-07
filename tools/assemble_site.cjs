@@ -57,7 +57,7 @@ async function assemble() {
     if (fs.existsSync(src)) copy(src, path.join(OUT, "data", f));
   }
   fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
-  const stats = await buildArchiveAssets({ root: ROOT, out: OUT, previousDocuments: priorArchives(ROOT) });
+  const stats = await buildArchiveAssets({ root: ROOT, out: OUT, previousDocuments: priorArchives(ROOT), releaseHash: staticRelease.hash });
   const release = await buildStaticRelease({
     root: ROOT, out: OUT, prepared: staticRelease, previous: previousReleases,
     requiredPreviousHash: published?.requiredHash || null,

@@ -79,14 +79,7 @@ export function slug(text) {
   return String(text).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-const SEARCH_FOLDS = {
-  "\u0142": "l", "\u00f8": "o", "\u0111": "d", "\u00f0": "d", "\u0127": "h",
-  "\u0131": "i", "\u00df": "ss", "\u00e6": "ae", "\u0153": "oe", "\u00fe": "th",
-};
-export function normalizeSearch(value) {
-  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
-    .replace(/[\u0142\u00f8\u0111\u00f0\u0127\u0131\u00df\u00e6\u0153\u00fe]/g, (letter) => SEARCH_FOLDS[letter]).trim();
-}
+export { normalizeSearch } from "./search-query.js";
 
 const STATIC_ASSET_ROOT = "../";
 

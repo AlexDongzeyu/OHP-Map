@@ -1,4 +1,6 @@
 body:has(#server-profile) #stage { visibility: hidden; }
+body:has(#server-profile) #no-js-fallback { display:none; }
+body:has(#no-js-fallback) #server-profile .server-profile-loading { display:none; }
 #server-profile {
   position: fixed;
   inset: 0;
@@ -10,6 +12,10 @@ body:has(#server-profile) #stage { visibility: hidden; }
 }
 #server-profile .server-profile-inner { max-width: 52rem; margin: 0 auto; padding: clamp(1.25rem, 5vw, 4rem); }
 #server-profile a { color: #175366; text-underline-offset: .2em; }
+#server-profile nav { display:flex; flex-wrap:wrap; align-items:center; gap:4px 20px; }
+#server-profile nav a, #server-profile section > p > a, #server-profile .server-profile-inner > p > a {
+  display:inline-flex; align-items:center; min-height:44px; padding:6px 0;
+}
 #server-profile a:focus-visible { outline: 3px solid #175366; outline-offset: 4px; }
 #server-profile h1 { font: 500 clamp(2rem, 6vw, 3.75rem)/1.15 "Spectral", Georgia, serif; margin: 1rem 0; }
 #server-profile h2 { font: 500 1.6rem/1.3 "Spectral", Georgia, serif; margin-top: 2rem; }
@@ -37,4 +43,7 @@ body:has(#server-profile) #stage { visibility: hidden; }
   #server-profile h2 { font-size:16pt; break-after:avoid; }
   #server-profile li { break-inside:avoid-page; }
   #server-profile a { overflow-wrap:anywhere; }
+  #server-profile nav a, #server-profile section > p > a, #server-profile .server-profile-inner > p > a {
+    display:inline; min-height:0; padding:0;
+  }
 }

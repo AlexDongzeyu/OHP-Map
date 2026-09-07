@@ -5,6 +5,7 @@
 // choropleth), and the shared persecution sites. As-written place names are preserved.
 import { ROLE_LABEL, GROUPS, parseYear, initials, slug, normalizeSearch, siteResource, TIME } from "./config.js";
 import { normalizeProfileMedia } from "./media.js";
+import { searchValue, searchParts, matchesSearchPart } from "./search-query.js";
 
 const BASE = "data";
 class ArchiveFetchError extends Error {}
@@ -27,27 +28,6 @@ const SERVICE_WINDOWS = {
   "Second World War": { start: 1939, end: 1945 },
   "Korean War": { start: 1950, end: 1953 },
 };
-
-function searchValue(value) {
-  return normalizeSearch(value).replace(/['\u2018\u2019\u02bc]/g, "")
-    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-}
-
-function searchParts(query) {
-  const text = String(query || "").replace(/[\u201c\u201d]/g, '"');
-  return [...text.matchAll(/"([^"]*)"?|(\S+)/g)].map(match => {
-    const value = searchValue(match[1] ?? match[2]);
-    const quoted = match[1] !== undefined;
-    return {
-      value, quoted, start: match.index, end: match.index + match[0].length,
-      phrase: quoted ? new RegExp(`(?:^|\\s)${value}(?=\\s|$)`, "u") : null,
-    };
-  }).filter(part => part.value);
-}
-
-function matchesSearchPart(text, part) {
-  return part.phrase ? part.phrase.test(text) : text.includes(part.value);
-}
 
 function journeySearchFields(journey) {
   return [

@@ -8,6 +8,7 @@ import {
   DETAIL_PATTERN, INDEX_FORMAT, contentHash, profilePath, profileKey, seedCatalog, validCatalog,
 } from "./publication.js";
 import { renderProfileHtml, renderErrorHtml } from "./profile-pages.js";
+import { SOURCE_CATALOGUE_PATH, renderSourceCatalogue } from "./collection-pages.js";
 import { matchesETag, secureResponse } from "./headers.js";
 export { ArchiveSync } from "./archive-sync.js";
 
@@ -245,6 +246,20 @@ async function profileResponse(request, env, ctx, match) {
 
 async function route(request, env, ctx) {
   const url = new URL(request.url);
+  if (url.pathname === "/collection") {
+    if (!["GET", "HEAD"].includes(request.method)) return methodNotAllowed();
+    const response = await asset(env, new Request(request.url), SOURCE_CATALOGUE_PATH);
+    if (!response.ok) {
+      await response.body?.cancel();
+      return errorResponse(503, "The source catalogue is temporarily unavailable. Try again or visit the original OHP archive.");
+    }
+    const page = renderSourceCatalogue(await response.json(), request.url, env.SITE_ORIGIN);
+    return streamResponse(request, new Response(page.body).body, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": page.status === 200 ? "public, max-age=0, must-revalidate" : "no-store",
+      etag: `"${await contentHash(page.body)}"`,
+    }, page.status);
+  }
   if (["/data/survivors.geojson", "/data/index.json", "/sitemap.xml"].includes(url.pathname)) {
     return archiveResponse(request, env, ctx, url.pathname);
   }
@@ -280,7 +295,7 @@ async function route(request, env, ctx) {
   // Internal build resources have canonical public routes above, not duplicate
   // crawlable HTML routes. Unknown paths never receive the SPA's 200 shell.
   if (url.pathname.startsWith("/data/profile-pages/") || url.pathname.startsWith("/data/biographies/") ||
-    url.pathname === "/data/catalog.json") return errorResponse();
+    url.pathname === "/data/catalog.json" || url.pathname === SOURCE_CATALOGUE_PATH) return errorResponse();
   const response = await asset(env, request, url.pathname === "/" ? "/index.html" : url.pathname);
   if (response.status === 404) {
     await response.body?.cancel();
