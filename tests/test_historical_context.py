@@ -26,8 +26,9 @@ def registry():
     assert node, "Node.js is required to validate the browser-independent ES module"
     script = r"""
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 const text = readFileSync(process.argv[1], "utf8");
-const m = await import("data:text/javascript;base64," + Buffer.from(text).toString("base64"));
+const m = await import(pathToFileURL(process.argv[1]).href);
 const years = [...Array.from({ length: 113 }, (_, i) => 1914 + i), 1800, 1801,
   1870, 1871, 1872, 1891, 1892, 1893, 1911, 1912, 1913];
 const names = [...new Set(m.FLAG_RECORDS.flatMap((entry) => entry.names))];
@@ -46,6 +47,7 @@ originalResources.push({ title: "injected" });
 console.log(JSON.stringify({
   records: m.FLAG_RECORDS,
   sources: m.FLAG_SOURCES,
+  catalogue: m.flagCatalogue(2026),
   metadata: m.HISTORICAL_CONTEXT_META,
   samples,
   resources: Object.fromEntries(years.map((year) => [year, m.resourcesForYear(year)])),
@@ -222,6 +224,11 @@ def _date_limit(value, is_start):
         return float("-inf") if is_start else float("inf")
     if re.fullmatch(r"\d{4}", value):
         return datetime(int(value) + int(is_start), 1, 1, tzinfo=timezone.utc).timestamp()
+    if re.fullmatch(r"\d{4}-\d{2}", value):
+        year, month = map(int, value.split("-"))
+        if is_start:
+            year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+        return datetime(year, month, 1, tzinfo=timezone.utc).timestamp()
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", value)
     return datetime.fromisoformat(value).replace(tzinfo=timezone.utc).timestamp()
 
@@ -261,6 +268,12 @@ def test_each_flag_has_an_asset_and_an_explicit_per_file_rights_record(registry)
         for key in ("title", "sourceUrl", "historyUrl", "licenseUrl", "credit", "note", "checkedOn"):
             assert rights[key], (entry["id"], key)
         referenced.add(entry["src"])
+    for country in registry["catalogue"]:
+        reference = country.get("currentReference")
+        if reference:
+            rights = next(source for source in sources.values() if source["src"] == reference["src"])
+            assert reference["license"] == rights["license"] and reference["credit"] == rights["credit"]
+            referenced.add(reference["src"])
     files = {path.relative_to(ROOT).as_posix() for path in (ROOT / "assets" / "flags").glob("*.svg")}
     assert referenced == files
     assert {entry["src"] for entry in sources.values()} == files
@@ -320,6 +333,27 @@ def test_local_svgs_contain_only_safe_self_contained_vector_elements():
                     assert value.startswith("#") and value[1:] in ids
                 for reference in re.findall(r"url\(\s*['\"]?([^)'\"\s]+)", value, re.I):
                     assert reference.startswith("#") and reference[1:] in ids
+
+
+def test_svg_spacing_normalization_preserves_artwork_and_visible_text():
+    from tools.acquire_country_flags import normalize_svg_whitespace
+
+    root = ET.fromstring(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 20">\n \t'
+        '<style>\n   \n.red {fill:red}\n   \n</style>'
+        '<path d="M0 0h30v20H0Z" class="red"/>\n \t'
+        '<text xml:space="preserve">  Source text \n  </text>\n</svg>'
+    )
+    original_path = dict(root.find(f"{{{SVG_NS}}}path").attrib)
+    original_text = root.find(f"{{{SVG_NS}}}text").text
+    normalize_svg_whitespace(root)
+    assert root.text is None
+    assert root.find(f"{{{SVG_NS}}}path").attrib == original_path
+    assert root.find(f"{{{SVG_NS}}}text").text == original_text
+    assert root.find(f"{{{SVG_NS}}}style").text == "\n\n.red {fill:red}\n\n"
+    normalized = ET.tostring(root)
+    normalize_svg_whitespace(root)
+    assert ET.tostring(root) == normalized
 
 
 @pytest.mark.parametrize(("name", "star_id", "expected"), [

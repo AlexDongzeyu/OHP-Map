@@ -11,7 +11,7 @@
 // reduced-motion fallback. People are coloured quietly by archive group — equal, never
 // a hierarchy (doc 13 §4.3).
 import { C, GROUP_COLOR, motionEnabled, normalizeSearch, siteResource } from "./config.js";
-import { flagFor } from "./historical-context.js";
+import { flagFor, flagHistory, flagCatalogue, flagCatalogueMatch } from "./historical-context.js";
 import { alignmentKey, datedTerritories } from "./historical-identity.js";
 
 const d3 = window.d3;
@@ -40,6 +40,7 @@ export function createAtlas(container) {
   let controllerHandler = null;
   let historyDisplay = { compare: false, split: 50, opacity: 1 };
   let flagsVisible = true, labelsVisible = true;
+  let activeFlagController = null;
   let visibleTerritories = [];
   let historicalPlacements = [];
   let uncertainTerritoryIds = new Set();
@@ -231,10 +232,24 @@ export function createAtlas(container) {
     return {
       name: administrationLabel(controller, active), controller,
       count: territories.length, territories, flag: flagFor(administrationLabel(controller, active), year),
+      flagHistory: flagHistory(administrationLabel(controller, active)),
       inferredGrouping: features.some((feature) => feature.properties.controller_basis === "name_grouping"),
       alternativeRecords: features.filter((feature) => uncertainRecords(year).has(feature.properties.id)).length,
       externalUrl: `https://www.oldmapsonline.org/en/history/regions#${referencePosition}year=${year}`,
     };
+  };
+  api.flagCountries = (year) => {
+    const entries = flagCatalogue(year);
+    for (const country of api.searchLocations("", year).filter(entry => entry.kind === "country")) {
+      const existing = flagCatalogueMatch(entries, country.name, year);
+      if (existing) {
+        if (!existing.controller || existing.name === country.name) existing.controller = country.controller;
+      } else entries.push({
+        name: country.name, names: [country.name, country.controller, country.matchName].filter(Boolean),
+        controller: country.controller, flag: flagFor(country.name, year), history: flagHistory(country.name),
+      });
+    }
+    return entries.sort((a, b) => a.name.localeCompare(b.name));
   };
   api.cameraPosition = () => {
     if (!projection || !mapFrame) return null;
@@ -597,15 +612,7 @@ export function createAtlas(container) {
           return;
         }
         if (!marker.classList.contains("place-cluster")) return;
-        const steps = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
-        if (!(event.key in steps) && !["Home", "End"].includes(event.key)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        const markers = overlayG.selectAll(".place-cluster").nodes();
-        const index = markers.indexOf(marker);
-        const next = event.key === "Home" ? 0 : event.key === "End" ? markers.length - 1 :
-          (index + steps[event.key] + markers.length) % markers.length;
-        markers[next]?.focus({ preventScroll: true });
+        browseMapMarkers(event, marker, overlayG.selectAll(".place-cluster").nodes());
       })
       .on("pointerover.references", (event) => {
         const marker = referenceControl(event.target);
@@ -621,6 +628,17 @@ export function createAtlas(container) {
         if (focused) showReferenceTip(focused);
         else hideTip();
       });
+  }
+  function browseMapMarkers(event, marker, markers) {
+    const steps = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    if (!(event.key in steps) && !["Home", "End"].includes(event.key)) return;
+    if (event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const index = markers.indexOf(marker);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? markers.length - 1 :
+      (index + steps[event.key] + markers.length) % markers.length;
+    markers[next]?.focus({ preventScroll: true });
   }
   function showReferenceTip(marker) {
     const rect = marker.getBoundingClientRect();
@@ -643,6 +661,10 @@ export function createAtlas(container) {
       overlayG.selectAll(".place-cluster[tabindex='0']").attr("tabindex", -1);
       d3.select(marker).attr("tabindex", 0);
       layoutCollectionReferences();
+    } else if (marker.classList.contains("historical-flag")) {
+      activeFlagController = marker.__data__.controller;
+      historicalFlagsG.selectAll(".historical-flag").attr("tabindex", -1);
+      d3.select(marker).attr("tabindex", 0);
     }
     keepReferenceVisible(marker);
     showReferenceTip(marker);
@@ -923,10 +945,10 @@ export function createAtlas(container) {
       const flag = flagFor(name, year);
       if (!flag) continue;
       const entity = feature.properties.name.replace(/\s*\([^)]*\)\s*$/, "");
-      const core = entity === name || Boolean(flag.src && flagFor(entity, year)?.src === flag.src);
+      const core = entity === name ? 2 : flagFor(entity, year)?.countryName === flag.countryName ? 1 : 0;
       const area = Number(feature.properties.area_km2) || d3.geoArea(feature) * 6371 ** 2;
       const previous = controllers.get(controller);
-      if (previous && ((previous.core && !core) || (previous.core === core && previous.area >= area))) continue;
+      if (previous && (previous.core > core || (previous.core === core && previous.area >= area))) continue;
       const [x, y] = path.centroid(feature);
       if (Number.isFinite(x) && Number.isFinite(y)) {
         controllers.set(controller, { name, controller, entity: feature.properties.name, flag, core, area, x, y });
@@ -937,23 +959,34 @@ export function createAtlas(container) {
     const transform = d3.zoomTransform(svg.node());
     if (flagsVisible) {
       for (const entry of [...controllers.values()].sort((a, b) => (
-        Number(b.controller === pinnedController) - Number(a.controller === pinnedController) || b.area - a.area
+        Number(b.controller === pinnedController) - Number(a.controller === pinnedController) ||
+        Number(b.controller === activeFlagController) - Number(a.controller === activeFlagController) || b.area - a.area
       ))) {
-        if (placed.length >= (size.w <= 820 ? 4 : 8)) break;
         const [screenX, screenY] = transform.apply([entry.x, entry.y]);
         const neutral = entry.flag.neutralIdentifier;
-        const halfWidth = neutral ? Math.max(12, mapTextWidth(entry.name, 500) / 2 + 4) :
-          Math.max(18, labelsVisible ? mapTextWidth(entry.name) / 2 + 3 : 0);
-        const box = [screenX - halfWidth, screenY - (neutral ? 12 : 32), screenX + halfWidth, screenY + (neutral ? 12 : labelsVisible ? 9 : -5)];
-        if (!fitsPlacement(box, historicalPlacements)) continue;
+        let showLabel = labelsVisible;
+        let halfWidth = neutral ? Math.max(22, mapTextWidth(entry.name, 500) / 2 + 4) :
+          Math.max(22, showLabel ? mapTextWidth(entry.name) / 2 + 3 : 0);
+        let box = [screenX - halfWidth, screenY - (neutral ? 22 : 34), screenX + halfWidth, screenY + (neutral ? 22 : 10)];
+        if (!fitsPlacement(box, historicalPlacements)) {
+          if (neutral || !showLabel) continue;
+          showLabel = false;
+          halfWidth = 22;
+          box = [screenX - halfWidth, screenY - 34, screenX + halfWidth, screenY + 10];
+          if (!fitsPlacement(box, historicalPlacements)) continue;
+        }
         historicalPlacements.push(box);
-        placed.push({ ...entry, halfWidth });
+        placed.push({ ...entry, halfWidth, showLabel });
       }
     }
+    const tabController = placed.find(entry => entry.controller === activeFlagController)?.controller ||
+      placed.find(entry => entry.controller === pinnedController)?.controller || placed[0]?.controller;
+    const accessibleLabel = entry => `Inspect ${entry.name} in ${year}${entry.flag.neutralIdentifier
+      ? ". Text-only neutral territorial identifier, not a historical flag." : ""}`;
     const groups = historicalFlagsG.selectAll(".historical-flag").data(placed, (entry) => entry.name)
       .join((enter) => {
         const group = enter.append("g").attr("class", "historical-flag")
-          .attr("role", "button").attr("tabindex", 0).style("cursor", "pointer")
+          .attr("role", "button").style("cursor", "pointer")
           .on("click", (event, entry) => {
             event.stopPropagation();
             if (controllerHandler) controllerHandler(entry.controller);
@@ -962,7 +995,7 @@ export function createAtlas(container) {
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
               if (controllerHandler) controllerHandler(entry.controller);
-            }
+            } else browseMapMarkers(event, event.currentTarget, historicalFlagsG.selectAll(".historical-flag").nodes());
           });
         group.append("text").attr("text-anchor", "middle")
           .attr("font-family", "'Public Sans',sans-serif").attr("font-size", 9)
@@ -972,7 +1005,9 @@ export function createAtlas(container) {
       });
     groups.classed("historical-identifier", (entry) => Boolean(entry.flag.neutralIdentifier))
       .attr("data-neutral-identifier", (entry) => entry.flag.neutralIdentifier ? "true" : null)
-      .attr("aria-label", (entry) => `Inspect ${entry.name} in ${year}${entry.flag.neutralIdentifier ? ". Text-only neutral territorial identifier, not a historical flag." : ""}`)
+      .attr("tabindex", (entry) => entry.controller === tabController ? 0 : -1)
+      .attr("aria-keyshortcuts", "ArrowRight ArrowDown ArrowLeft ArrowUp Home End Enter Space")
+      .attr("aria-label", (entry) => accessibleLabel(entry))
       .attr("data-map-focus", (entry) => `country:${entry.name}`)
       .attr("transform", (entry) => `translate(${entry.x},${entry.y}) scale(${1 / currentK})`);
     groups.selectAll(".historical-flag-frame").data((entry) => entry.flag.neutralIdentifier ? [] : [entry])
@@ -982,14 +1017,38 @@ export function createAtlas(container) {
     groups.selectAll("image").data((entry) => entry.flag.neutralIdentifier ? [] : [entry])
       .join((enter) => enter.insert("image", "text")
         .attr("x", -14).attr("y", -28).attr("width", 28).attr("height", 19))
+      .on("error.flag", function (event, entry) {
+        const group = d3.select(this.parentNode);
+        d3.select(this).style("visibility", "hidden");
+        group.select(".flag-image-placeholder").style("display", null);
+        group.attr("aria-label", `${accessibleLabel(entry)}. The flag image could not load.`);
+        group.select("title").text(`${entry.name}, ${year}. Flag image unavailable. The country details retain its dates and source.`);
+        console.warn("A map flag image could not load; the country and source remain accessible.");
+      })
+      .on("load.flag", function (event, entry) {
+        d3.select(this).style("visibility", null);
+        const group = d3.select(this.parentNode);
+        group.select(".flag-image-placeholder").style("display", "none");
+        group.attr("aria-label", accessibleLabel(entry));
+        group.select("title").text(`${entry.name}, ${year}. ${entry.flag.label}`);
+      })
       .attr("href", (entry) => siteResource(entry.flag.src));
+    groups.selectAll(".flag-image-placeholder").data((entry) => entry.flag.neutralIdentifier ? [] : [entry])
+      .join((enter) => enter.insert("use", "text").attr("class", "flag-image-placeholder")
+        .attr("href", "#icon-flag").attr("x", -12).attr("y", -29).attr("width", 24).attr("height", 24)
+        .attr("fill", "none").attr("stroke", C.inkSoft).attr("stroke-width", 1.5)
+        .style("display", "none"));
     groups.selectAll(".historical-identifier-hit").data((entry) => entry.flag.neutralIdentifier ? [entry] : [])
       .join((enter) => enter.insert("rect", "text").attr("class", "historical-identifier-hit")
-        .attr("y", -12).attr("height", 24).attr("fill", "transparent").attr("aria-hidden", "true"))
+        .attr("y", -22).attr("height", 44).attr("fill", "transparent").attr("aria-hidden", "true"))
       .attr("x", (entry) => -entry.halfWidth).attr("width", (entry) => entry.halfWidth * 2);
+    groups.selectAll(".historical-flag-hit").data((entry) => entry.flag.neutralIdentifier ? [] : [entry])
+      .join((enter) => enter.insert("rect", "text").attr("class", "historical-flag-hit")
+        .attr("x", -22).attr("y", -34).attr("width", 44).attr("height", 44)
+        .attr("fill", "transparent").attr("aria-hidden", "true"));
     groups.select("text").attr("y", (entry) => entry.flag.neutralIdentifier ? 3 : 5)
       .attr("font-weight", (entry) => entry.flag.neutralIdentifier ? 500 : 400)
-      .text((entry) => labelsVisible || entry.flag.neutralIdentifier ? entry.name : "");
+      .text((entry) => entry.showLabel || entry.flag.neutralIdentifier ? entry.name : "");
     groups.select("title").text((entry) => `${entry.name}, ${year}. ${entry.flag.label}${entry.flag.neutralIdentifier && entry.flag.note ? `. Source note: ${entry.flag.note}` : ""}`);
     return new Set(placed.map((entry) => entry.entity));
   }

@@ -2,9 +2,9 @@
 // markup over the persistent atlas. Markup here; styling in css; map engine in atlas.js;
 // orchestration in app.js. Everyone is presented equally — grouped by the archive's own
 // categories (doc 13 §4.2), no "featured" hierarchy (§4.3), each with a brief intro (§4.4).
-import { C, GROUP_COLOR, SYSTEM_REDUCED_MOTION, siteResource, esc } from "./config.js";
+import { C, GROUP_COLOR, SYSTEM_REDUCED_MOTION, siteResource, esc, normalizeSearch } from "./config.js";
 import { captionStatus, playerURL } from "./media.js";
-import { FLAG_SOURCES, resourcesForYear } from "./historical-context.js";
+import { FLAG_SOURCES, FLAG_CATALOGUE_META, resourcesForYear } from "./historical-context.js";
 import { collectionResults, collectionPlaces, evidenceCounts, searchSuggestions, searchMatchLabels, relatedAccounts } from "./data.js";
 import { accountLink, accountCitation } from "./research-tools.js";
 
@@ -318,6 +318,75 @@ export function biographyDialog(journey) {
       <a class="link" href="${esc(journey.archiveUrl)}" target="_blank" rel="noopener">Read at OHP ${icon("external-link")}</a>
       <button class="link" data-act="print-account"${journey.biographyState === "ready" ? "" : " disabled"}>${icon("printer")} Print biography</button>
     </div>`);
+}
+
+function flagImage(flag, className = "") {
+  return `<span class="flag-image-wrap ${className}"><img data-flag-image src="${esc(siteResource(flag.src))}"
+    alt="${esc(flag.label)}" loading="lazy" decoding="async"><span class="flag-image-fallback" hidden>Image unavailable</span></span>`;
+}
+
+function flagPeriods(records) {
+  return `<ol class="flag-periods">${records.map(flag => `<li>
+    ${flagImage(flag)}
+    <div><h4>${esc(readableFlagText(flag.label))}</h4>
+      <p class="flag-period-dates">${flag.start ? `${esc(flag.start)}${flag.end ? ` until ${esc(flag.end)}` : " onward"}` : "Dates not established"}</p>
+      <p>${esc(readableFlagText(flag.note || ""))}</p>
+      <a href="${esc(flag.sourceUrl)}" target="_blank" rel="noopener">Source and dates ${icon("external-link")}</a>
+      <span class="flag-credit">${esc(flag.credit)} · ${flag.licenseUrl
+        ? `<a href="${esc(flag.licenseUrl)}" target="_blank" rel="noopener">${esc(flag.license)}</a>` : esc(flag.license)}</span>
+    </div></li>`).join("")}</ol>`;
+}
+
+export function flagBrowser(year, minimum, maximum) {
+  return researchDialog("flag-browser", "Country flags", `
+    <p class="research-dialog-intro">Choose Current for present-day reference flags, or a year for documented historical designs.
+      Flags that do not fit on the map remain accessible here.</p>
+    <div class="flag-browser-controls">
+      <label>Find a flag<input id="flag-directory-search" class="search-input" type="search"
+        placeholder="Country or historical name" autocomplete="off" autofocus></label>
+      <label>Period<select id="flag-directory-year" aria-label="Flag year or current references"><option value="current">Current</option>${Array.from({ length: maximum - minimum + 1 }, (_, index) => minimum + index)
+        .map(value => `<option value="${value}"${value === year ? " selected" : ""}>${value}</option>`).join("")}</select></label>
+    </div>
+    <p class="directory-count" data-flag-count role="status"></p>
+    <div data-flag-directory></div>
+    <p class="directory-empty" data-flag-empty hidden>No names match. Try another spelling or clear the search.</p>
+    <p class="research-dialog-note">The atlas samples the middle of each year. Uncertain transition dates are withheld.
+      A missing entry is a gap in this catalogue, not evidence that a country had no flag.
+      Flags do not establish sovereignty or territorial control.
+      ${FLAG_CATALOGUE_META.unavailableArtwork ? "Some additional historical images remain unavailable or have been withheld after validation." : ""}</p>`);
+}
+
+export function flagDirectory(entries, year, status, current = false) {
+  return `${status !== "ready" ? `<p class="directory-empty" role="status">${status === "error"
+    ? `The historical country outlines could not load. Recorded flag designs remain available below.`
+    : "The historical country outlines are loading. Recorded flag designs are available below."}
+    ${status === "error" ? '<button class="link" data-act="retry-history">Retry country outlines</button>' : ""}</p>` : ""}
+    <div class="flag-directory-list">${entries.filter(country => !current || country.currentCountry).map(country => {
+      const preview = current ? country.currentReference : country.flag;
+      return `
+      <details class="flag-directory-entry" name="flag-directory-country" data-flag-row
+        data-flag-name="${esc(country.name)}" data-flag-search="${esc(normalizeSearch(country.names.join(" ")))}"
+        data-flag-available="${Boolean(preview && !preview.neutralIdentifier)}">
+        <summary data-flag-summary="${esc(country.name)}" tabindex="-1">
+          ${preview ? flagImage(preview, "flag-directory-preview") : `<span class="flag-directory-placeholder" aria-hidden="true">${icon("flag")}</span>`}
+          <span><strong>${esc(country.name)}</strong><small>${current
+            ? (preview ? "Current reference image" : country.name === "Antarctica" ? "No national flag" : "Current image unavailable")
+            : country.flag ? (country.flag.neutralIdentifier ? "Neutral historical identifier" : `Dated design for ${year}`)
+            : `No dated design for ${year}`}</small></span>${icon("chevron")}
+        </summary>
+        <div class="flag-directory-detail">
+          ${country.note ? `<p class="flag-note">${esc(country.note)}</p>` : ""}
+          ${current ? '<p class="flag-note">Current reference images are not assigned to earlier dates. Choose a year to see its documented design.</p>' : ""}
+          ${country.controller ? `<button class="link flag-view-map" data-flag-controller="${esc(country.controller)}" data-flag-year="${year}">View this administration on the ${year} map ${icon("arrow-right")}</button>`
+            : `<p class="flag-note">No matching administration outline is available in this map for ${year}.</p>`}
+          ${country.history.length ? `<h3>Flag history</h3>${flagPeriods(country.history)}`
+            : '<p class="flag-note">No dated flag history is recorded here yet.</p>'}
+          ${country.currentReference && !country.history.some(flag => flag.src === country.currentReference.src)
+            ? `<h3>Current reference image</h3><p class="flag-note">This reference is not assigned to historical dates without a documented use period.</p>
+              ${flagPeriods([country.currentReference])}` : ""}
+        </div>
+      </details>`;
+    }).join("")}</div>`;
 }
 
 export function placeBrowser(store, state) {
@@ -832,7 +901,7 @@ export function patterns(store, state) {
       <p class="history-search-status" id="history-search-status" data-search-status role="status">${esc(state.historySearchMessage || "")}</p>
       <div class="history-toolbar">
         <details class="history-settings">
-          <summary>${icon("layers")} Map layers ${icon("chevron")}</summary>
+          <summary aria-label="Map layers">${icon("layers")} Layers ${icon("chevron")}</summary>
           <div class="history-settings-body">
             <label><input type="checkbox" data-history-setting="flags"${state.historyFlags ? " checked" : ""}> Historical flags</label>
             <label><input type="checkbox" data-history-setting="labels"${state.historyLabels ? " checked" : ""}> Territory names</label>
@@ -853,6 +922,8 @@ export function patterns(store, state) {
             <button class="compact-layer-switch" data-layer="origins">Show mapped route origins</button>
           </div>
         </details>
+        <button class="history-flags-button" data-act="browse-flags" aria-label="Browse country flags"
+          aria-haspopup="dialog" title="Browse country flags">${icon("flag")}<span>Flags</span></button>
         <button class="history-share" data-act="share-map" aria-label="Copy map link" title="Copy map link"
           aria-expanded="false" aria-controls="share-feedback">${icon("share")}</button>
         ${mapTools()}
@@ -905,7 +976,7 @@ export function patternsEvents(store, state) {
       <summary>Original maps and historical context ${icon("chevron")}</summary>
       ${contextResources(state.scrubYear)}
       <p class="history-method">The atlas samples the middle of each year. Its polygons are generalized source records, not exact borders or daily front lines.
-        Dashed outlines mark overlapping alternatives. Flags appear only where the dated design has been verified.</p>
+        Dashed outlines mark overlapping alternatives. Flags appear only where a documented design matches the selected date.</p>
       ${geometryAudit(store)}
     </details>`;
 }
@@ -948,7 +1019,11 @@ function countryInspector(country, year) {
       <a href="${esc(flag.sourceUrl)}" target="_blank" rel="noopener">Flag source and dates ${icon("external-link")}</a>
       <span class="flag-credit">${esc(readableFlagText([flag.credit, flag.license].filter(Boolean).join(", ")))}</span></p></details>
       <p class="flag-summary">${esc(readableFlagText(flag.label))}</p>`
-      : '<p class="flag-note">A flag design has not been verified for this administration at this date.</p>'}
+      : '<p class="flag-note">No dated flag design is documented here for this administration at this date.</p>'}
+    ${country.flagHistory?.length ? `<details class="country-flag-history flag-details">
+      <summary>Flag history (${country.flagHistory.length}) ${icon("chevron")}</summary>
+      ${flagPeriods(country.flagHistory)}
+    </details>` : ""}
     ${country.alternativeRecords ? `<p class="source-caution">${country.alternativeRecords} dated source outlines overlap for this name.
       Dashed borders mark these unverified alternatives.</p>` : ""}
     ${country.inferredGrouping ? '<p class="country-source">This administration grouping is inferred from source names. It is not independent verification of effective control.</p>' : ""}
@@ -1035,6 +1110,10 @@ export function about(store) {
           </dl>
           <details class="flag-source-list">
             <summary>Flag image credits and licences (${FLAG_SOURCES.length}) ${icon("chevron")}</summary>
+            <p>Country names and ISO-code metadata: <a href="https://github.com/lipis/flag-icons/blob/v7.5.0/LICENSE"
+              target="_blank" rel="noopener">flag-icons, copyright Panayiotis Lipiridis, MIT licence</a>.
+              Image licences are recorded separately for each SVG.
+              ${FLAG_CATALOGUE_META.unavailableArtwork ? "Additional historical artwork remains unavailable or withheld; no modern substitutes fill those gaps." : ""}</p>
             <ul>${FLAG_SOURCES.map((source) => `<li>
               <a href="${esc(source.sourceUrl)}" target="_blank" rel="noopener">${esc(readableFlagText(source.title))}</a>
               <p>${esc(readableFlagText(source.credit))}</p>

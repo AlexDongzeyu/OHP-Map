@@ -397,6 +397,8 @@ orthographic globe.
 | `js/ui.js` | Collection profiles, media, historical controls and source panels |
 | `js/media.js` | Trusted media URLs, public Vimeo embed references and caption-status wording |
 | `js/historical-context.js` | Dated flag assets, per-file source/rights records and historical context links |
+| `js/flag-catalogue-data.js` | Generated public country-flag catalogue; rebuild from the source manifest rather than editing this file |
+| `tools/build_flag_registry.cjs` | Validates source metadata and non-overlapping dated flag intervals, then generates the public catalogue module |
 | `js/motion.js` | Reduced-motion-aware GSAP orchestration |
 | `js/app.js` | View switching, media playback, place focus, historical navigation and sharing |
 | `tools/build_atlas.cjs` | Build step: trims the vendored world-atlas TopoJSON to a compact ~51 KB Europe GeoJSON (`data/atlas-europe.json`) |
@@ -474,10 +476,42 @@ caption coverage, not full transcripts or signed caption URLs. Public embed hash
 retained when the original OHP page supplies them. An inaccessible recording is not
 reported as a confirmed captionless recording.
 
+**History → Flags** opens the searchable country and territory catalogue. Choose a
+year, open an entry to compare its recorded flag periods, or follow its available
+administration outline onto the map. The country inspector also includes flag history.
+Choose **Current** in the catalogue selector to browse present-day reference images,
+including countries whose historical dates are not yet established, without changing
+the historical map's year. Current references are never used as dated substitutes.
+Source and licence links remain beside the designs. A missing image has an explicit
+fallback without removing its country, dates or attribution.
+
+Map flags are no longer capped at eight on desktop or four on mobile. Collision-aware
+placement keeps their touch targets and labels apart; nearby flags become available
+as you zoom. A compact flag keeps its country name in its accessible label and tooltip.
+Arrow keys browse the visible flags from a single tab stop. The catalogue remains
+available for entries that do not fit on the map.
+
 Historical flags use the same mid-year sample as territory geometry. A design change
-after that sample appears in the following year. Unverified designs are omitted rather
-than replaced with a modern flag. Each displayed flag links to its dated source and rights
-information. The comparison control compares dated vector boundaries with today's basemap;
+after that sample appears in the following year. Year- and month-precision dates
+withhold their uncertain transition period rather than inventing a day. Undocumented
+dates are not filled with modern flags. A separately labelled current reference image
+is not a historical date assignment. Nazi-era Germany retains its neutral DE identifier;
+Antarctica is not assigned an unofficial proposal as a national flag. Flags identify
+recorded designs, not endorsement, sovereignty or territorial control.
+
+The additional source manifest is `data/source/country_flags.json`. After updating it
+or its local SVGs, run `node tools/build_flag_registry.cjs` and commit the generated
+module together with the source changes. Assembly checks that this module is current
+and rejects conflicting date ranges before building the site. Source acquisition
+is an explicit maintenance step, not a visitor-time request to a flag service.
+`python tools/acquire_country_flags.py --validate` checks the persisted assets,
+licences, native proportions and hashes without network access. `--acquire` performs
+source acquisition; `--replay` restores missing recorded assets without changing
+chronology. The pinned check date and editorial exception tables require review
+before refreshing sources. The manifest audit retains unavailable artwork and
+disputed chronology rather than hiding them or substituting a current flag.
+
+The comparison control compares dated vector boundaries with today's basemap;
 it is not a georeferenced scanned-map overlay. OldMapsOnline is a functional reference and
 external catalogue link, not a copied dataset. Its broader historical catalogue, battle and
 ruler database, map-upload/georeferencing service, accounts, and commercial features remain

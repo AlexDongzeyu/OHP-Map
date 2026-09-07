@@ -5,6 +5,7 @@ const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const { buildArchiveAssets, priorArchives } = require("./build_archive_assets.cjs");
+const { buildFlagRegistry } = require("./build_flag_registry.cjs");
 const {
   buildStaticRelease, prepareStaticRelease, captureStaticReleases, restorePublishedReleases,
 } = require("./build_static_release.cjs");
@@ -34,6 +35,7 @@ function copy(src, dest) {
 }
 
 async function assemble() {
+  await buildFlagRegistry({ check: true });
   const staticRelease = prepareStaticRelease(ROOT);
   const published = process.argv.includes("--restore-published")
     ? await restorePublishedReleases({ prepared: staticRelease }) : null;

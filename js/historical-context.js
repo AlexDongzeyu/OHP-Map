@@ -11,19 +11,22 @@
  * returned in that year. An unavailable flag is not evidence of statelessness.
  */
 
+import catalogueData from "./flag-catalogue-data.js";
+
 export const HISTORICAL_CONTEXT_META = Object.freeze({
   checkedOn: "2026-09-05",
+  catalogueCheckedOn: catalogueData.checkedOn,
   sampleYearOffset: 0.5,
   sampleInstant: "UTC midpoint of the selected calendar year (year + 0.5).",
   intervals: "Start inclusive; end exclusive; null end means ongoing.",
-  datePrecision: "YYYY-MM-DD is day precision; YYYY is year precision. Uncertain transition years are withheld.",
+  datePrecision: "YYYY-MM-DD is day precision, YYYY-MM is month precision and YYYY is year precision. Uncertain transition months or years are withheld.",
   purpose: "Neutral historical identification, not endorsement, recognition, or a statement of territorial control.",
   colourPolicy: "SVGs are screen renderings, not measurements of historical cloth. Schematic colours are identified explicitly.",
   resources: "External catalogue or museum links only. Relevance ranges are editorial, not dates of territorial validity. publishedYear is the work's original publication year, or null if unverified.",
   gaps: Object.freeze([
     "Canada: exact change days for the 1892 authorization, 1922 ensign and 1957 red-leaf revision are not established here; those transition years are withheld.",
     "Germany: no invented national flag for Allied occupation between May 1945 and the 1949 federal flag.",
-    "Soviet Union: 1922–1924 and the uncertain 1936 transition are withheld; 1955 geometry is never backdated. Russia's imperial, revolutionary and pre-August-1991 republican flags are not verified in this registry.",
+    "Soviet Union: 1922–1924 and the uncertain 1936 transition are withheld; 1955 geometry is never backdated. Russian, Soviet Union and regional Soviet flag records remain distinct.",
     "Poland: no modern national flag is assigned before its 1919 adoption; occupation does not erase the legal flag.",
     "Unlisted controllers and dates return null rather than a modern substitute.",
   ]),
@@ -155,14 +158,23 @@ export const FLAG_SOURCES = Object.freeze([
   diagram("pl-1980", "poland-1980.svg", "Polish national/civil flag — 1980 specification",
     "Flag of Poland.svg", "https://api.sejm.gov.pl/eli/acts/DU/1980/18",
     "Screen approximation of the statutory colours; not the state flag with an eagle."),
+  ...catalogueData.sources.map(entry => Object.freeze({ ...entry })),
 ]);
 
 const sourcesById = new Map(FLAG_SOURCES.map((entry) => [entry.id, entry]));
 
 function record(id, names, sourceId, label, start, end, note, sourceUrl) {
   const rights = sourcesById.get(sourceId);
+  if (!rights) throw new Error(`The flag source ${sourceId} is not registered.`);
+  const seen = new Set();
+  const aliases = names.filter(name => {
+    const key = normalizeController(name);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   return Object.freeze({
-    id, names: Object.freeze(names), sourceId,
+    id, names: Object.freeze(aliases), sourceId,
     src: rights.src, label, start, end,
     sourceUrl: sourceUrl || rights.historyUrl,
     license: rights.license, credit: rights.credit, note,
@@ -266,7 +278,22 @@ export const FLAG_RECORDS = Object.freeze([
   record("poland-1980", POLAND, "pl-1980",
     "Poland — national/civil bicolour (1980 colour specification)", "1980-03-11", null,
     "White above red, 5:8; screen approximation of the statutory colours. Not the state/merchant variant bearing an eagle."),
+  ...catalogueData.records.map(entry => record(
+    entry.id, entry.names, entry.sourceId, entry.label, entry.start, entry.end, entry.note, entry.sourceUrl,
+  )),
 ]);
+
+const catalogueCountries = Object.freeze(catalogueData.countries.map(entry => Object.freeze({
+  ...entry, names: Object.freeze([...new Set([entry.name, ...entry.names])]),
+})));
+
+export const FLAG_CATALOGUE_META = Object.freeze({
+  checkedOn: catalogueData.checkedOn,
+  countries: catalogueCountries.length,
+  sources: FLAG_SOURCES.length,
+  periods: FLAG_RECORDS.length,
+  ...catalogueData.summary,
+});
 
 function normalizeController(value) {
   if (typeof value !== "string") return "";
@@ -283,8 +310,19 @@ function validYear(value) {
 
 function dateLimit(value, isStart) {
   if (value === null) return isStart ? -Infinity : Infinity;
-  if (/^\d{4}$/.test(value)) return Date.UTC(Number(value) + (isStart ? 1 : 0), 0, 1);
-  return Date.parse(`${value}T00:00:00Z`);
+  const match = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/.exec(value);
+  if (!match) return NaN;
+  const year = Number(match[1]);
+  if (!match[2]) return Date.UTC(year + (isStart ? 1 : 0), 0, 1);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return NaN;
+  if (!match[3]) return Date.UTC(year, month - 1 + Number(isStart), 1);
+  const day = Number(match[3]), instant = Date.UTC(year, month - 1, day);
+  return new Date(instant).toISOString().slice(0, 10) === value ? instant : NaN;
+}
+
+export function flagInterval(entry) {
+  return { start: dateLimit(entry.start, true), end: dateLimit(entry.end, false) };
 }
 
 const recordsByController = new Map();
@@ -305,9 +343,68 @@ export function flagFor(controllerName, year) {
     .find((candidate) => instant >= dateLimit(candidate.start, true)
       && instant < dateLimit(candidate.end, false));
   if (!entry) return null;
+  return flagDetail(entry);
+}
+
+function flagDetail(entry) {
   const { src, label, start, end, sourceUrl, license, credit, note } = entry;
-  return { src, label, start, end, sourceUrl, license, credit, note,
+  return { src, label, start, end, sourceUrl, license, credit, note, countryName: entry.names[0],
+    licenseUrl: sourcesById.get(entry.sourceId)?.licenseUrl,
     ...(entry.id === "germany-1935" ? { neutralIdentifier: true } : {}) };
+}
+
+export function flagHistory(controllerName) {
+  return [...(recordsByController.get(normalizeController(controllerName)) || [])]
+    .sort((a, b) => dateLimit(a.start, true) - dateLimit(b.start, true))
+    .map(entry => ({ id: entry.id, ...flagDetail(entry) }));
+}
+
+export function flagCatalogue(year) {
+  if (validYear(year) === null) return [];
+  const countries = new Map(), aliasOwners = new Map();
+  for (const country of catalogueCountries) {
+    const lookupName = [country.name, ...country.names]
+      .find(name => recordsByController.has(normalizeController(name))) || country.name;
+    const key = normalizeController(country.name);
+    const reference = country.currentSourceId && sourcesById.get(country.currentSourceId);
+    if (country.currentSourceId && !reference) throw new Error(`The current flag reference ${country.currentSourceId} is not registered.`);
+    countries.set(key, {
+      name: country.name, lookupName, names: new Set(country.names), note: country.note, currentCountry: true,
+      currentReference: reference ? {
+        src: reference.src, label: reference.title, sourceUrl: reference.sourceUrl,
+        license: reference.license, licenseUrl: reference.licenseUrl, credit: reference.credit, note: reference.note,
+      } : null,
+    });
+    for (const name of country.names) {
+      const alias = normalizeController(name);
+      if (!aliasOwners.has(alias)) aliasOwners.set(alias, new Set());
+      aliasOwners.get(alias).add(key);
+    }
+  }
+  for (const entry of FLAG_RECORDS) {
+    const name = entry.names[0], primary = normalizeController(name), owners = aliasOwners.get(primary);
+    const key = countries.has(primary) ? primary : owners?.size === 1 ? [...owners][0] : primary;
+    if (!countries.has(key)) countries.set(key, { name, lookupName: name, names: new Set() });
+    for (const alias of entry.names) {
+      const owners = aliasOwners.get(normalizeController(alias));
+      if (!owners || owners.size === 1 && owners.has(key)) countries.get(key).names.add(alias);
+    }
+  }
+  return [...countries.values()].map(({ lookupName, names, ...country }) => ({
+    ...country, names: [...names], flag: flagFor(lookupName, year), history: flagHistory(lookupName),
+  })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function flagCatalogueMatch(entries, name, year) {
+  const key = normalizeController(name);
+  const exact = entries.find(entry => normalizeController(entry.name) === key);
+  if (exact) return exact;
+  const matches = entries.filter(entry => entry.names.some(alias => normalizeController(alias) === key));
+  if (matches.length === 1) return matches[0];
+  const flag = flagFor(name, year);
+  const dated = matches.filter(entry => entry.flag &&
+    (!flag || entry.flag.countryName === flag.countryName));
+  return dated.length === 1 ? dated[0] : null;
 }
 
 const CONTEXT_RESOURCES = Object.freeze([

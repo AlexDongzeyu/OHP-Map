@@ -3752,6 +3752,172 @@ async function searchCollection(page, query) {
     } finally { await context.close(); }
   });
 
+  await check("country flags are no longer limited to eight desktop or four mobile markers", async () => {
+    const context = await browser.createBrowserContext();
+    const flags = await context.newPage();
+    flags.on("pageerror", error => errors.push("flag density: " + error.message));
+    try {
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        await flags.setViewport(viewport);
+        await flags.goto(BASE + `/?flag-density=${viewport.width}#/patterns/2026`, { waitUntil: "domcontentloaded", timeout: 40000 });
+        const oldLimit = viewport.width > 820 ? 8 : 4;
+        await flags.waitForFunction(limit => document.querySelectorAll(".historical-flag").length > limit,
+          { timeout: 30000 }, oldLimit);
+        const placed = await flags.$$eval(".historical-flag", nodes => nodes.map(node => {
+          const box = node.getBoundingClientRect();
+          return { name: node.__data__.name, x: box.x, y: box.y, right: box.right, bottom: box.bottom,
+            width: box.width, height: box.height, tab: node.getAttribute("tabindex") };
+        }));
+        if (placed.some(item => item.width < 43.5 || item.height < 43.5)) throw new Error("a flag lost its touch target");
+        if (placed.filter(item => item.tab === "0").length !== 1) throw new Error("the flag layer added a tab stop for every country");
+        for (let first = 0; first < placed.length; first++) {
+          for (let next = first + 1; next < placed.length; next++) {
+            const a = placed[first], b = placed[next];
+            if (a.x < b.right - 1 && a.right > b.x + 1 && a.y < b.bottom - 1 && a.bottom > b.y + 1) {
+              throw new Error(`flag overlap: ${a.name} and ${b.name}`);
+            }
+          }
+        }
+        await flags.$eval(".historical-flag[tabindex='0']", marker => marker.focus({ preventScroll: true }));
+        const before = await flags.evaluate(() => document.activeElement.dataset.mapFocus);
+        await flags.keyboard.press("ArrowRight");
+        const after = await flags.evaluate(() => ({
+          flag: document.activeElement.classList.contains("historical-flag"), key: document.activeElement.dataset.mapFocus,
+        }));
+        if (!after.flag || after.key === before) throw new Error("flags cannot be browsed with arrow keys");
+      }
+    } finally { await context.close(); }
+  });
+
+  await check("the flag catalogue exposes country histories and retains the selected year", async () => {
+    const context = await browser.createBrowserContext();
+    const flags = await context.newPage();
+    flags.on("pageerror", error => errors.push("flag catalogue: " + error.message));
+    try {
+      await flags.setViewport({ width: 1440, height: 900 });
+      await flags.goto(BASE + "/#/patterns/2026", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await flags.waitForSelector(".historical-territory", { timeout: 30000 });
+      await flags.click("[data-act='browse-flags']");
+      await flags.waitForFunction(() => document.querySelectorAll("[data-flag-row]").length >= 199, { timeout: 15000 });
+      await flags.type("#flag-directory-search", "Canada");
+      await flags.click('[data-flag-name="Canada"] > summary');
+      const history = await flags.$$eval('[data-flag-name="Canada"] .flag-periods img', images => images.map(image => image.getAttribute("src")));
+      if (!history.some(src => src.endsWith("canada-red-ensign-1868.svg")) ||
+          !history.some(src => src.endsWith("canada-1965.svg"))) throw new Error("the country gallery lost earlier designs");
+      await flags.select("#flag-directory-year", "1960");
+      await flags.waitForFunction(() => document.querySelector('[data-flag-name="Canada"] .flag-directory-preview img')?.src.endsWith("canada-red-ensign-1957.svg"));
+      if (await flags.$eval("#flag-directory-search", input => input.value) !== "Canada" ||
+          !await flags.$eval('[data-flag-name="Canada"]', entry => entry.open)) throw new Error("changing year lost the country being read");
+      await flags.click('[data-flag-name="Canada"] [data-flag-controller]');
+      await flags.waitForSelector(".country-heading h3");
+      if (await flags.$("#flag-browser") || await flags.$eval("#history-year", input => input.value) !== "1960" ||
+          await flags.$eval(".country-heading h3", heading => heading.textContent) !== "Canada") {
+        throw new Error("the catalogue handoff changed the country or year");
+      }
+      await flags.click(".country-flag-history > summary");
+      if (await flags.$$eval(".country-flag-history .flag-periods li", rows => rows.length) < 4) throw new Error("the map inspector omits the flag history");
+      await flags.click("[data-act='browse-flags']");
+      await flags.select("#flag-directory-year", "1993");
+      await flags.type("#flag-directory-search", "Yugoslavia");
+      if (!await flags.$('[data-flag-name="Federal Republic of Yugoslavia"] [data-flag-controller="Yugoslavia"]') ||
+          await flags.$('[data-flag-name="Democratic Federal Yugoslavia"] [data-flag-controller]')) {
+        throw new Error("a shared historical alias assigned the map link to an obsolete administration");
+      }
+    } finally { await context.close(); }
+  });
+
+  await check("neutral and undocumented flag dates are never filled with a modern substitute", async () => {
+    const context = await browser.createBrowserContext();
+    const flags = await context.newPage();
+    flags.on("pageerror", error => errors.push("flag date honesty: " + error.message));
+    try {
+      await flags.goto(BASE + "/#/patterns/1944", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await flags.waitForSelector("[data-act='browse-flags']", { timeout: 15000 });
+      await flags.click("[data-act='browse-flags']");
+      await flags.type("#flag-directory-search", "Germany");
+      await flags.waitForSelector('[data-flag-name="Germany"]');
+      const neutral = await flags.$eval('[data-flag-name="Germany"] > summary', summary =>
+        summary.textContent.includes("Neutral historical identifier") &&
+        summary.querySelector("img")?.src.endsWith("germany-1935.svg"));
+      if (!neutral) throw new Error("the catalogue presents the Nazi-period identifier as a national flag");
+      await flags.select("#flag-directory-year", "1948");
+      await flags.waitForFunction(() => document.querySelector('[data-flag-name="Germany"] > summary')?.textContent.includes("No dated design for 1948"));
+      if (await flags.$('[data-flag-name="Germany"] > summary img')) throw new Error("a modern German flag was backdated into occupation");
+      await flags.select("#flag-directory-year", "current");
+      if (await flags.$eval("#history-year", input => input.value) !== "1948") throw new Error("current references changed the historical map date");
+      await flags.$eval("#flag-directory-search", input => { input.value = ""; input.dispatchEvent(new Event("input")); });
+      const references = await flags.evaluate(() => ({
+        countries: document.querySelectorAll("[data-flag-row]").length,
+        images: document.querySelectorAll("[data-flag-row] > summary img").length,
+      }));
+      if (references.countries !== 252 || references.images !== 251) throw new Error("current flag references are missing from the catalogue");
+      await flags.$eval("#flag-directory-search", input => {
+        input.value = "No such country in this catalogue";
+        input.dispatchEvent(new Event("input"));
+      });
+      if (!await flags.$eval("[data-flag-empty]", notice => !notice.hidden)) throw new Error("empty flag search has no recovery");
+      await flags.keyboard.press("Escape");
+      await flags.waitForFunction(() => document.getElementById("flag-browser")?.open &&
+        document.getElementById("flag-directory-search").value === "", { timeout: 10000 });
+      await flags.keyboard.press("Escape");
+      await flags.waitForFunction(() => !document.getElementById("flag-browser") &&
+        document.activeElement.dataset.act === "browse-flags", { timeout: 10000 });
+    } finally { await context.close(); }
+  });
+
+  await check("flag browsing fits small and landscape screens with keyboard navigation", async () => {
+    const context = await browser.createBrowserContext();
+    const flags = await context.newPage();
+    flags.on("pageerror", error => errors.push("flag responsive: " + error.message));
+    try {
+      for (const viewport of [{ width: 320, height: 568 }, { width: 568, height: 320 }]) {
+        await flags.setViewport(viewport);
+        await flags.goto(BASE + `/?flag-layout=${viewport.width}#/patterns/2026`, { waitUntil: "domcontentloaded", timeout: 40000 });
+        await flags.waitForSelector("[data-act='browse-flags']", { timeout: 15000 });
+        const reachable = await flags.$eval("[data-act='browse-flags']", button => {
+          const box = button.getBoundingClientRect();
+          return box.left >= 0 && box.right <= innerWidth && box.width >= 44 && box.height >= 44;
+        });
+        if (!reachable) throw new Error("the country flag control is crowded off screen");
+        await flags.click("[data-act='browse-flags']");
+        await flags.waitForSelector("#flag-browser[open]");
+        await flags.type("#flag-directory-search", "Canada");
+        await flags.keyboard.press("ArrowDown");
+        if (await flags.evaluate(() => document.activeElement.dataset.flagSummary) !== "Canada") throw new Error("country flags have no keyboard entry");
+        await flags.keyboard.press("Enter");
+        const fits = await flags.$eval("#flag-browser", dialog => {
+          const box = dialog.getBoundingClientRect(), close = dialog.querySelector("[data-act='close-research-dialog']").getBoundingClientRect();
+          return box.left >= 8 && box.right <= innerWidth - 8 && box.top >= 8 && box.bottom <= innerHeight - 8 &&
+            close.width >= 44 && close.height >= 44 && dialog.scrollWidth <= dialog.clientWidth;
+        });
+        if (!fits) throw new Error("the flag catalogue or its close control is clipped");
+        await flags.keyboard.press("Escape");
+      }
+    } finally { await context.close(); }
+  });
+
+  await check("flag image failures retain the country name, dates and source", async () => {
+    const context = await browser.createBrowserContext();
+    const flags = await context.newPage();
+    flags.on("pageerror", error => errors.push("flag image recovery: " + error.message));
+    await flags.setRequestInterception(true);
+    flags.on("request", request => request.url().endsWith("/assets/flags/canada-1965.svg")
+      ? request.respond({ status: 404, contentType: "text/plain", body: "Unavailable test flag" })
+      : request.continue());
+    try {
+      await flags.goto(BASE + "/#/patterns/2026", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await flags.waitForSelector("[data-act='browse-flags']", { timeout: 15000 });
+      await flags.click("[data-act='browse-flags']");
+      await flags.type("#flag-directory-search", "Canada");
+      await flags.waitForSelector('[data-flag-name="Canada"] > summary .flag-image-fallback:not([hidden])', { timeout: 15000 });
+      await flags.click('[data-flag-name="Canada"] > summary');
+      const content = await flags.$eval('[data-flag-name="Canada"]', entry => entry.textContent);
+      if (!content.includes("Canada") || !content.includes("1965-02-15") || !content.includes("Source and dates")) {
+        throw new Error("a failed image removed the country's historical evidence");
+      }
+    } finally { await context.close(); }
+  });
+
   for (const transfer of dataTransfers.values()) {
     if (transfer.failed < 0) continue;
     if (transfer.completed <= transfer.failed) errors.push(`unrecovered data request: ${transfer.url} (${transfer.reasons.join(", ")})`);

@@ -104,7 +104,10 @@ async function main() {
   atlas.setStore(store);
   atlas.setTooltipEl(document.getElementById("tip"));
   atlas.onUserCameraChange = () => { state.pendingHistoryCamera = null; };
-  atlas.onHistoryStatus = updateBoundaryNotice;
+  atlas.onHistoryStatus = () => {
+    updateBoundaryNotice();
+    refreshOpenFlagBrowser();
+  };
   atlas.onHistoryReady = () => {
     updateBoundaryNotice();
     if (state.view !== "patterns") return;
@@ -113,6 +116,7 @@ async function main() {
     refreshPatternEvents(true);
     atlas.render("patterns", atlasCtx());
     restoreHistoryCamera();
+    refreshOpenFlagBrowser();
   };
 
   try { await atlas.ready; }
@@ -629,32 +633,21 @@ function openBiography() {
   if (journey.biographyState !== "ready") void fillBiographyDialog(dialog, journey);
 }
 
-function openPlaceBrowser() {
-  const dialog = openResearchDialog(ui.placeBrowser(store, state), "browse-places");
-  const input = dialog.querySelector("#place-directory-search");
-  const buttons = () => [...dialog.querySelectorAll("[data-directory-row]:not([hidden]) button")];
+function wireDirectoryNavigation(dialog, input, selector) {
+  const buttons = () => [...dialog.querySelectorAll(selector)].filter(button => !button.closest("[hidden]"));
   const activate = button => {
-    dialog.querySelectorAll("[data-browse-place]").forEach(item => { item.tabIndex = item === button ? 0 : -1; });
+    dialog.querySelectorAll(selector).forEach(item => { item.tabIndex = item === button ? 0 : -1; });
   };
-  const filter = () => {
-    const query = normalizeSearch(input.value);
-    dialog.querySelectorAll("[data-directory-row]").forEach(row => { row.hidden = !row.dataset.placeSearch.includes(query); });
-    const visible = buttons();
-    activate(visible[0]);
-    dialog.querySelector("[data-directory-count]").textContent = `${visible.length} ${visible.length === 1 ? "place name" : "place names"}`;
-    dialog.querySelector("[data-directory-empty]").hidden = visible.length > 0;
-  };
-  input.addEventListener("input", filter);
   dialog.addEventListener("focusin", event => {
-    const button = event.target.closest("[data-browse-place]");
+    const button = event.target.closest(selector);
     if (button) activate(button);
   });
   dialog.addEventListener("keydown", event => {
-    if (event.ctrlKey || event.altKey || event.metaKey) return;
+    if (event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
     const visible = buttons();
     if (!visible.length) return;
-    const button = event.target.closest("[data-browse-place]");
-    if (event.target === input && event.key === "ArrowDown") {
+    const button = event.target.closest(selector);
+    if (event.target === input && ["ArrowDown", "Enter"].includes(event.key)) {
       event.preventDefault();
       activate(visible[0]); visible[0].focus();
     } else if (button && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
@@ -667,7 +660,78 @@ function openPlaceBrowser() {
       visible[next].scrollIntoView({ block: "nearest" });
     }
   });
+  return { buttons, activate };
+}
+
+function openPlaceBrowser() {
+  const dialog = openResearchDialog(ui.placeBrowser(store, state), "browse-places");
+  const input = dialog.querySelector("#place-directory-search");
+  const navigation = wireDirectoryNavigation(dialog, input, "[data-browse-place]");
+  const filter = () => {
+    const query = normalizeSearch(input.value);
+    dialog.querySelectorAll("[data-directory-row]").forEach(row => { row.hidden = !row.dataset.placeSearch.includes(query); });
+    const visible = navigation.buttons();
+    navigation.activate(visible[0]);
+    dialog.querySelector("[data-directory-count]").textContent = `${visible.length} ${visible.length === 1 ? "place name" : "place names"}`;
+    dialog.querySelector("[data-directory-empty]").hidden = visible.length > 0;
+  };
+  input.addEventListener("input", filter);
   filter();
+}
+
+function openFlagBrowser() {
+  stopHistoryPlayback();
+  const dialog = openResearchDialog(ui.flagBrowser(state.scrubYear, store.time.min, store.time.max), "browse-flags");
+  const input = dialog.querySelector("#flag-directory-search");
+  const navigation = wireDirectoryNavigation(dialog, input, "[data-flag-summary]");
+  input.addEventListener("input", () => {
+    const query = normalizeSearch(input.value);
+    const rows = [...dialog.querySelectorAll("[data-flag-row]")];
+    for (const row of rows) row.hidden = !row.dataset.flagSearch.includes(query);
+    const visible = rows.filter(row => !row.hidden);
+    const dated = visible.filter(row => row.dataset.flagAvailable === "true").length;
+    navigation.activate(navigation.buttons()[0]);
+    dialog.querySelector("[data-flag-count]").textContent =
+      dialog.dataset.currentReferences === "true"
+        ? `${visible.length} of ${rows.length} countries and territories. ${dated} current reference images.`
+        : `${visible.length} of ${rows.length} entries. ${dated} ${dated === 1 ? "dated flag" : "dated flags"} for ${state.scrubYear}.`;
+    dialog.querySelector("[data-flag-empty]").hidden = visible.length > 0 || rows.length === 0;
+  });
+  dialog.querySelector("#flag-directory-year").addEventListener("change", event => {
+    dialog.dataset.currentReferences = String(event.target.value === "current");
+    if (event.target.value === "current") refreshOpenFlagBrowser();
+    else setScrub(Number(event.target.value));
+  });
+  dialog.addEventListener("toggle", event => {
+    if (event.target.matches("[data-flag-row]") && event.target.open && event.target.contains(document.activeElement)) {
+      event.target.querySelector("summary").scrollIntoView({ block: "nearest" });
+    }
+  }, true);
+  refreshOpenFlagBrowser();
+}
+
+function refreshOpenFlagBrowser() {
+  const dialog = document.querySelector("#flag-browser[open]");
+  if (!dialog) return;
+  const body = dialog.querySelector(".research-dialog-body");
+  const scroll = body.scrollTop;
+  const opened = new Set([...dialog.querySelectorAll("[data-flag-row][open]")].map(row => row.dataset.flagName));
+  const focused = dialog.contains(document.activeElement) ? document.activeElement.closest("[data-flag-row]")?.dataset.flagName : null;
+  const href = focused && document.activeElement.getAttribute("href");
+  const current = dialog.dataset.currentReferences === "true";
+  const year = current ? store.time.max : state.scrubYear;
+  dialog.querySelector("#flag-directory-year").value = current ? "current" : state.scrubYear;
+  dialog.querySelector("[data-flag-directory]").innerHTML = ui.flagDirectory(atlas.flagCountries(year), year, atlas.historyState(), current);
+  for (const row of dialog.querySelectorAll("[data-flag-row]")) row.open = opened.has(row.dataset.flagName);
+  const input = dialog.querySelector("#flag-directory-search");
+  input.dispatchEvent(new Event("input"));
+  body.scrollTop = scroll;
+  wireImages(dialog);
+  if (focused) {
+    const row = [...dialog.querySelectorAll("[data-flag-row]:not([hidden])")].find(entry => entry.dataset.flagName === focused);
+    const target = row && (href ? [...row.querySelectorAll("a")].find(link => link.getAttribute("href") === href) : row.querySelector("summary"));
+    (target || input).focus({ preventScroll: true });
+  }
 }
 
 function refreshOpenPlaceBrowser() {
@@ -1256,6 +1320,7 @@ function setScrub(year) {
   populateHistoryLocations();
   atlas.render("patterns", atlasCtx());
   updateBoundaryNotice();
+  refreshOpenFlagBrowser();
   if (camera) atlas.focusCoordinates(camera.lng, camera.lat, camera.zoom, false);
 }
 
@@ -1366,9 +1431,10 @@ function refreshPatternEvents(preserveReading = false) {
         target.focus({ preventScroll: true });
       } else if (focused) host.focus({ preventScroll: true });
     }
-    host.querySelectorAll("img").forEach((image) => {
+    host.querySelectorAll("img:not([data-flag-image])").forEach((image) => {
       image.addEventListener("error", () => image.remove(), { once: true });
     });
+    wireImages(host);
   }
   document.querySelectorAll("[data-year]").forEach((year) => {
     if (year instanceof HTMLInputElement) year.value = state.scrubYear;
@@ -1925,6 +1991,13 @@ function wireOverlay() {
   });
 }
 function wireImages(host) {
+  host.querySelectorAll("[data-flag-image]").forEach(image => {
+    image.addEventListener("error", () => {
+      image.hidden = true;
+      image.nextElementSibling.hidden = false;
+      console.warn("A flag image could not load; its source and dates remain available.");
+    }, { once: true });
+  });
   host.querySelectorAll(".medal img").forEach((image) => {
     image.addEventListener("error", () => image.remove(), { once: true });
   });
@@ -1936,7 +2009,7 @@ function wireImages(host) {
   });
 }
 function onActivate(e) {
-  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match],[data-save-id],[data-copy-account],[data-search-suggestion],[data-browse-place],[data-copy-reference],[data-related-account]");
+  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match],[data-save-id],[data-copy-account],[data-search-suggestion],[data-browse-place],[data-copy-reference],[data-related-account],[data-flag-controller]");
   if (!t || !e.currentTarget.contains(t)) return;
   if (t.dataset.view) return go(t.dataset.view);
   if (t.dataset.layer) return setLayer(t.dataset.layer);
@@ -1955,6 +2028,19 @@ function onActivate(e) {
   if (t.dataset.browsePlace) {
     document.getElementById("place-browser").close();
     return filterPlace(t.dataset.browsePlace);
+  }
+  if (t.dataset.flagController) {
+    const dialog = document.getElementById("flag-browser");
+    const year = Number(t.dataset.flagYear);
+    if (!Number.isInteger(year) || year < store.time.min || year > store.time.max || !atlas.countryInfo(t.dataset.flagController, year)) {
+      dialog.querySelector("[data-flag-count]").textContent = "This administration outline is not available at that date. Choose another year.";
+      console.warn("The selected flag's map outline is not available for this year.");
+      return;
+    }
+    dialog.remove();
+    dialog.close();
+    if (year !== state.scrubYear) setScrub(year);
+    return selectCountry(t.dataset.flagController);
   }
   if (t.dataset.searchSuggestion) {
     onSearch(t.dataset.searchSuggestion);
@@ -1989,6 +2075,7 @@ function onActivate(e) {
     case "download-review": return downloadReviewSource();
     case "toggle-saved-view": return toggleSavedView();
     case "browse-places": return openPlaceBrowser();
+    case "browse-flags": return openFlagBrowser();
     case "close-research-dialog": return t.closest("dialog").close();
     case "share-reading-list": return shareReadingList();
     case "copy-reading-list": return copyReadingList();
