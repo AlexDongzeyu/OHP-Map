@@ -139,5 +139,5 @@ console.log(JSON.stringify({text:collectionCitations(journeys,new Date(2026,8,6,
     assert '2 accounts' in data["text"]
     assert '"Amek Adler."' in data["text"] and '"Martin Baranek."' in data["text"]
     assert data["text"].count("Accessed September 6, 2026.") == 2
-    assert "not verbatim transcripts" in data["text"] and "No interview dates are inferred" in data["text"]
+    assert "not verbatim transcripts" in data["text"] and "do not infer interview dates" in data["text"]
     assert data["invalid"]

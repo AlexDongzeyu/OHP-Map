@@ -101,7 +101,7 @@ export function captionStatus(video) {
   switch (video.status) {
     case "captioned": return "Public captions are available.";
     case "no-public-captions": return "Vimeo does not provide public captions for this chapter.";
-    case "unavailable": return "Inline playback is unavailable. Open the original OHP page.";
+    case "unavailable": return "Playback is unavailable here. Open the original OHP page.";
     case "caption-track-unavailable": return "Vimeo lists captions, but the caption file was unavailable.";
     default: return "Caption availability has not been confirmed.";
   }

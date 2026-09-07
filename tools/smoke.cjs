@@ -348,7 +348,8 @@ async function navigateSource(page, action) {
     await page.click(`[data-survivor='${unplaced.id}']`);
     await page.waitForSelector(".profile-places .section-note", { timeout: 5000 });
     const note = await page.$eval(".profile-places .section-note", (element) => element.textContent);
-    if (!note.includes("no located place references") || await page.$(".selected-place-ring") || await page.$("[data-mini]")) {
+    if (!note.includes("has no mapped places") || !note.includes("does not tell us where they travelled") ||
+        await page.$(".selected-place-ring") || await page.$("[data-mini]")) {
       throw new Error("an unplaced account was given fabricated map geometry");
     }
     await page.click(".panel-close");
@@ -816,7 +817,7 @@ async function navigateSource(page, action) {
         eventState.territories < 140 ||
         !eventState.occupied ||
         !eventState.corridorEvidence ||
-        (!eventState.corridors && !/No shared city\/site routes/.test(eventState.routeAvailability || "")) ||
+        (!eventState.corridors && !/No shared city or site routes have enough date evidence/.test(eventState.routeAvailability || "")) ||
         eventState.corridors > 8) {
       throw new Error(`historical war layer is incomplete ${JSON.stringify(eventState)}`);
     }
@@ -3423,7 +3424,7 @@ async function navigateSource(page, action) {
       if (!rows.length || rows.length > 3 || rows.some(row => row.id === "adam-wally" || !row.why.includes("Also names"))) {
         throw new Error("related accounts lack a specific source-based reason");
       }
-      if (!await related.$eval(".related-reading > p", note => note.textContent.includes("do not establish shared travel or contact"))) {
+      if (!await related.$eval(".related-reading > p", note => note.textContent.includes("does not mean the people travelled together or met"))) {
         throw new Error("related reading implies an unsupported personal connection");
       }
       const target = rows[0].id;
@@ -4365,7 +4366,7 @@ async function navigateSource(page, action) {
       fail = false;
       await interview.click("[data-act='retry-profile']");
       await interview.waitForSelector(`a[data-chapter-id='${unavailable.id}'][aria-current='true']`, { timeout: 15000 });
-      if (await interview.$("[data-player-frame] iframe") || !await interview.$eval("[data-chapter-notice]", notice => notice.textContent.includes("Inline playback is unavailable"))) {
+      if (await interview.$("[data-player-frame] iframe") || !await interview.$eval("[data-chapter-notice]", notice => notice.textContent.includes("Playback is unavailable here"))) {
         throw new Error("retry invented a player or lost the unavailable chapter");
       }
       await interview.click(".video-chapter[data-video]");

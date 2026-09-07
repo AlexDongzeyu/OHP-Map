@@ -32,7 +32,8 @@ console.log(JSON.stringify({status:response.status,html,requested}));
     assert result["status"] == 200
     assert 'href="/survivor/adler-amek?reader=source"' in result["html"]
     assert 'href="/survivor/ferguson-george?reader=source"' not in result["html"]
-    assert "published snapshot" in result["html"]
+    assert "This edition of the catalogue" in result["html"]
+    assert "may have more recent source updates" in result["html"]
     assert result["requested"] == ["/data/source-catalogue.json"]
     assert "<script" not in result["html"]
     assert "/releases/" + "a" * 64 + "/css/source-catalogue.css" in result["html"]

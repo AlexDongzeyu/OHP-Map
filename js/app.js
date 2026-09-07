@@ -637,7 +637,7 @@ function manageSavedList() {
   function update() {
     dialog.querySelector("[data-saved-backup-count]").textContent = state.savedError
       ? "The current saved list could not be read. Existing saved data has not been changed."
-      : `${state.savedIds.size} saved ${state.savedIds.size === 1 ? "account" : "accounts"}. Includes all saved accounts, regardless of filters.`;
+      : `${state.savedIds.size} saved ${state.savedIds.size === 1 ? "account" : "accounts"}. The backup includes all saved accounts, regardless of filters.`;
     download.disabled = !state.savedIds.size || Boolean(state.savedError);
     if (!pending) return;
     const added = [...pending].filter(id => !state.savedIds.has(id)).length;
@@ -1359,7 +1359,7 @@ function restoreChapter(journey) {
     const index = journey.media.videos.indexOf(video) + 1;
     state.chapterMessage = playerURL(video)
       ? `Chapter ${index} is selected below. Choose its play button to load the recording.`
-      : `Chapter ${index} is selected below. Inline playback is unavailable; its link opens the original OHP page.`;
+      : `Chapter ${index} is selected below. Playback is unavailable here; its link opens the original OHP page.`;
   } else if (!state.chapterMessage) {
     state.chapterMessage = "This chapter is no longer listed in this account. Choose an available chapter or open the original OHP page.";
   }
@@ -1685,8 +1685,8 @@ function refreshPatternEvents(preserveReading = false) {
   if (next) next.disabled = state.scrubYear >= store.time.max;
   const routeNotice = document.querySelector("[data-route-availability]");
   if (routeNotice) routeNotice.textContent = store.corridorsForYear(state.scrubYear).length
-    ? "Only person-linked city/site pairs dated to this year are connected."
-    : "No shared city/site routes have sufficient date evidence for this year.";
+    ? "Connections use only cities and sites linked to the person and dated to this year."
+    : "No shared city or site routes have enough date evidence for this year.";
   if (!preserveReading) motion.animatePatternEvent();
 }
 

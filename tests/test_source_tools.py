@@ -67,7 +67,7 @@ console.log(JSON.stringify({
   citation:html.includes('Accessed September 6, 2026.'),
   source:html.includes(journey.archiveUrl),
   context:html.includes('Other places in the source'),
-  honest:html.includes('Not fully reviewed')&&html.includes('not a verbatim interview transcript'),
+  honest:html.includes('not been fully reviewed')&&html.includes('not a verbatim interview transcript'),
   privateFilter:html.includes('q=private')||html.includes('saved=1'),
   interactive:html.includes('data-place-step')||html.includes('<iframe'),
 }));
@@ -116,7 +116,7 @@ console.log(JSON.stringify({
   excluded:html.includes('Wally Adam'),missing:html.includes('1 account in the shared link is not available'),
   dates:(html.match(/Accessed September 6, 2026/g)||[]).length,
   privateFilter:html.includes('q=private')||html.includes('saved=1'),
-  caveat:html.includes('No interview dates are inferred'),
+  caveat:html.includes('do not infer interview dates'),
 }));
 """)
     assert data["count"] and data["first"] and data["second"] and data["missing"] and data["caveat"]

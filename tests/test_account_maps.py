@@ -20,7 +20,7 @@ for(const journey of store.journeys){
   if(!html.includes('data-mini')||!html.includes('Current borders')||!html.includes('Open larger map'))failures.push(journey.id);
  }else{
   unlocated++;
-  if(html.includes('data-mini')||!html.includes('No account locations to plot yet.')||!html.includes(journey.archiveUrl))failures.push(journey.id);
+  if(html.includes('data-mini')||!html.includes('No places from this account have been mapped yet.')||!html.includes(journey.archiveUrl))failures.push(journey.id);
  }
 }
 console.log(JSON.stringify({accounts:store.journeys.length,mapped,unlocated,withoutRoute,failures}));
@@ -43,7 +43,7 @@ const unreviewed=show([{...p,evidenceScope:'uncertain'},{...p,lng:2.3,evidenceSc
 const route=show([p,{...p,lng:2.3}]);
 console.log(JSON.stringify({
  noPromise:[single,repeated,broad,unreviewed].every(html=>html.includes('data-mini')&&!html.includes('Lines connect')),
- route:route.includes('Lines connect source-linked city and site references, not exact travel paths.'),
+ route:route.includes('Lines connect cities and sites linked to this person in the source.')&&route.includes('They do not show exact travel paths.'),
  escaped:single.includes('&lt;script&gt;')&&!single.includes('<script>'),
 }));
 """)
@@ -57,6 +57,6 @@ const {accountMapOverview}=await import('./js/ui.js');
 const journey={name:'Unlocated account',archiveUrl:'https://ohp.crestwood.on.ca/ohp/test/',
  waypoints:[{lat:null,lng:null},{lat:Infinity,lng:NaN}],routeWaypoints:[]};
 const html=accountMapOverview(journey);
-console.log(JSON.stringify({empty:html.includes('data-mini'),source:html.includes(journey.archiveUrl),notice:html.includes('No account locations to plot yet.')}));
+console.log(JSON.stringify({empty:html.includes('data-mini'),source:html.includes(journey.archiveUrl),notice:html.includes('No places from this account have been mapped yet.')}));
 """)
     assert not data["empty"] and data["source"] and data["notice"]

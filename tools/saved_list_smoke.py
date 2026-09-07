@@ -259,8 +259,8 @@ def unavailable_account_checks(browser, base, output, errors):
     context.on("page", lambda page: page.on("pageerror", lambda error: errors.append(str(error))))
     try:
         page = open_saved(context, base, ["unavailable-backup-test"], width=320)
-        expect(page.locator(".rail-empty")).to_contain_text("Saved accounts are not in this snapshot")
-        expect(page.locator("[data-explore-hint]")).to_contain_text("Your saved accounts are not in this snapshot")
+        expect(page.locator(".rail-empty")).to_contain_text("Saved accounts are missing from this version of the archive")
+        expect(page.locator("[data-explore-hint]")).to_contain_text("These saved accounts are missing from this version of the archive")
         notice = page.locator("[data-reading-list-tools] .shared-list-warning")
         expect(notice).to_contain_text("1 account is not available")
         expect(notice).to_contain_text("remains in your saved list and backups")
@@ -270,7 +270,7 @@ def unavailable_account_checks(browser, base, output, errors):
         page.locator(".saved-view").click()
         with page.expect_navigation(wait_until="networkidle"):
             page.locator("[data-act='reload-collection']").click()
-        expect(page.locator(".rail-empty")).to_contain_text("Saved accounts are not in this snapshot")
+        expect(page.locator(".rail-empty")).to_contain_text("Saved accounts are missing from this version of the archive")
         manage(page)
         assert page.locator("[data-download-saved-backup]").evaluate("(button) => button.classList.contains('btn-ghost')")
         assert download(page, output / "saved-backup-unavailable.json")["ids"] == ["unavailable-backup-test"]
@@ -280,7 +280,7 @@ def unavailable_account_checks(browser, base, output, errors):
         expect(notice).to_contain_text("1 account is not available")
         page.locator("#search").fill("no-match-in-this-collection")
         expect(page.locator(".rail-empty")).to_contain_text("No account matches every search term")
-        expect(page.locator(".rail-empty")).not_to_contain_text("Saved accounts are not in this snapshot")
+        expect(page.locator(".rail-empty")).not_to_contain_text("Saved accounts are missing from this version of the archive")
         expect(page.locator("[data-explore-hint]")).to_contain_text("No accounts match these filters")
         page.locator(".rail-empty [data-act='reset-search']").click()
         expect(page.locator(".rail [data-survivor='adam-wally']")).to_be_visible()

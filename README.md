@@ -179,7 +179,7 @@ change the target; changed or ambiguous evidence produces a readable recovery no
 instead of focusing the wrong place. A mention moved into retained source context
 opens there without being promoted back into a personal route.
 
-**Continue through shared places** offers up to three other accounts within the
+**Other accounts naming these places** offers up to three other accounts within the
 current results, with the shared city/site names shown explicitly. Country-level
 references and contextual-only mentions do not drive the suggestions. These are
 connections between source mentions, not claims of shared travel, contact or meetings.

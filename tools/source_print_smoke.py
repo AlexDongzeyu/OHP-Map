@@ -82,7 +82,7 @@ def verify(base, output, executable):
             document, text = pdf_text(path)
             assert "Amek Adler" in text and "Martin Baranek" in text and "Wally Adam" not in text
             assert len(document.pages) == 1, "Two source citations created an unnecessary extra page"
-            assert text.count("Accessed") == 2 and "No interview dates are inferred" in text
+            assert text.count("Accessed") == 2 and "do not infer interview dates" in text
             assert page.evaluate("localStorage.getItem('ohp-map.saved-accounts.v1')") == saved
             results.append({"reading_list": 2, "pages": len(document.pages), "private_saves_unchanged": True})
 

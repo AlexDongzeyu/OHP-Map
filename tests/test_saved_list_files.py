@@ -125,11 +125,11 @@ const {railInner,readingListTools,savedViewLabel,savedListDialog,exploreHint}=aw
 const store={journeys:[],byId:new Map(),groups:[]};
 const state={savedOnly:true,savedIds:new Set(['not-currently-public']),groupFilter:new Set(),query:'',savedError:''};
 const empty=railInner(store,state).html,tools=readingListTools(store,state);
-console.log(JSON.stringify({unavailable:empty.includes('Saved accounts are not in this snapshot'),
+console.log(JSON.stringify({unavailable:empty.includes('Saved accounts are missing from this version of the archive'),
   notEmpty:!empty.includes('Keep an account for later'),retained:tools.includes('remains in your saved list and backups'),
   retry:tools.includes('data-act="reload-collection"'),
   count:savedViewLabel(store,{...state,savedOnly:false}).includes('<span>1</span>'),
-  map:exploreHint(store,state,0).includes('Your saved accounts are not in this snapshot'),
+  map:exploreHint(store,state,0).includes('These saved accounts are missing from this version of the archive'),
   secondary:savedListDialog(state).includes('class="btn btn-ghost" data-download-saved-backup')}));
 """)
     assert all(data.values()), data
@@ -151,10 +151,10 @@ const state={savedOnly:true,savedIds:new Set(mode==='empty'?[]:mode==='filtered'
 console.log(JSON.stringify({html:railInner(store,state).html,tools:readingListTools(store,state),
   hint:exploreHint(store,state,0)}));
 """ % json.dumps(mode))
-    assert "Saved accounts are not in this snapshot" not in data["html"]
+    assert "Saved accounts are missing from this version of the archive" not in data["html"]
     if mode == "empty":
         assert "Keep an account for later" in data["html"]
-        assert "not available in this archive snapshot" not in data["tools"]
+        assert "not available in this version of the archive" not in data["tools"]
         assert "saved list is empty" in data["hint"]
     elif mode == "filtered":
         assert "No communities selected" in data["html"]
@@ -163,5 +163,5 @@ console.log(JSON.stringify({html:railInner(store,state).html,tools:readingListTo
         assert "No accounts match these filters" in data["hint"]
     else:
         assert "Saved accounts are unavailable" in data["html"]
-        assert "not available in this archive snapshot" not in data["tools"]
+        assert "not available in this version of the archive" not in data["tools"]
         assert "saved list could not be read" in data["hint"]

@@ -983,7 +983,7 @@ export function createAtlas(container) {
     const tabController = placed.find(entry => entry.controller === activeFlagController)?.controller ||
       placed.find(entry => entry.controller === pinnedController)?.controller || placed[0]?.controller;
     const accessibleLabel = entry => `Inspect ${entry.name} in ${year}${entry.flag.neutralIdentifier
-      ? ". Text-only neutral territorial identifier, not a historical flag." : ""}`;
+      ? ". Neutral text label for the territory, not a historical flag." : ""}`;
     const groups = historicalFlagsG.selectAll(".historical-flag").data(placed, (entry) => entry.name)
       .join((enter) => {
         const group = enter.append("g").attr("class", "historical-flag")
@@ -1394,9 +1394,9 @@ export function createAtlas(container) {
   }
   function referenceDescription(point) {
     const meaning = {
-      precise: "Personal city or site reference.",
+      precise: "City or site linked to this person in the source.",
       broad: "Broad area reference, not a precise travel point.",
-      review: "Unreviewed source mention, not verified personal travel.",
+      review: "This source mention needs review. It does not verify personal travel.",
     }[referenceKind(point)];
     return `${point.canonical || point.asWritten || "Unnamed place"}. ${point.locationPrecision || "Unknown"}-level reference. ${meaning} Open the source entry.`;
   }
@@ -1477,7 +1477,7 @@ export function createAtlas(container) {
     for (const cluster of clusters) {
       const radius = Math.min(17, 5 + Math.sqrt(cluster.count) * 1.4);
       const precision = [...cluster.precisions].sort().join(" / ");
-      const description = `${cluster.canonical}. ${precision}-level reference. ${cluster.count} ${cluster.count === 1 ? "account names" : "accounts name"} this place.${cluster.review ? " Includes unreviewed mentions." : ""} Naming a place does not establish verified presence. Open these accounts.`;
+      const description = `${cluster.canonical}. ${precision}-level reference. ${cluster.count} ${cluster.count === 1 ? "account names" : "accounts name"} this place.${cluster.review ? " Some mentions still need review." : ""} Naming a place does not confirm that a person was there. Open these accounts.`;
       const marker = g.append("g").datum(cluster)
         .attr("class", `place-cluster map-reference--${cluster.kind}`)
         .attr("role", "button").attr("tabindex", cluster.key === activeClusterKey ? 0 : -1)
@@ -1721,8 +1721,8 @@ export function createAtlas(container) {
       .attr("class", "mini-route").attr("fill", "none").attr("stroke", col).attr("stroke-width", 1.8)
       .attr("stroke-linecap", "round").attr("stroke-linejoin", "round")
       .attr("paint-order", "stroke");
-    sel.append("desc").text(`Current borders for orientation, not historical territorial claims. ${
-      route ? "Lines connect source-linked city and site references, not exact travel paths." : "These references do not establish a connected journey."
+    sel.append("desc").text(`Current borders help you locate the places; they do not show historical territorial claims. ${
+      route ? "Lines connect cities and sites linked to this person in the source, not exact travel paths." : "These references do not establish a connected journey."
     } ${pts.map(point => point.canonical).join("; ")}.`);
     const occupied = pts.map(point => {
       const { x, y } = position(point);
@@ -1735,7 +1735,7 @@ export function createAtlas(container) {
         .attr("fill", kind === "precise" ? col : C.ocean)
         .attr("stroke", col).attr("stroke-width", kind === "precise" ? .8 : 1.2)
         .attr("stroke-dasharray", kind === "review" ? "2 1.5" : null)
-        .append("title").text(`${point.canonical}. ${kind === "precise" ? "Source-linked city or site reference"
+        .append("title").text(`${point.canonical}. ${kind === "precise" ? "City or site linked to the person in the source"
           : kind === "broad" ? "Broad geographic reference" : "Source mention needing review"}.`);
     }
     const labelled = new Set();

@@ -62,8 +62,8 @@ ${params.size ? '<meta name="robots" content="noindex,follow">' : ""}
 <a href="https://ohp.crestwood.on.ca/" rel="noopener">Original OHP archive</a></nav></header>
 <main>
 <h1>Source catalogue</h1>
-<p class="catalogue-intro">Read accounts without the interactive map. This published snapshot contains ${catalogue.entries.length.toLocaleString("en-CA")} accounts;
-the interactive collection may include more recent source updates.</p>
+<p class="catalogue-intro">Read accounts without loading the map. This edition of the catalogue contains ${catalogue.entries.length.toLocaleString("en-CA")} accounts.
+The interactive collection may have more recent source updates.</p>
 <form action="/collection#catalogue-results" method="get" class="catalogue-search">
 <label>Find an account<input name="q" type="search" maxlength="200" value="${esc(query)}" placeholder="Name, place or period" aria-describedby="catalogue-search-help"></label>
 <label>Community<select name="group"><option value="">All communities</option>${groups.map(name =>
@@ -73,11 +73,11 @@ the interactive collection may include more recent source updates.</p>
 <section id="catalogue-results" tabindex="-1" aria-labelledby="catalogue-result-title">
 <h2 id="catalogue-result-title">${invalid ? "This catalogue address is not supported" : missing ? "This results page is not available"
     : `${matches.length.toLocaleString("en-CA")} ${matches.length === 1 ? "account" : "accounts"}${query || group ? " found" : ""}`}</h2>
-${status !== 200 ? `<p>${invalid ? "Use a search of at most 200 characters, one listed community and a positive whole page number."
+${status !== 200 ? `<p>${invalid ? "Keep searches to 200 characters or fewer. Choose one of the listed communities and use a whole page number of 1 or higher."
     : "The selected page is outside these results."}</p><a href="${esc(catalogueAddress(query.length <= 200 ? query : "", groups.includes(group) ? group : ""))}">Return to the first results page</a>`
     : entries.length ? `<ul class="catalogue-accounts">${entries.map(entry =>
       `<li><a href="/survivor/${esc(entry.id)}?reader=source"><span>${esc(entry.name)}</span><small>${esc(entry.group)}</small></a></li>`).join("")}</ul>`
-      : '<p>No accounts match every term in this snapshot. Try fewer words, another spelling or a different community.</p>'}
+      : '<p>No accounts in this edition match every search term. Try fewer words, another spelling or a different community.</p>'}
 ${status === 200 && pages > 1 ? `<nav class="catalogue-pages" aria-label="Results pages">
 ${page > 1 ? `<a rel="prev" href="${esc(catalogueAddress(query, group, page - 1))}#catalogue-results">Previous</a>` : "<span></span>"}
 <span>Page ${page} of ${pages}</span>

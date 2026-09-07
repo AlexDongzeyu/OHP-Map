@@ -168,8 +168,8 @@ export function collectionCitations(journeys, accessed = new Date()) {
   if (!journeys.length) throw new CitationError("There are no accounts in this selection to cite.");
   return `Crestwood Oral History Project - reading list\n${journeys.length} ${journeys.length === 1 ? "account" : "accounts"}\n\n` +
     journeys.map(journey => accountCitation(journey, accessed)).join("\n\n") +
-    "\n\nThese citations refer to the original OHP pages, not verbatim transcripts. No interview dates are inferred. " +
-    "Mapped references may require human review.\n";
+    "\n\nThese citations refer to the original OHP pages, not verbatim transcripts. The citations do not infer interview dates. " +
+    "Mapped references may still need human review.\n";
 }
 
 export async function copyText(text, clipboard) {

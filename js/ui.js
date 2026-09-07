@@ -41,8 +41,8 @@ export function landing(store) {
         </div>
       </section>
       <p class="landing-source-note">${store.journeys.filter((journey) => journey.reviewStatus === "reviewed").length
-        ? "Reviewed and pending map references are labelled in each account."
-        : "Map references are drawn from public summaries and await human review."}</p>
+        ? "Each account labels reviewed map references and those still awaiting review."
+        : "Map references come from public summaries and still need human review."}</p>
     </div>
   </div>`;
 }
@@ -229,12 +229,12 @@ export function railInner(store, state) {
     const suggestions = state.query ? searchSuggestions(store, state) : [];
     html = `<div class="rail-empty" tabindex="-1" role="region" aria-label="Collection results"><p>${emptyShared ? "These accounts are not available yet" : emptySaved
       ? (state.savedError ? "Saved accounts are unavailable" : unavailableSaved
-        ? "Saved accounts are not in this snapshot" : "Keep an account for later")
+        ? "Saved accounts are missing from this version of the archive" : "Keep an account for later")
       : state.groupFilter.size ? (state.query ? "No account matches every search term" : "No matching accounts") : "No communities selected"}</p>
-      <span>${emptyShared ? "The link has been kept intact. Reload the collection to check for updates, or browse the available accounts."
+      <span>${emptyShared ? "The link still includes every account in the list. Reload the collection to check for updates, or browse the available accounts."
         : emptySaved ? (state.savedError
         ? "Your existing list has not been changed. You can browse the collection and copy account links instead."
-        : unavailableSaved ? "The saved identifiers have been kept. Check again for archive updates, or use Back up or restore to keep a copy."
+        : unavailableSaved ? "Your list still keeps these entries. Check again for archive updates, or use Back up or restore to keep a copy."
         : "Use the bookmark beside a name or Save account in the reader. You can return to your list here.")
         : !state.groupFilter.size ? "Select at least one community to search this collection."
         : state.query ? "Try fewer words or a different spelling. Double quotes keep a phrase together. Search covers names, places, periods and topics, not full biographies or transcripts."
@@ -258,7 +258,7 @@ export function exploreHint(store, state, total) {
   if (total) return "Choose an account or a place marker to explore its source references.";
   if (state.savedOnly && !savedCount(store, state)) {
     if (state.savedError) return "Your saved list could not be read. Browse available accounts or allow browser storage to try again.";
-    if (state.savedIds.size) return "Your saved accounts are not in this snapshot. Their identifiers have been kept. Check again for archive updates.";
+    if (state.savedIds.size) return "These saved accounts are missing from this version of the archive. Your list still keeps their entries. Check again for updates.";
     return "Your saved list is empty. Browse the collection and save an account to map its references.";
   }
   return "No accounts match these filters. Reset the filters or try a different spelling.";
@@ -288,8 +288,8 @@ export function readingListTools(store, state) {
   const listIds = state.sharedIds || (state.savedOnly && !state.savedError ? state.savedIds : null);
   const missing = listIds ? [...listIds].filter(id => !store.byId.has(id)).length : 0;
   const allSaved = results.length && results.every(journey => state.savedIds.has(journey.id));
-  return `${state.sharedIds ? `<p class="shared-list-note">A shared selection of public accounts. Opening this link does not change your saved accounts.</p>` : ""}
-    ${missing ? `<p class="shared-list-warning" role="status">${missing} ${missing === 1 ? "account is" : "accounts are"} not available in this archive snapshot.
+  return `${state.sharedIds ? `<p class="shared-list-note">Someone shared this list of public accounts. Opening it does not change your saved accounts.</p>` : ""}
+    ${missing ? `<p class="shared-list-warning" role="status">${missing} ${missing === 1 ? "account is" : "accounts are"} not available in this version of the archive.
       ${state.sharedIds ? "" : `${missing === 1 ? "It remains" : "They remain"} in your saved list and backups.`}
       <button class="link" data-act="reload-collection">Check again</button></p>` : ""}
     <div class="reading-list-actions">
@@ -310,16 +310,16 @@ function researchDialog(id, title, body) {
 
 export function savedListDialog(state) {
   return researchDialog("saved-list-dialog", "Your saved list", `
-    <p class="research-dialog-intro">Keep a copy you can restore in another browser. Backups keep your selection, not biographies or videos. Nothing is uploaded.</p>
+    <p class="research-dialog-intro">Download your saved list to keep a copy or move it to another browser. The backup contains your selection, not biographies or videos. The site does not upload it.</p>
     <section class="saved-backup-section" aria-labelledby="saved-backup-heading">
       <h3 id="saved-backup-heading">Keep a copy</h3>
-      <p data-saved-backup-count>${state.savedIds.size} saved ${state.savedIds.size === 1 ? "account" : "accounts"}. Includes all saved accounts, regardless of filters.</p>
+      <p data-saved-backup-count>${state.savedIds.size} saved ${state.savedIds.size === 1 ? "account" : "accounts"}. The backup includes all saved accounts, regardless of filters.</p>
       <button class="btn btn-ghost" data-download-saved-backup${state.savedIds.size && !state.savedError ? " autofocus" : " disabled"}>Download backup</button>
       <p class="reference-status" data-saved-backup-status role="status">${esc(state.savedError)}</p>
     </section>
     <section class="saved-backup-section" aria-labelledby="saved-restore-heading">
       <h3 id="saved-restore-heading">Restore from a backup</h3>
-      <p id="saved-backup-help">Preview an OHP backup before adding its accounts. Your current saved accounts stay saved.</p>
+      <p id="saved-backup-help">Preview an OHP backup before adding its accounts. Restoring it keeps everything already in your saved list.</p>
       <label for="saved-backup-file">Choose a saved-list backup</label>
       <input id="saved-backup-file" type="file" accept=".json,application/json" aria-describedby="saved-backup-help"${!state.savedIds.size || state.savedError ? " autofocus" : ""}>
       <p class="reference-status" data-saved-import-status role="status"></p>
@@ -334,8 +334,8 @@ export function savedListDialog(state) {
 export function savedListFilePreview(ids, store) {
   const available = [...ids].map(id => store.byId.get(id)).filter(Boolean);
   const missing = ids.size - available.length;
-  return `${missing ? `<p class="shared-list-warning">${missing} ${missing === 1 ? "account is" : "accounts are"} not available in this archive snapshot.
-      ${missing === 1 ? "Its identifier will" : "Their identifiers will"} stay in your saved list and future backups, but cannot be opened here yet.</p>` : ""}
+  return `${missing ? `<p class="shared-list-warning">${missing} ${missing === 1 ? "account is" : "accounts are"} not available in this version of the archive.
+      Your saved list and future backups will keep ${missing === 1 ? "this entry" : "these entries"}, even though you cannot open ${missing === 1 ? "it" : "them"} here yet.</p>` : ""}
     <ul class="reading-list-preview">${available.slice(0, 3).map(journey => `<li>${esc(journey.name)}</li>`).join("")}
       ${available.length > 3 ? `<li class="reading-list-more">And ${available.length - 3} more available accounts</li>` : ""}</ul>`;
 }
@@ -345,16 +345,16 @@ export function biographyContent(journey) {
     const paragraphs = journey.fullBiography.trim().split(/\n\s*\n/);
     const words = journey.fullBiography.trim().split(/\s+/).length;
     return `<p class="biography-source-label">Public OHP biography · ${words} words</p>
-      <p class="research-dialog-note">This is the saved text of the original OHP biography, not a verbatim interview transcript. Map references remain separately qualified.</p>
+      <p class="research-dialog-note">This is a saved copy of the original OHP biography, not a verbatim interview transcript. Each map reference has its own accuracy and review notes.</p>
       <div class="full-biography-text" tabindex="0" aria-label="Full source biography">${paragraphs.map(paragraph => `<p>${esc(paragraph)}</p>`).join("")}</div>`;
   }
   if (journey.biographyState === "error") {
     return `<div class="biography-recovery" role="status"><h3>The full biography could not load</h3>
-      <p>${esc(journey.biographyError || "The source text is not available in this snapshot.")}</p>
+      <p>${esc(journey.biographyError || "The source text is not available in this version of the archive.")}</p>
       <button class="link" data-act="retry-biography">Try again</button></div>`;
   }
   return `<div class="biography-loading" role="status"><p>Loading the full source biography</p>
-    <p>The excerpt, recorded places and original OHP page remain available.</p></div>`;
+    <p>You can still read the excerpt, browse the recorded places or open the original OHP page.</p></div>`;
 }
 
 export function biographyDialog(journey) {
@@ -385,8 +385,8 @@ function flagPeriods(records) {
 
 export function flagBrowser(year, minimum, maximum) {
   return researchDialog("flag-browser", "Country flags", `
-    <p class="research-dialog-intro">Choose Current for present-day reference flags, or a year for documented historical designs.
-      Flags that do not fit on the map remain accessible here.</p>
+    <p class="research-dialog-intro">Choose Current to see today's reference flags, or choose a year for documented historical designs.
+      You can browse flags here even when they do not fit on the map.</p>
     <div class="flag-browser-controls">
       <label>Find a flag<input id="flag-directory-search" class="search-input" type="search"
         placeholder="Country or historical name" autocomplete="off" autofocus></label>
@@ -396,16 +396,16 @@ export function flagBrowser(year, minimum, maximum) {
     <p class="directory-count" data-flag-count role="status"></p>
     <div data-flag-directory></div>
     <p class="directory-empty" data-flag-empty hidden>No names match. Try another spelling or clear the search.</p>
-    <p class="research-dialog-note">The atlas samples the middle of each year. Uncertain transition dates are withheld.
+    <p class="research-dialog-note">The atlas shows the middle of each year. It leaves out designs when their transition dates are uncertain.
       A missing entry is a gap in this catalogue, not evidence that a country had no flag.
       Flags do not establish sovereignty or territorial control.
-      ${FLAG_CATALOGUE_META.unavailableArtwork ? "Some additional historical images remain unavailable or have been withheld after validation." : ""}</p>`);
+      ${FLAG_CATALOGUE_META.unavailableArtwork ? "Some historical images could not be obtained or were left out after checks." : ""}</p>`);
 }
 
 export function flagDirectory(entries, year, status, current = false) {
   return `${status !== "ready" ? `<p class="directory-empty" role="status">${status === "error"
-    ? `The historical country outlines could not load. Recorded flag designs remain available below.`
-    : "The historical country outlines are loading. Recorded flag designs are available below."}
+    ? `The historical country outlines could not load. You can still browse the recorded flag designs below.`
+    : "The historical country outlines are loading. You can browse the recorded flag designs below."}
     ${status === "error" ? '<button class="link" data-act="retry-history">Retry country outlines</button>' : ""}</p>` : ""}
     <div class="flag-directory-list">${entries.filter(country => !current || country.currentCountry).map(country => {
       const preview = current ? country.currentReference : country.flag;
@@ -422,7 +422,7 @@ export function flagDirectory(entries, year, status, current = false) {
         </summary>
         <div class="flag-directory-detail">
           ${country.note ? `<p class="flag-note">${esc(country.note)}</p>` : ""}
-          ${current ? '<p class="flag-note">Current reference images are not assigned to earlier dates. Choose a year to see its documented design.</p>' : ""}
+          ${current ? '<p class="flag-note">Current reference images are not assigned to earlier dates. Choose a year to see the design documented for it.</p>' : ""}
           ${country.controller ? `<button class="link flag-view-map" data-flag-controller="${esc(country.controller)}" data-flag-year="${year}">View this administration on the ${year} map ${icon("arrow-right")}</button>`
             : `<p class="flag-note">No matching administration outline is available in this map for ${year}.</p>`}
           ${country.history.length ? `<h3>Flag history</h3>${flagPeriods(country.history)}`
@@ -440,8 +440,8 @@ export function placeBrowser(store, state) {
   const precision = { city: "City reference", site: "Site reference", country: "Country reference",
     region: "Regional reference", mixed: "Mixed precision", unknown: "Location needs review" };
   return researchDialog("place-browser", "Place index", `
-    <p class="research-dialog-intro">Find a place named in the current search and selected communities${state.savedOnly ? ", within your saved accounts" : state.sharedIds ? ", within this reading list" : ""}${state.captionedOnly ? ", among accounts with listed captions" : ""}.
-      Choosing a name replaces any active place filter.</p>
+    <p class="research-dialog-intro">Browse places named in your current results${state.savedOnly ? ", within your saved accounts" : state.sharedIds ? ", within this reading list" : ""}${state.captionedOnly ? ", among accounts with listed captions" : ""}.
+      Your search and community filters still apply. Choosing a name replaces the current place filter.</p>
     <label class="sr-only" for="place-directory-search">Search recorded place names and original spellings</label>
     <input id="place-directory-search" class="search-input" type="search" placeholder="Search place names" autocomplete="off" autofocus>
     <p class="directory-count" data-directory-count role="status">${places.length} place names</p>
@@ -455,13 +455,13 @@ export function placeBrowser(store, state) {
     <p class="directory-empty" data-directory-empty${places.length ? " hidden" : ""}>${places.length
       ? "No place names match. Try an original spelling or clear the search."
       : "No place names are available with these filters. Close the index and reset the collection filters to browse more accounts."}</p>
-    <p class="research-dialog-note">Counts refer to accounts naming a place, not verified presence there.</p>`);
+    <p class="research-dialog-note">The count tells you how many accounts name a place. It does not confirm that those people were there.</p>`);
 }
 
 export function readingListDialog(journeys, url, error = "") {
   return researchDialog("reading-list-dialog", "Share a reading list", `
-    <p class="research-dialog-intro">This link contains the ${journeys.length} ${journeys.length === 1 ? "account" : "accounts"} matching your current filters, including results below the visible page.
-      Anyone with it can open this selection. Other saved accounts are not included.</p>
+    <p class="research-dialog-intro">This link shares all ${journeys.length} ${journeys.length === 1 ? "account" : "accounts"} matching your filters, including results you have not scrolled to.
+      Anyone with the link can open the list. It does not include your other saved accounts.</p>
     <ul class="reading-list-preview">${journeys.slice(0, 5).map(journey => `<li>${esc(journey.name)}</li>`).join("")}
       ${journeys.length > 5 ? `<li class="reading-list-more">And ${journeys.length - 5} more accounts</li>` : ""}</ul>
     <p class="reference-status" data-reading-list-status role="status">${esc(error)}</p>
@@ -523,7 +523,7 @@ function accountTools(journey, state) {
       <label for="account-citation">Citation for the original OHP page</label>
       <textarea id="account-citation" rows="5" readonly>${esc(accountCitation(journey, state.citationDate))}</textarea>
       <button class="citation-copy" data-copy-account="citation">${icon("copy")} Copy citation</button>
-      <p class="reference-note">Cites the source page, not a verbatim transcript. No interview date is inferred.</p>
+      <p class="reference-note">This citation refers to the source page, not a verbatim transcript. It does not infer an interview date.</p>
       <p class="reference-status" data-account-copy-status role="status"></p>
     </div>
   </section>`;
@@ -590,7 +590,7 @@ export function panel(store, state) {
       <nav class="result-navigation" data-result-navigation aria-label="Browse matching accounts">${resultNavigation(store, state)}</nav>
       <p class="profile-route-status">${esc(profileRouteStatus(j))}</p>
       <div class="reference-notice" data-reference-notice${state.referenceMessage ? "" : " hidden"}>${referenceNotice(state)}</div>
-      ${!reviewed ? '<p class="account-review-note">Not fully reviewed. Markers locate source mentions, not confirmed presence.</p>' : ""}
+      ${!reviewed ? '<p class="account-review-note">This map record has not been fully reviewed. Markers show places named in the source; they do not confirm that the person was there.</p>' : ""}
       ${accountTools(j, state)}
       <div class="profile-actions">
         ${ready && j.videoCount ? `<button class="interview-action" data-act="show-interviews">View interview chapters ${icon("arrow-right")}</button>` : ""}
@@ -603,7 +603,7 @@ export function panel(store, state) {
           <button class="link biography-open" data-act="read-full-biography" aria-haspopup="dialog">Read full source biography ${icon("arrow-right")}</button>`
           : `<div class="profile-loading" role="status">
             <h3>${j.detailState === "error" ? "Account details could not load" : "Loading this account"}</h3>
-            <p>${j.detailState === "error" ? "The map remains available. Retry the biography and interview chapters, or open the original OHP page." : "The biography, photographs and interview chapters load only for the account you open."}</p>
+            <p>${j.detailState === "error" ? "You can still use the map. Try again to load the biography and interview chapters, or open the original OHP page." : "Loading this account's biography, photographs and interview chapters. Other accounts load when you open them."}</p>
             ${j.detailState === "error" ? '<div class="profile-recovery"><button class="link" data-act="retry-profile">Try again</button><button class="link" data-act="reload-collection">Reload collection</button></div>' : ""}
           </div>`}
       </section>
@@ -615,15 +615,15 @@ export function panel(store, state) {
       <section class="profile-places" id="profile-places" tabindex="-1" aria-labelledby="recorded-places-title">
         <h3 id="recorded-places-title">Recorded places</h3>
         <p class="section-note">${wp.length
-          ? "Explore the places named in this account. Broad areas and mentions needing review stay distinct from source-linked city and site references."
-          : "This source snapshot has no located place references. The biography and interview remain available; a route cannot be inferred from the account's category."}</p>
+          ? "These are the places named in this account. The map distinguishes broad areas and mentions that need review from cities and sites linked to this person in the source."
+          : "This version of the account has no mapped places. You can still read the biography and open the interview. A person's community category does not tell us where they travelled."}</p>
         ${accountMapOverview(j)}
         ${wp.length ? `<ol class="journey">${steps}</ol>` : ""}
       </section>
       ${contextualPlaces(j)}
       <div data-related-reading>${ready ? relatedReading(store, state) : ""}</div>
       ${ready ? `<details class="review-tools"><summary>Review these references ${icon("chevron")}</summary>
-        <p>Download this account's source material for a student or teacher to check against the original interview. A trusted project maintainer prepares the review worksheet and imports attributed decisions; this page cannot approve its own claims.</p>
+        <p>Download the source material for a student or teacher to compare with the original interview. A trusted project maintainer prepares the worksheet and imports each reviewer's decisions. This page cannot approve or verify references.</p>
         <button class="link" data-act="download-review">Download source for review</button></details>` : ""}
       <div class="tags">${tags}</div>
       ${reviewed ? `<div class="ver" style="color:${C.verified}"><span class="ver-dot"></span>Checked against the interview</div>` : ""}
@@ -635,7 +635,7 @@ export function panel(store, state) {
 export function accountMapOverview(journey) {
   const counts = evidenceCounts(journey);
   if (!counts.mapped) return `<div class="account-map-unavailable">
-    <p>No account locations to plot yet.</p>
+    <p>No places from this account have been mapped yet.</p>
     <a class="link" href="${esc(journey.archiveUrl)}" target="_blank" rel="noopener">Find places in the original OHP account ${icon("external-link")}</a>
   </div>`;
   const routeLocations = new Set(journey.routeWaypoints.filter(point =>
@@ -645,8 +645,8 @@ export function accountMapOverview(journey) {
   return `<figure class="account-map-overview">
     <svg class="mini" viewBox="0 0 340 190" role="img" aria-label="Map of ${esc(journey.name)}'s recorded places" data-mini></svg>
     <figcaption class="mini-cap"><span>Current borders · ${counts.mapped} ${counts.mapped === 1 ? "recorded reference" : "recorded references"}</span>
-      ${routeLocations.size > 1 ? "Lines connect source-linked city and site references, not exact travel paths."
-        : "Markers locate source references. There is not enough evidence to connect them as a journey."}</figcaption>
+      ${routeLocations.size > 1 ? "Lines connect cities and sites linked to this person in the source. They do not show exact travel paths."
+        : "Markers show places named in the source. There is not enough evidence to connect them as a journey."}</figcaption>
     <button class="link mini-map-open" data-act="show-explore-map">Open larger map ${icon("arrow-right")}</button>
   </figure>`;
 }
@@ -661,8 +661,8 @@ export function relatedReading(store, state) {
   const matches = relatedAccounts(store, state);
   if (!matches.length) return "";
   return `<section class="related-reading" aria-labelledby="related-reading-title">
-    <h3 id="related-reading-title">Continue through shared places</h3>
-    <p>Other accounts in the current results name these cities or sites. Shared names do not establish shared travel or contact.</p>
+    <h3 id="related-reading-title">Other accounts naming these places</h3>
+    <p>These accounts in your current results name some of the same cities or sites. That does not mean the people travelled together or met.</p>
     <ul>${matches.map(({ journey, places }) => `<li>
       <button data-related-account="${esc(journey.id)}">
         ${profileMedal(journey, GROUP_COLOR[journey.group] || C.accent)}
@@ -677,9 +677,9 @@ function profileRouteStatus(journey) {
   if (!journey.waypoints.length) return "No places have been mapped for this account.";
   const counts = evidenceCounts(journey);
   return `${counts.total} matched place ${counts.total === 1 ? "mention" : "mentions"}: ${counts.route} route references, ${counts.broad} broad areas, ${counts.review} to review. ` +
-    (counts.route > 1 ? "Lines connect only person-linked city/site references, not exact travel paths."
+    (counts.route > 1 ? "Lines connect only cities and sites linked to this person in the source, not exact travel paths."
       : "There are not enough city/site references to draw a route.") +
-    (journey.unplacedCount ? ` ${journey.unplacedCount} additional extracted mentions have no mapped reference.` : "");
+    (journey.unplacedCount ? ` ${journey.unplacedCount} other automatically extracted place mentions have not been mapped.` : "");
 }
 
 export function exploreMapCaption(store, state, historyReady = true) {
@@ -733,7 +733,7 @@ function contextualPlaces(journey, printing = false) {
   const wrapper = printing ? "section" : "details", heading = printing ? "h2" : "summary";
   return `<${wrapper} class="contextual-places">
     <${heading}>Other places in the source (${journey.contextualPlaces.length}) ${printing ? "" : icon("chevron")}</${heading}>
-    <p class="section-note">These mentions concern other people or background context. They are retained here, but are not drawn as this person's route.</p>
+    <p class="section-note">The source mentions these places when discussing other people or background information. They stay in the account but are not shown as stops on this person's route.</p>
     <ul>${[...passages.values()].map((passage) => `<li data-context-places="${passage.indices.join(" ")}" tabindex="-1">
       <strong>${esc(passage.places.join("; "))}</strong>
       <span>${esc(reasons[passage.reason] || "Source context")}</span>
@@ -758,11 +758,11 @@ export function printAccount(journey, address, accessed = new Date()) {
       <p class="print-citation">${esc(accountCitation(journey, accessed))}</p>
       <p class="print-link">Interactive account: <a href="${esc(accountLink(journey, address))}">${esc(accountLink(journey, address))}</a></p>
     </header>
-    <p class="print-caveat">${reviewed ? "This map record is marked reviewed. Coordinates remain approximate; connections are not exact travel paths."
-      : "Not fully reviewed. Mapped references locate source mentions, not confirmed presence or exact travel paths."}
+    <p class="print-caveat">${reviewed ? "This map record is marked reviewed. Coordinates are approximate, and connections are not exact travel paths."
+      : "This map record has not been fully reviewed. It shows places named in the source, not confirmed presence or exact travel paths."}
       This sheet uses a public source biography or excerpt, not a verbatim interview transcript.</p>
     ${ready ? `<section><h2>${fullBiography ? "Public OHP biography" : "Public OHP summary excerpt"}</h2>
-        <p class="print-biography">${esc(biography || "No public summary is available in this snapshot. Read the original OHP page.")}</p>
+        <p class="print-biography">${esc(biography || "No public summary is available in this version of the archive. Read the original OHP page.")}</p>
         ${fullBiography && journey.bio && !fullBiography.includes(journey.bio) ? `<h3>Collection introduction</h3><p>${esc(journey.bio)}</p>` : ""}
         ${!fullBiography ? '<p class="print-source-note">This is the short collection excerpt. Open Read full source biography before printing to include the longer source text.</p>' : ""}
       </section>
@@ -775,7 +775,7 @@ export function printAccount(journey, address, accessed = new Date()) {
           <h3>${esc(place.canonical)}</h3><p>${esc(wpMeta(place))}</p>
           <p>${esc(precisionLabel(place))}${place.locationNote ? `. ${esc(place.locationNote)}` : "."}
             ${place.verified ? "Human-checked reference." : place.evidenceScope === "personal"
-              ? "Person-linked source reference; not human-verified." : "Unreviewed mention; not confirmed personal presence."}</p>
+              ? "The source links this place to the person, but it is not currently verified by a reviewer." : "This mention needs review and does not confirm that the person was there."}</p>
           ${passages.get(place) ? `<blockquote>${esc(passages.get(place))}</blockquote>` : ""}
           ${place.locationSourceUrl ? `<p class="print-link">Location reference: <a href="${esc(place.locationSourceUrl)}">${esc(place.locationSourceUrl)}</a></p>` : ""}
           ${place.humanReview ? `<p>${!place.verified && place.humanReview.action === "approve" ? "Prior review needs rechecking" : "Human review"}:
@@ -793,13 +793,13 @@ export function printReadingList(journeys, address, accessed = new Date(), missi
     <p class="print-kicker">Crestwood Oral History Project · Reading list</p>
     <h1>Sources for ${journeys.length} ${journeys.length === 1 ? "account" : "accounts"}</h1>
     <p>These are the accounts in the selected reading list, in collection order.</p></header>
-    ${missing ? `<p class="print-caveat">${missing} ${missing === 1 ? "account in the shared link is" : "accounts in the shared link are"} not available in this archive snapshot and cannot be cited here.</p>` : ""}
+    ${missing ? `<p class="print-caveat">${missing} ${missing === 1 ? "account in the shared link is" : "accounts in the shared link are"} not available in this version of the archive and cannot be cited here.</p>` : ""}
     <ol class="print-references">${journeys.map(journey => `<li><h2>${esc(journey.name)}</h2>
       <p>${esc(accountCitation(journey, accessed))}</p>
       <p class="print-link">Interactive account: <a href="${esc(accountLink(journey, address))}">${esc(accountLink(journey, address))}</a></p>
     </li>`).join("")}</ol>
     <p class="print-caveat">These citations refer to original OHP source pages, not verbatim transcripts.
-      No interview dates are inferred. Mapped references may require human review.</p>
+      The citations do not infer interview dates. Mapped references may still need human review.</p>
     <footer class="print-footer">Reading list · ${journeys.length} accounts · Crestwood Oral History Project</footer></article>`;
 }
 
@@ -831,7 +831,7 @@ function profileGallery(journey) {
     </details>` : ""}
     ${references.length ? `<details class="original-gallery">
       <summary>More photographs on OHP (${references.length}) ${icon("chevron")}</summary>
-      <p class="section-note">The original gallery includes these additional images. Their individual reuse rights have not been confirmed, so they open at the source.</p>
+      <p class="section-note">These additional images appear in the original gallery. Their individual reuse rights have not been confirmed, so the links open the images at their source.</p>
       <ul>${references.map((image, index) => `<li><a href="${esc(image.sourceUrl || image.url)}" target="_blank" rel="noopener">${esc(
         image.caption && !/^Photograph from |^OHP archive photograph/i.test(image.caption)
           ? image.caption : `Open source photograph ${index + 1}`,
@@ -870,7 +870,7 @@ function profileInterviews(journey, state) {
     ${recordingMeta(journey)}
     <p class="section-note">These chapters come from ${esc(journey.name)}'s OHP page. ${inlineCount
       ? "Choose a play button to load a video. Chapters marked with an external-link icon open the original page instead."
-      : "Inline playback is unavailable for these chapters. The links open the original OHP page, where access may also be restricted."}</p>
+      : "These chapters cannot play here. The links open the original OHP page, where access may also be restricted."}</p>
     <div class="interview-player" data-player hidden>
       <div class="player-heading"><strong data-player-title></strong>
         <button data-act="close-video" aria-label="Close video">${icon("close")}</button></div>
@@ -898,10 +898,10 @@ function mapLegend(view, context = null) {
   return `<details class="map-legend">
     <summary>Map key ${icon("chevron")}</summary>
     <div><p>${view === "explore" ? "A marker locates a named reference, not a person's exact position." : "Borders are dated source records, not exact front lines."}</p>
-      <ul><li><i class="key-precise"></i>Person-linked city or site</li>
+      <ul><li><i class="key-precise"></i>City or site linked to the person</li>
         <li><i class="key-broad"></i>Country or regional reference</li>
         <li><i class="key-review"></i>Mention needing review</li>
-        <li><i class="key-route"></i>Supported reference connections</li>
+        <li><i class="key-route"></i>Connections supported by source references</li>
         ${view === "history" && context?.coalition_label ? `<li><i class="key-territory" style="background:${C.warCoalition}"></i>${esc(context.coalition_label)}</li>
           <li><i class="key-territory" style="background:${C.warOpposition}"></i>${esc(context.opposition_label)}</li>
           ${context.occupied.length ? `<li><i class="key-territory" style="background:${C.warOccupied}"></i>Occupied or contested</li>` : ""}` : ""}
@@ -948,8 +948,8 @@ export function patterns(store, state) {
         <ul class="origin-list">${list.slice(0, 9).join("")}</ul>
         ${list.length > 9 ? `<details class="more-origins"><summary>View all ${list.length} countries ${icon("chevron")}</summary>
           <ul class="origin-list">${list.slice(9).join("")}</ul></details>` : ""}
-        <p class="cross-sub">Counts use each account's first person-linked map reference, not necessarily a birthplace.
-          Only references that can be associated with a present-day country are counted; historical regions are not assigned to a modern country without support.</p>
+        <p class="cross-sub">Each count uses the first map reference linked to the person in their account. It is not necessarily their birthplace.
+          A reference is counted only if it can be linked to a present-day country. Historical regions are not assigned to a modern country without supporting evidence.</p>
         <p class="cross-sub">This is a Toronto school's interview collection, not a representative survey. The people interviewed and places that can be matched shape these counts.</p>
         <div class="origin-scale" aria-label="Map shading: fewer to more starting references"><span>Fewer</span><i></i><span>More</span></div>
       </div>
@@ -985,8 +985,8 @@ export function patterns(store, state) {
             <label><input type="checkbox" data-history-setting="labels"${state.historyLabels ? " checked" : ""}> Territory names</label>
             <label><input type="checkbox" data-history-setting="routes"${state.historyRoutes ? " checked" : ""}> Shared interview routes</label>
             <p class="section-note" data-route-availability>${store.corridorsForYear(state.scrubYear).length
-              ? "Only person-linked city/site pairs dated to this year are connected."
-              : "No shared city/site routes have sufficient date evidence for this year."}</p>
+              ? "Connections use only cities and sites linked to the person and dated to this year."
+              : "No shared city or site routes have enough date evidence for this year."}</p>
             <label><input type="checkbox" data-history-setting="testimony"${state.historyTestimony ? " checked" : ""}> Recorded places</label>
             <label><input type="checkbox" data-history-setting="compare"${state.historyCompare ? " checked" : ""}> Compare with today's borders</label>
             <label class="history-speed-label">Timeline playback
@@ -1053,8 +1053,8 @@ export function patternsEvents(store, state) {
     <details class="history-sources">
       <summary>Original maps and historical context ${icon("chevron")}</summary>
       ${contextResources(state.scrubYear)}
-      <p class="history-method">The atlas samples the middle of each year. Its polygons are generalized source records, not exact borders or daily front lines.
-        Dashed outlines mark overlapping alternatives. Flags appear only where a documented design matches the selected date.</p>
+      <p class="history-method">The atlas shows the middle of each year. Its outlines simplify the source records; they are not exact borders or daily front lines.
+        Dashed outlines mark overlapping alternatives. A flag appears only when its documented design matches the selected date.</p>
       ${geometryAudit(store)}
     </details>`;
 }
@@ -1077,9 +1077,9 @@ function geometryAudit(store) {
       <div><dt>Missing or empty shapes</dt><dd>${quality.null + quality.empty}</dd></div>
       <div><dt>Invalid shapes</dt><dd>${quality.invalid}</dd></div>
       <div><dt>Overlapping alternative pairs</dt><dd>${quality.relationships.filter((entry) => entry.kind === "alternative").length}</dd></div>
-    </dl><p>These checks examine shape validity, not historical accuracy.
+    </dl><p>These checks test whether the shapes are valid, not whether the history is accurate.
       Exact duplicates are hidden; unresolved alternative outlines have dashed borders.</p>`
-      : "<p>A matching technical audit is not available for this map release.</p>"}
+      : "<p>No matching technical audit is available for this version of the map.</p>"}
     <a class="catalogue-link" href="${siteResource("data/historical_boundary_quality.json")}" download>Download the technical audit (JSON) ${icon("external-link")}</a>
   </details>`;
 }
@@ -1097,14 +1097,14 @@ function countryInspector(country, year) {
       <a href="${esc(flag.sourceUrl)}" target="_blank" rel="noopener">Flag source and dates ${icon("external-link")}</a>
       <span class="flag-credit">${esc(readableFlagText([flag.credit, flag.license].filter(Boolean).join(", ")))}</span></p></details>
       <p class="flag-summary">${esc(readableFlagText(flag.label))}</p>`
-      : '<p class="flag-note">No dated flag design is documented here for this administration at this date.</p>'}
+      : '<p class="flag-note">This catalogue has no documented flag design for this administration at the selected date.</p>'}
     ${country.flagHistory?.length ? `<details class="country-flag-history flag-details">
       <summary>Flag history (${country.flagHistory.length}) ${icon("chevron")}</summary>
       ${flagPeriods(country.flagHistory)}
     </details>` : ""}
     ${country.alternativeRecords ? `<p class="source-caution">${country.alternativeRecords} dated source outlines overlap for this name.
       Dashed borders mark these unverified alternatives.</p>` : ""}
-    ${country.inferredGrouping ? '<p class="country-source">This administration grouping is inferred from source names. It is not independent verification of effective control.</p>' : ""}
+    ${country.inferredGrouping ? '<p class="country-source">These records are grouped under an administration based on their source names. This does not independently verify who controlled the territory.</p>' : ""}
     <details class="country-areas"><summary>View ${country.count} mapped ${country.count === 1 ? "area" : "areas"} ${icon("chevron")}</summary>
       <ul>${country.territories.map((territory) => `<li><strong>${esc(territory.name)}</strong>
         <span>${esc(territory.dates)}${territory.kind ? `, ${esc(territory.kind.replaceAll("_", " "))}` : ""}</span></li>`).join("")}</ul>
@@ -1147,15 +1147,15 @@ export function about(store) {
           <a class="archive-link" href="https://ohp.crestwood.on.ca" target="_blank" rel="noopener">Visit the original archive ${icon("external-link")}</a>
         </aside>
         <div class="about-grid">
-        <section><h2>Reading a recorded life</h2><p>Explore brings each person's account, photographs,
-          interview chapters, and recorded places together. The historical atlas puts dated accounts
+        <section><h2>Reading an account</h2><p>In Explore, you can read a person's account, view photographs,
+          open interview chapters and find the places they name. History shows dated accounts
           alongside changing territories from 1914 to 2026.</p>
           <p>Search can combine a name with a place, or several places in one account. Every word
           must match; put an exact phrase in double quotes. Press Enter to browse the results.
           Search covers recorded names, places, periods and topics, not full biographies or transcripts.</p></section>
         <section><h2>From testimony to map</h2><p>Each route uses places named on a public OHP
           page. Historical names are matched to current locations, so &quot;Lemberg&quot;
-          resolves to Lviv. Dates determine the order when the source provides them.</p>
+          appears on the map as Lviv. When the source gives dates, they determine the order.</p>
           <p>Routes connect recorded places; they do not reconstruct the exact roads a person
           travelled. Approximate dates remain labelled as approximate.</p></section>
         <section><h2>Read alongside the original</h2><p>Profiles are built from public OHP
@@ -1165,15 +1165,15 @@ export function about(store) {
           archive, not a representative survey of history. Who students could interview,
           which places were named, and which names could be matched all shape the map.
           Country totals describe this collection, not populations or the scale of historical events.</p>
-          <p>Automated confidence values are processing signals, not measured probabilities of truth.
+          <p>Automated confidence values describe the matching process. They are not measured probabilities that a claim is true.
           A human review decision is recorded separately and must cite its source.</p></section>
         <section><h2>Location and boundary accuracy</h2>
           <p>City and site markers are reference points, not exact positions within a building or town.
           Country and regional references cover broader areas. Uncertain dates and contextual mentions
           should not be read as verified stops in a person's journey.</p>
-          <p>The historical polygons come from a generalized OpenHistoricalMap world tile. They sample
-          the middle of each year and can contain overlapping source records. Valid polygon geometry
-          does not establish that every border or administration is historically correct.</p>
+          <p>The historical outlines come from a simplified OpenHistoricalMap world tile. They show
+          the middle of each year and can include overlapping source records. A valid shape
+          does not prove that every border or administration is historically correct.</p>
           ${geometryAudit(store)}
         </section>
         <section class="about-sources"><h2>Sources and credits</h2>
@@ -1191,7 +1191,7 @@ export function about(store) {
             <p>Country names and ISO-code metadata: <a href="https://github.com/lipis/flag-icons/blob/v7.5.0/LICENSE"
               target="_blank" rel="noopener">flag-icons, copyright Panayiotis Lipiridis, MIT licence</a>.
               Image licences are recorded separately for each SVG.
-              ${FLAG_CATALOGUE_META.unavailableArtwork ? "Additional historical artwork remains unavailable or withheld; no modern substitutes fill those gaps." : ""}</p>
+              ${FLAG_CATALOGUE_META.unavailableArtwork ? "Some historical artwork is unavailable or has been left out after checks. Modern flags are not used to fill those gaps." : ""}</p>
             <ul>${FLAG_SOURCES.map((source) => `<li>
               <a href="${esc(source.sourceUrl)}" target="_blank" rel="noopener">${esc(readableFlagText(source.title))}</a>
               <p>${esc(readableFlagText(source.credit))}</p>
@@ -1249,7 +1249,7 @@ function recordingMeta(journey) {
   if (journey.transcriptStatus === "pending") {
     captionText = "Caption availability is being checked.";
   } else if (journey.transcriptStatus === "unavailable") {
-    captionText = "Vimeo did not expose caption information for these chapters.";
+    captionText = "Vimeo did not make caption information available for these chapters.";
   } else if (journey.captionedVideoCount) {
     captionText = `Public captions are available for ${journey.captionedVideoCount} ${journey.captionedVideoCount === 1 ? "chapter" : "chapters"}.`;
   } else {
@@ -1297,7 +1297,7 @@ function testimonyMoment(activeEvent, events, state, store) {
   if (!events.length) {
     return `<div class="testimony-moment is-empty">
       <strong>No dated place references</strong>
-      <p>No person-linked place has a sufficiently precise date for this year.</p>
+      <p>No place linked to a person's account has a date precise enough to place it in this year.</p>
     </div>`;
   }
   const places = `<details class="year-place-list" data-history-place-list${state.historyPlacesOpen ? " open" : ""}>

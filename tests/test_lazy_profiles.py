@@ -108,6 +108,7 @@ console.log(JSON.stringify({
   id:html.includes(`data-survivor-id="${feature.properties.survivor_id}"`),
   retry:html.includes('data-server-profile-retry hidden'),
   status:html.includes('data-server-profile-status role="status"'),
+  catalogue:html.includes('href="/collection"')&&renderErrorHtml(404).includes('href="/collection"'),
 }));
 """
     result = subprocess.run(
@@ -115,8 +116,8 @@ console.log(JSON.stringify({
         cwd=ROOT, check=True, capture_output=True, text=True, encoding="utf-8",
     )
     data = json.loads(result.stdout)
-    assert data["links"] == ["/explore", "/about", "/explore", "/explore"]
-    assert data["id"] and data["retry"] and data["status"]
+    assert data["links"] == ["/explore"]
+    assert data["id"] and data["retry"] and data["status"] and data["catalogue"]
 
 
 def test_social_previews_use_licensed_originals_or_a_large_raster_fallback():

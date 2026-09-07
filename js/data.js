@@ -498,7 +498,7 @@ export async function loadData({ onRetry, compact = false } = {}) {
         const prior = journey.waypoints[index];
         return place.canonical !== prior.canonical || place.lat !== prior.lat || place.lng !== prior.lng ||
           place.roleKey !== prior.roleKey || place.historyYear !== prior.historyYear;
-      })) throw new Error("The account and map index have different revisions. Reload the collection.");
+      })) throw new Error("This account and the map index use different versions of the archive. Reload the collection.");
       for (let index = 0; index < full.waypoints.length; index++) {
         Object.assign(full.waypoints[index], { px: journey.waypoints[index].px, py: journey.waypoints[index].py });
       }
@@ -520,7 +520,7 @@ export async function loadData({ onRetry, compact = false } = {}) {
     if (journey.biographyState === "ready") return journey;
     if (biographyRequests.has(journey.id)) return biographyRequests.get(journey.id);
     const match = /^\/data\/profiles\/([a-z0-9-]+)\.([a-f0-9]{64})\.json$/.exec(journey.detailUrl);
-    if (!match || match[1] !== journey.id) throw new BiographyError("This account has no supported source-biography address.");
+    if (!match || match[1] !== journey.id) throw new BiographyError("The link to this account's source biography is missing or unsupported.");
     journey.biographyState = "loading";
     journey.biographyError = "";
     const request = getJSON(`/data/biographies/${journey.id}.${match[2]}.json`, onRetry).then(source => {

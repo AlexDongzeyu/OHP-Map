@@ -54,9 +54,9 @@ function recordedPlaces(properties) {
   if (!waypoints.length) return "<p>No place references have been mapped for this account.</p>";
   return "<ul>" + waypoints.map((place) => {
     const dates = [place.date?.start, place.date?.end].filter(Boolean);
-    const date = [...new Set(dates)].join("–");
+    const date = [...new Set(dates)].join(" to ");
     const written = place.as_written && place.as_written !== place.canonical
-      ? ` <span>(recorded as “${esc(place.as_written)}”)</span>` : "";
+      ? ` <span>(recorded as &quot;${esc(place.as_written)}&quot;)</span>` : "";
     const review = place.verified ? "Human-checked reference" :
       place.evidence?.scope === "contextual" ? "Contextual reference; not a confirmed personal journey" :
         "Unreviewed reference";
@@ -78,8 +78,8 @@ export function renderProfileHtml(shell, feature, { origin = DEFAULT_ORIGIN, sou
   const image = sharedPortrait || `${base}/assets/social-preview.png`;
   const source = publicSource(properties.archive_url);
   const caveat = properties.review_status === "reviewed"
-    ? "This map record is marked reviewed. Place coordinates remain approximations; consult the original account for its context."
-    : "Map references have not been fully reviewed. Automatically matched names, dates and places may need correction; a place reference is not necessarily a personal journey.";
+    ? "This map record is marked reviewed. Place coordinates are approximate. Read the original account for context."
+    : "Map references have not been fully reviewed. Automatically matched names, dates and places may need correction. A place mentioned in the source is not necessarily a stop in this person's journey.";
   const metadata = `
   <title>${esc(title)}</title>
   <link rel="canonical" href="${esc(canonical)}" />
@@ -108,13 +108,13 @@ export function renderProfileHtml(shell, feature, { origin = DEFAULT_ORIGIN, sou
       ${portrait ? `<figure><img src="${esc(portrait)}" alt="${esc(name)}" width="192" height="192" /><figcaption>${esc(properties.portrait_rights)}</figcaption></figure>` : ""}
       <p class="server-profile-caveat">${esc(caveat)}</p>
       ${sourceOnly ? "" : `<div class="server-profile-loading">
-        <p data-server-profile-status role="status">The interactive account opens when the map finishes loading. This source summary remains available if it cannot load.</p>
+        <p data-server-profile-status role="status">The interactive account opens when the map finishes loading. You can still read this source summary if the map cannot load.</p>
         <button type="button" data-server-profile-retry hidden>Try the interactive view again</button>
       </div>`}
-      ${sourceOnly ? "" : `<noscript><p class="server-profile-caveat server-profile-js-note">Selecting an interview chapter and playing its video require JavaScript.
-        This source account remains readable; use its original OHP link for the interview.</p></noscript>`}
+      ${sourceOnly ? "" : `<noscript><p class="server-profile-caveat server-profile-js-note">You need JavaScript to select and play interview chapters here.
+        You can still read this source account or follow its original OHP link for the interview.</p></noscript>`}
       <section aria-labelledby="server-source"><h2 id="server-source">From the original OHP biography</h2>
-        ${biography ? `<blockquote${source ? ` cite="${esc(source)}"` : ""}>${esc(biography)}</blockquote>` : "<p>No public biography excerpt is available in this snapshot.</p>"}
+        ${biography ? `<blockquote${source ? ` cite="${esc(source)}"` : ""}>${esc(biography)}</blockquote>` : "<p>This version of the archive has no public biography excerpt for this account.</p>"}
         ${source ? `<p><a href="${esc(source)}" rel="noopener">Read the original account and interview at OHP</a></p>` : ""}
       </section>
       <section aria-labelledby="server-places"><h2 id="server-places">Recorded place references</h2>${recordedPlaces(properties)}</section>
