@@ -851,10 +851,17 @@ async function navigateSource(page, action) {
       phase: document.querySelector(".war-brief-content > strong")?.textContent,
       austriaHungary: Boolean(document.querySelector("[data-territory='Austria-Hungary']")),
       hash: location.hash,
+      zoom: Number(document.querySelector(".camera").getAttribute("transform").match(/scale\(([^)]+)\)/)[1]),
     }));
+    const [yearPath, cameraQuery] = firstWorld.hash.split("?");
+    const cameraParams = new URLSearchParams(cameraQuery);
     if (firstWorld.phase !== "War begins in Europe" ||
         !firstWorld.austriaHungary ||
-        firstWorld.hash !== "#/patterns/1914") {
+        yearPath !== "#/patterns/1914" ||
+        [...cameraParams.keys()].some(key => !["lng", "lat", "zoom"].includes(key)) ||
+        !["lng", "lat", "zoom"].every(key => cameraParams.has(key) && Number.isFinite(Number(cameraParams.get(key)))) ||
+        Math.abs(Number(cameraParams.get("lng"))) > 180 || Math.abs(Number(cameraParams.get("lat"))) > 90 ||
+        Math.abs(Number(cameraParams.get("zoom")) - firstWorld.zoom) > .001) {
       throw new Error(`1914 territory state is incorrect ${JSON.stringify(firstWorld)}`);
     }
     await page.$eval("[data-controller='United Kingdom']", (territory) => {
@@ -2444,7 +2451,7 @@ async function navigateSource(page, action) {
       throw new Error("the original spelling did not find both the city and the distinct ghetto reference");
     }
     await page.click(`[data-history-match="${city.index}"]`);
-    if (!await page.$eval("[data-search-status]", (status) => status.textContent.includes("Centred on Lodz"))) {
+    if (!await page.$eval("[data-search-status]", (status) => status.textContent.includes("Selected Lodz"))) {
       throw new Error("the historical place search did not fold the original spelling");
     }
     const roles = await page.evaluate(async () => {

@@ -160,6 +160,17 @@ Unsupported community filters and dated-place/year combinations receive an expli
 link-recovery view instead of silently changing the selection.
 Browser tab and bookmark titles identify the account, search, or historical place/year.
 
+History searches also keep the exact selected OHP place in the address, separately
+from dated-place events and country selections. Reloading or sharing restores its
+name and a readable map position; an explicit shared camera takes precedence.
+The border year does not establish that someone was present there in that year.
+Unknown places, duplicate place parameters and conflicting selections receive the
+existing link-recovery view instead of silently selecting another location.
+Settled historical pan/zoom changes update the current address without adding Back
+entries. Visiting About or Explore and returning through History restores the
+historical camera, rather than reusing the other view's position. This state is
+session-local; explicitly copied map links also carry the position.
+
 Selecting a recorded place now keeps a source-bound reference in the account's view
 address. **Copy reference link** creates a clean link to that exact source entry
 without private saved-list or search filters. The link uses the same fingerprint
@@ -371,6 +382,9 @@ Run the tests with `python -m pytest -q`. A headless browser smoke test is in
 `tools/smoke.cjs` (`node tools\smoke.cjs http://127.0.0.1:8124` against a running
 Worker preview; puppeteer-core + Edge). The complete smoke suite requires Worker
 routing, not only a static file server.
+`python tools\history_navigation_smoke.py --base http://127.0.0.1:8124 --camera`
+checks exact history-place links, malformed/conflicting selections, shared views,
+and pan/zoom restoration through refresh, navigation tabs and Back at three widths.
 `python tools\saved_list_smoke.py --base http://127.0.0.1:8124` tests real local
 backup downloads, complete cross-browser restoration, unavailable-account recovery,
 file and storage errors, cancellation, and 320/768/1440px keyboard layouts with the

@@ -63,10 +63,12 @@ const state = {
   historyContextOpen: null,
   historyPlacesOpen: false,
   pendingHistoryCamera: null,
+  historyCamera: null,
 };
 
 let store, atlas;
 let historyTimer = null;
+let historyCameraQueued = false;
 let readingListSnapshot = null;
 let printJob = null;
 let printReturnFocus = null;
@@ -109,6 +111,15 @@ async function main() {
   atlas.setStore(store);
   atlas.setTooltipEl(document.getElementById("tip"));
   atlas.onUserCameraChange = () => { state.pendingHistoryCamera = null; };
+  atlas.onCameraSettled = () => {
+    if (state.view !== "patterns" || rendered.view !== "patterns" || historyCameraQueued ||
+        printJob || window.matchMedia("print").matches) return;
+    historyCameraQueued = true;
+    queueMicrotask(() => {
+      historyCameraQueued = false;
+      if (state.view === "patterns" && rendered.view === "patterns") syncHistoryAddress(true);
+    });
+  };
   atlas.onHistoryStatus = () => {
     updateBoundaryNotice();
     refreshOpenFlagBrowser();
@@ -434,8 +445,9 @@ function go(view) {
     state.explorePresentation = "auto";
   }
   state.view = view;
+  if (view === "patterns") state.pendingHistoryCamera = state.historyCamera;
   const hash = view === "landing" ? "" : (
-    view === "patterns" ? historyHash() : (view === "explore" ? exploreHash() : `#/${view}`)
+    view === "patterns" ? historyHash(Boolean(state.pendingHistoryCamera)) : (view === "explore" ? exploreHash() : `#/${view}`)
   );
   setHash(hash);
   render();
@@ -1691,7 +1703,7 @@ function updateHistoryInfo() {
     state.historyQuery = "";
     state.historySearchMessage = `${previous} has no mapped territory in ${state.scrubYear}. The country selection has been cleared.`;
   } else if (state.historyPlace) {
-    state.historySearchMessage = `Centred on ${state.historyPlace}. The border year is ${state.scrubYear}.`;
+    state.historySearchMessage = `Selected ${state.historyPlace}. The border year is ${state.scrubYear}.`;
   }
   refreshHistorySearch();
   updateDocumentTitle();
@@ -1776,7 +1788,7 @@ function applyHistoryLocation(match) {
     state.historyPlace = match.name;
     state.historyCountry = null;
     state.historyInfo = null;
-    state.historySearchMessage = `Centred on ${match.name}. The border year is ${state.scrubYear}.`;
+    state.historySearchMessage = `Selected ${match.name}. The border year is ${state.scrubYear}.`;
     refreshHistorySearch();
     refreshPatternEvents();
     atlas.render("patterns", atlasCtx());
@@ -1832,6 +1844,7 @@ function historyHash(includeCamera = false) {
   const params = new URLSearchParams();
   if (state.patternsLayer === "origins") params.set("layer", "origins");
   if (state.historyCountry) params.set("country", state.historyCountry);
+  if (state.historyPlace && state.patternsLayer === "journeys") params.set("place", state.historyPlace);
   if (state.patternEventKey && state.historyTestimony && state.patternsLayer === "journeys") {
     params.set("event", state.patternEventKey);
   }
@@ -1842,7 +1855,7 @@ function historyHash(includeCamera = false) {
   if (state.historyOpacity !== 1) params.set("opacity", state.historyOpacity);
   if (state.historySplit !== 50) params.set("split", state.historySplit);
   if (state.historySpeed !== 1) params.set("speed", state.historySpeed);
-  const camera = includeCamera ? atlas.cameraPosition() : null;
+  const camera = includeCamera ? state.pendingHistoryCamera || atlas.cameraPosition() : null;
   if (camera) {
     params.set("lng", camera.lng.toFixed(4));
     params.set("lat", camera.lat.toFixed(4));
@@ -1859,8 +1872,9 @@ function restoreHistoryCamera() {
   if (atlas.historyLoaded() || state.patternsLayer === "origins") state.pendingHistoryCamera = null;
 }
 
-function syncHistoryAddress(includeCamera = false) {
+function syncHistoryAddress(includeCamera = true) {
   if (state.view === "patterns") {
+    if (includeCamera) state.historyCamera = state.pendingHistoryCamera || atlas.cameraPosition();
     history.replaceState(null, "", historyHash(includeCamera));
     updateDocumentTitle();
   }
@@ -2409,6 +2423,7 @@ function showMissing(kind) {
 
 function route() {
   if (programmatic) { programmatic = false; return; }
+  if (state.view === "patterns") state.historyCamera = state.pendingHistoryCamera || atlas.cameraPosition();
   stopHistoryPlayback();
   resetReferenceState();
   resetChapterState();
@@ -2463,6 +2478,14 @@ function route() {
   if (kind === "place") return showMissing("place");
   if (kind === "patterns" && value && /^\d{4}$/.test(value)) {
     const year = Math.max(store.time.min, Math.min(store.time.max, Number(value)));
+    let place = null;
+    if (params.has("place")) {
+      const name = params.get("place");
+      if (params.getAll("place").length !== 1 || !name || name.length > 200 ||
+          params.has("country") || params.has("event") || params.get("layer") === "origins") return showMissing("place");
+      place = atlas.searchLocations(name, year).find(location => location.kind === "place" && location.name === name);
+      if (!place) return showMissing("place");
+    }
     const event = params.has("event") ? store.events.find((entry) => entry.key === params.get("event") && entry.year === year) : null;
     if (params.has("event") && (!event || params.get("layer") === "origins" ||
         params.get("testimony") === "0" || params.get("country"))) return showMissing("place");
@@ -2473,10 +2496,10 @@ function route() {
     state.patternsLayer = params.get("layer") === "origins" ? "origins" : "journeys";
     state.historyCountry = params.get("country") || null;
     state.historyInfo = null;
-    state.historyQuery = state.historyCountry || "";
+    state.historyQuery = state.historyCountry || place?.name || "";
     state.historySearchMessage = "";
     state.historyMatches = [];
-    state.historyPlace = null;
+    state.historyPlace = place?.name || null;
     state.historyFlags = params.get("flags") !== "0";
     state.historyLabels = params.get("labels") !== "0";
     state.historyRoutes = params.get("routes") !== "0";
@@ -2491,7 +2514,8 @@ function route() {
     const lng = Number(params.get("lng")), lat = Number(params.get("lat")), zoom = Number(params.get("zoom"));
     state.pendingHistoryCamera = params.has("lng") && params.has("lat") && params.has("zoom") &&
       [lng, lat, zoom].every(Number.isFinite) && Math.abs(lng) <= 180 && Math.abs(lat) <= 90 && zoom >= 1 && zoom <= 14
-      ? { lng, lat, zoom } : null;
+      ? { lng, lat, zoom } : place ? { lng: place.lng, lat: place.lat, zoom: 4 } : null;
+    state.historyCamera = state.pendingHistoryCamera;
     updateHistoryInfo();
     state.view = "patterns";
     render();
@@ -2503,6 +2527,7 @@ function route() {
   }
   if (VIEWS.includes(kind)) {
     if (kind === "patterns" && value) return showMissing("page");
+    if (kind === "patterns" && params.has("place")) return showMissing("place");
     const previous = state.selectedId;
     if (kind === "explore") {
       if (!restoreCollectionAddress(params)) return showMissing("filter");

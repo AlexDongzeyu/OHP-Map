@@ -103,6 +103,7 @@ export function createAtlas(container) {
           const labelled = renderHistoricalFlags(visibleTerritories, currentBoundaryYear);
           renderHistoricalLabels(visibleTerritories, labelled);
         }
+        if (view === "patterns" && api.onCameraSettled) api.onCameraSettled();
       });
     svg.call(zoom)
       .on("dblclick.zoom", null)
