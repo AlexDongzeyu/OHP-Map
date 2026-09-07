@@ -342,7 +342,7 @@ async function searchCollection(page, query) {
     await page.click(`[data-survivor='${unplaced.id}']`);
     await page.waitForSelector(".profile-places .section-note", { timeout: 5000 });
     const note = await page.$eval(".profile-places .section-note", (element) => element.textContent);
-    if (!note.includes("have not been mapped") || await page.$(".selected-place-ring")) {
+    if (!note.includes("no located place references") || await page.$(".selected-place-ring") || await page.$("[data-mini]")) {
       throw new Error("an unplaced account was given fabricated map geometry");
     }
     await page.click(".panel-close");
@@ -683,7 +683,7 @@ async function searchCollection(page, query) {
     if (!/This interview has \d+ chapters?\./.test(coverage) || !/Public captions are available/.test(coverage)) {
       throw new Error(`caption coverage is incorrect: ${coverage}`);
     }
-    const miniRoutes = await page.$$eval(".panel .mini path", (paths) => (
+    const miniRoutes = await page.$$eval(".panel .mini .mini-route", (paths) => (
       paths.map((path) => ({
         moves: (path.getAttribute("d").match(/M/g) || []).length,
         join: path.getAttribute("stroke-linejoin"),
@@ -3914,6 +3914,90 @@ async function searchCollection(page, query) {
       const content = await flags.$eval('[data-flag-name="Canada"]', entry => entry.textContent);
       if (!content.includes("Canada") || !content.includes("1965-02-15") || !content.includes("Source and dates")) {
         throw new Error("a failed image removed the country's historical evidence");
+      }
+    } finally { await context.close(); }
+  });
+
+  await check("every located account has a geographic overview, even without a connected route", async () => {
+    const context = await browser.createBrowserContext();
+    const reading = await context.newPage();
+    reading.on("pageerror", error => errors.push("account geography: " + error.message));
+    const mapRequests = [];
+    reading.on("request", request => {
+      if (new URL(request.url()).pathname.endsWith("/data/atlas-world.json")) mapRequests.push(request.url());
+    });
+    try {
+      await reading.setViewport({ width: 1366, height: 850 });
+      for (const identifier of ["adam-wally", "ferguson-george", "jack-aldred"]) {
+        await reading.goto(BASE + "/survivor/" + identifier, { waitUntil: "domcontentloaded", timeout: 40000 });
+        await reading.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+        await reading.waitForSelector("[data-mini][data-mini-state='ready']");
+        const overview = await reading.$eval("[data-mini]", svg => ({
+          countries: svg.querySelectorAll(".mini-country").length,
+          points: svg.querySelectorAll(".mini-map-reference").length,
+          labels: svg.querySelectorAll(".mini-place-label").length,
+          role: svg.getAttribute("role"), description: svg.querySelector("desc")?.textContent,
+          routes: svg.querySelectorAll(".mini-route[d]").length,
+        }));
+        const references = await reading.$$eval(".profile-places .place-focus", buttons => buttons.length);
+        if (!overview.countries || !overview.labels || overview.points !== references || overview.role !== "img" ||
+            !overview.description.includes("Current borders")) throw new Error(`${identifier} still has a dots-only or incomplete map`);
+        if (overview.points === 1 && overview.routes) throw new Error("a single reference became a route");
+      }
+      if (mapRequests.length !== 3) throw new Error("the overview downloaded its own basemap instead of reusing the loaded geography");
+    } finally { await context.close(); }
+  });
+
+  await check("account overviews stay geographically stable when the main map moves or resizes", async () => {
+    const context = await browser.createBrowserContext();
+    const reading = await context.newPage();
+    reading.on("pageerror", error => errors.push("account map camera: " + error.message));
+    try {
+      await reading.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+      await reading.setViewport({ width: 1366, height: 850 });
+      await reading.goto(BASE + "/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await reading.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      const original = await reading.$eval("[data-mini]", svg => svg.innerHTML);
+      await reading.click(".map-tools [data-act='zoom-in']");
+      await reading.setViewport({ width: 390, height: 844 });
+      await wait(400);
+      if (await reading.$eval("[data-mini]", svg => svg.innerHTML) !== original) {
+        throw new Error("main-map navigation distorted the account overview");
+      }
+      await reading.click("[data-profile-section='profile-places']");
+      await reading.click(".mini-map-open");
+      await reading.waitForFunction(() => document.querySelector(".ov-explore").dataset.presentation === "map");
+      await reading.click(".reader-return");
+      if (await reading.$eval("#profile-name", heading => heading.textContent) !== "Wally Adam" ||
+          await reading.$eval("[data-mini]", svg => svg.innerHTML) !== original) {
+        throw new Error("opening the larger map lost the source account or its geographic overview");
+      }
+      const bounds = await reading.$eval("[data-mini]", svg => {
+        const box = svg.getBoundingClientRect();
+        return { left: box.left, right: box.right, viewport: innerWidth };
+      });
+      if (bounds.left < 0 || bounds.right > bounds.viewport) throw new Error("the account map overflows a phone");
+    } finally { await context.close(); }
+  });
+
+  await check("accounts without located evidence offer a source action instead of a blank route panel", async () => {
+    const context = await browser.createBrowserContext();
+    const reading = await context.newPage();
+    reading.on("pageerror", error => errors.push("unlocated account map: " + error.message));
+    try {
+      const index = await (await fetch(BASE + "/data/index.json")).json();
+      const unlocated = index.features.find(feature => !feature.properties.waypoints?.length);
+      if (!unlocated) throw new Error("no unlocated source fixture is available for the empty-map check");
+      await reading.setViewport({ width: 320, height: 568 });
+      await reading.goto(BASE + "/survivor/" + unlocated.properties.survivor_id, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await reading.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await reading.click("[data-profile-section='profile-places']");
+      if (await reading.$("[data-mini]") || await reading.$(".mini-route")) throw new Error("unlocated evidence still produces a blank route graphic");
+      const source = await reading.$eval(".account-map-unavailable a", link => ({
+        href: link.href, text: link.textContent, height: link.getBoundingClientRect().height,
+      }));
+      if (source.href !== unlocated.properties.archive_url || source.height < 44 || !source.text.includes("original OHP account")) {
+        throw new Error("the unmapped account has no usable original-source action");
       }
     } finally { await context.close(); }
   });

@@ -1661,35 +1661,109 @@ export function createAtlas(container) {
     }
   }
 
-  // ---- mini route (side panel) ----------------------------------------------
+  // ---- account map overview ------------------------------------------------
   api.drawMini = function (svgEl, j) {
-    if (!svgEl || !j) return;
-    if (projection) projectJourney(j);
-    const sel = d3.select(svgEl); sel.selectAll("*").remove();
-    const W = 340, H = 150, pad = 22;
-    const pts = mappedPoints(j);
-    if (pts.length < 1) return;
-    const xs = pts.map((p) => p.px), ys = pts.map((p) => p.py);
+    if (!svgEl || !j || !world) {
+      console.warn("The account map cannot render before its geography and account are available.");
+      return false;
+    }
+    const sel = d3.select(svgEl);
+    sel.selectAll("*").remove();
+    const W = 340, H = 190, pad = 24;
+    sel.attr("viewBox", `0 0 ${W} ${H}`).attr("role", "img")
+      .attr("aria-label", `Present-day map of the recorded place references in ${j.name}'s account`);
+    sel.append("title").text(`Recorded places for ${j.name}`);
+    sel.append("rect").attr("class", "mini-ocean").attr("width", W).attr("height", H).attr("fill", C.ocean);
+    const pts = (j.waypoints || []).filter(hasCoordinates);
+    if (!pts.length) {
+      sel.attr("data-mini-state", "unlocated");
+      sel.append("text").attr("x", W / 2).attr("y", H / 2).attr("text-anchor", "middle")
+        .attr("fill", C.inkSoft).attr("font-size", 12).text("No source locations have been mapped yet.");
+      console.warn(`The account map for ${j.id} has no located source references.`);
+      return false;
+    }
+
+    // The overview has its own unclipped camera; main-map zoom and sheet size
+    // must not change its geography or split nearby places across the date line.
+    const longitudes = [...new Set(pts.map(point => ((point.lng % 360) + 360) % 360))].sort((a, b) => a - b);
+    let widestGap = -1, arcStart = 0;
+    longitudes.forEach((value, index) => {
+      const next = index + 1 < longitudes.length ? longitudes[index + 1] : longitudes[0] + 360;
+      if (next - value > widestGap) { widestGap = next - value; arcStart = next % 360; }
+    });
+    const centralLongitude = (arcStart + (360 - widestGap) / 2 + 180) % 360 - 180;
+    const miniProjection = d3.geoEqualEarth().rotate([-centralLongitude, 0]).scale(1).translate([0, 0]);
+    const miniPath = d3.geoPath(miniProjection);
+    const worldBounds = miniPath.bounds({ type: "Sphere" });
+    const worldScale = Math.min(W / (worldBounds[1][0] - worldBounds[0][0]), H / (worldBounds[1][1] - worldBounds[0][1]));
+    const positions = pts.map(point => miniProjection([point.lng, point.lat]));
+    const xs = positions.map(point => point[0]), ys = positions.map(point => point[1]);
     const minx = Math.min(...xs), maxx = Math.max(...xs), miny = Math.min(...ys), maxy = Math.max(...ys);
-    const sx = (maxx - minx) || 1, sy = (maxy - miny) || 1;
-    const k = Math.min((W - pad * 2) / sx, (H - pad * 2) / sy);
-    const position = (point) => ({
-      x: (point.px - (minx + maxx) / 2) * k + W / 2,
-      y: (point.py - (miny + maxy) / 2) * k + H / 2,
-    });
-    const P = routePoints(j).map(position);
+    const k = Math.min((W - pad * 2) / (maxx - minx), (H - pad * 2) / (maxy - miny),
+      worldScale * (pts.every(point => ["city", "site"].includes(point.locationPrecision)) ? 8 : 4));
+    miniProjection.scale(k).translate([W / 2 - (minx + maxx) / 2 * k, H / 2 - (miny + maxy) / 2 * k])
+      .clipExtent([[0, 0], [W, H]]);
+    const land = world.features.filter(feature => feature.properties.name !== "Antarctica")
+      .map(feature => ({ feature, d: miniPath(feature) })).filter(entry => entry.d);
+    sel.append("g").attr("class", "mini-geography").attr("aria-hidden", "true")
+      .selectAll("path").data(land).join("path")
+      .attr("class", "mini-country").attr("data-country", entry => entry.feature.properties.name)
+      .attr("d", entry => entry.d).attr("fill", C.land).attr("stroke", C.landStroke).attr("stroke-width", .6);
+    const position = point => {
+      const [x, y] = miniProjection([point.lng, point.lat]);
+      return { x, y };
+    };
+    const routeReferences = (j.routeWaypoints || []).filter(point => hasCoordinates(point) && personalPrecise(point));
+    const route = journeyPath(routeReferences.map(position));
     const col = GROUP_COLOR[j.group] || C.accent;
-    if (P.length > 1) sel.append("path").attr("d", journeyPath(P))
-      .attr("class", "mini-route").attr("fill", "none").attr("stroke", col).attr("stroke-width", 1.6)
-      .attr("stroke-linecap", "round").attr("stroke-linejoin", "round");
-    pts.forEach((point) => {
-      const p = position(point), kind = referenceKind(point);
-      sel.append("circle").attr("cx", p.x).attr("cy", p.y).attr("r", kind === "precise" ? 3.5 : 4.5)
-        .attr("class", `mini-map-reference map-reference--${kind}`)
-        .attr("fill", kind === "precise" ? col : "none")
-        .attr("stroke", col).attr("stroke-width", kind === "precise" ? .5 : 1.2)
-        .attr("stroke-dasharray", kind === "review" ? "2 1.5" : null);
+    if (route) sel.append("path").attr("d", route)
+      .attr("class", "mini-route").attr("fill", "none").attr("stroke", col).attr("stroke-width", 1.8)
+      .attr("stroke-linecap", "round").attr("stroke-linejoin", "round")
+      .attr("paint-order", "stroke");
+    sel.append("desc").text(`Current borders for orientation, not historical territorial claims. ${
+      route ? "Lines connect source-linked city and site references, not exact travel paths." : "These references do not establish a connected journey."
+    } ${pts.map(point => point.canonical).join("; ")}.`);
+    const occupied = pts.map(point => {
+      const { x, y } = position(point);
+      return [x - 6, y - 6, x + 6, y + 6];
     });
+    for (const point of pts) {
+      const p = position(point), kind = referenceKind(point);
+      sel.append("circle").datum(point).attr("cx", p.x).attr("cy", p.y).attr("r", kind === "precise" ? 3.5 : 4.5)
+        .attr("class", `mini-map-reference map-reference--${kind}`)
+        .attr("fill", kind === "precise" ? col : C.ocean)
+        .attr("stroke", col).attr("stroke-width", kind === "precise" ? .8 : 1.2)
+        .attr("stroke-dasharray", kind === "review" ? "2 1.5" : null)
+        .append("title").text(`${point.canonical}. ${kind === "precise" ? "Source-linked city or site reference"
+          : kind === "broad" ? "Broad geographic reference" : "Source mention needing review"}.`);
+    }
+    const labelled = new Set();
+    let labels = 0;
+    for (const point of pts) {
+      if (labelled.has(point.canonical) || labels >= 6) continue;
+      labelled.add(point.canonical);
+      const text = point.canonical.split(",")[0], width = mapTextWidth(text, 500);
+      const p = position(point);
+      const candidates = [
+        [p.x + 8, p.y - 5], [p.x - width - 8, p.y - 5],
+        [p.x - width / 2, p.y - 20], [p.x - width / 2, p.y + 9],
+      ];
+      const candidate = candidates.find(([x, y]) => {
+        const box = [x - 2, y - 2, x + width + 2, y + 13];
+        return box[0] >= 6 && box[1] >= 6 && box[2] <= W - 6 && box[3] <= H - 6 &&
+          !occupied.some(other => box[0] < other[2] && box[2] > other[0] && box[1] < other[3] && box[3] > other[1]);
+      });
+      if (!candidate) continue;
+      const [x, y] = candidate;
+      occupied.push([x - 2, y - 2, x + width + 2, y + 13]);
+      sel.append("text").attr("class", "mini-place-label").attr("x", x).attr("y", y + 9)
+        .attr("font-family", "'Public Sans',sans-serif").attr("font-size", 9).attr("font-weight", 500)
+        .attr("fill", C.ink).attr("stroke", C.paperSoft).attr("stroke-width", 2.5)
+        .attr("stroke-linejoin", "round").attr("paint-order", "stroke").text(text);
+      labels++;
+    }
+    sel.attr("data-mini-state", "ready");
+    return true;
   };
 
   return api;

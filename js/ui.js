@@ -566,13 +566,12 @@ export function panel(store, state) {
       ${j.serviceYear ? `<details class="related-context"><summary>Historical context and maps ${icon("chevron")}</summary>
         <p class="section-note">These sources describe the period. They are separate from ${esc(j.name)}'s own account.</p>
         ${contextResources(j.serviceYear)}</details>` : ""}
-      ${j.routeWaypoints.length > 1 ? `<svg class="mini" viewBox="0 0 340 150" data-mini></svg>
-      <div class="mini-cap">Connections between city and site references, not exact travel paths.</div>` : ""}
       <section class="profile-places" id="profile-places" tabindex="-1" aria-labelledby="recorded-places-title">
         <h3 id="recorded-places-title">Recorded places</h3>
         <p class="section-note">${wp.length
-          ? "The route uses person-linked city and site references. Broad areas and mentions needing review are labelled below. Select a place to inspect its map reference."
-          : "This account is in the collection, but its places have not been mapped."}</p>
+          ? "Explore the places named in this account. Broad areas and mentions needing review stay distinct from source-linked city and site references."
+          : "This source snapshot has no located place references. The biography and interview remain available; a route cannot be inferred from the account's category."}</p>
+        ${accountMapOverview(j)}
         ${wp.length ? `<ol class="journey">${steps}</ol>` : ""}
       </section>
       ${contextualPlaces(j)}
@@ -585,6 +584,25 @@ export function panel(store, state) {
       </div>
       <nav class="result-navigation result-navigation-end" data-result-navigation aria-label="Continue through matching accounts">${resultNavigation(store, state)}</nav>
     </aside>`;
+}
+
+export function accountMapOverview(journey) {
+  const counts = evidenceCounts(journey);
+  if (!counts.mapped) return `<div class="account-map-unavailable">
+    <p>No account locations to plot yet.</p>
+    <a class="link" href="${esc(journey.archiveUrl)}" target="_blank" rel="noopener">Find places in the original OHP account ${icon("external-link")}</a>
+  </div>`;
+  const routeLocations = new Set(journey.routeWaypoints.filter(point =>
+    Number.isFinite(point.lng) && Number.isFinite(point.lat) &&
+    (point.evidenceScope === "personal" || point.verified) && ["city", "site"].includes(point.locationPrecision))
+    .map(point => `${point.lng},${point.lat}`));
+  return `<figure class="account-map-overview">
+    <svg class="mini" viewBox="0 0 340 190" role="img" aria-label="Map of ${esc(journey.name)}'s recorded places" data-mini></svg>
+    <figcaption class="mini-cap"><span>Current borders · ${counts.mapped} ${counts.mapped === 1 ? "recorded reference" : "recorded references"}</span>
+      ${routeLocations.size > 1 ? "Lines connect source-linked city and site references, not exact travel paths."
+        : "Markers locate source references. There is not enough evidence to connect them as a journey."}</figcaption>
+    <button class="link mini-map-open" data-act="show-explore-map">Open larger map ${icon("arrow-right")}</button>
+  </figure>`;
 }
 
 export function referenceNotice(state) {

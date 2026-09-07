@@ -17,7 +17,7 @@ body { margin:0; }
 </style>
 <div id="stage"><div id="map"></div><div id="tip"></div>
 <div class="ov-explore" data-presentation="map"></div></div>
-<svg id="mini" viewBox="0 0 340 150" style="display:none"></svg>"""
+<svg id="mini" viewBox="0 0 340 190" style="position:fixed;top:0;left:0;width:340px;height:190px;opacity:0;pointer-events:none"></svg>"""
 
 SETUP = """async () => {
   const {loadData, journeyFilter} = await import('/js/data.js');
@@ -146,6 +146,70 @@ COLLECTION = """() => {
   assert(document.activeElement.dataset.mapFocus === clusters.at(-1).dataset.mapFocus, 'Rerender lost cluster focus');
   assert(document.querySelectorAll('.place-cluster[tabindex="0"]').length === 1, 'Roving focus lost its single tab stop');
   return {all, filtered, empty, zoom:zoomState().k};
+}"""
+
+MINI_MAPS = """async () => {
+  const {accountMapOverview} = await import('/js/ui.js');
+  const element = document.querySelector('#mini'), failures = [], samples = [];
+  const camera = zoomState().toString();
+  let mapped = 0, unlocated = 0, noRoute = 0;
+  for (const journey of store.journeys) {
+    const coordinates = journey.waypoints.filter(point => Number.isFinite(point.lng) && Number.isFinite(point.lat));
+    const markup = accountMapOverview(journey);
+    if (!coordinates.length) {
+      unlocated++;
+      assert(!markup.includes('data-mini') && markup.includes('account-map-unavailable') && markup.includes(journey.archiveUrl),
+        journey.id + ': a source without coordinates displays a blank map or lacks recovery');
+      continue;
+    }
+    mapped++;
+    const before = journey.waypoints.map(point => [point.px, point.py]);
+    assert(markup.includes('data-mini') && markup.includes('Open larger map'), journey.id + ': mapped source has no account map');
+    atlas.drawMini(element, journey);
+    const markers = [...element.querySelectorAll('.mini-map-reference')];
+    const land = [...element.querySelectorAll('.mini-country')].filter(country => {
+      const box = country.getBBox();
+      return box.width > 1 && box.height > 1;
+    });
+    const labels = [...element.querySelectorAll('.mini-place-label')];
+    const expectedRoute = new Set(journey.routeWaypoints
+      .filter(point => Number.isFinite(point.lng) && Number.isFinite(point.lat) &&
+        (point.evidenceScope === 'personal' || point.verified) && ['city','site'].includes(point.locationPrecision))
+      .map(point => `${point.lng},${point.lat}`)).size > 1;
+    const route = element.querySelector('.mini-route');
+    if (!expectedRoute) noRoute++;
+    const visible = markers.every(marker => {
+      const x = Number(marker.getAttribute('cx')), y = Number(marker.getAttribute('cy'));
+      return Number.isFinite(x) && Number.isFinite(y) && x >= 23.99 && x <= 316.01 && y >= 23.99 && y <= 166.01;
+    });
+    if (markers.length !== coordinates.length || !land.length || !labels.length || !visible || Boolean(route) !== expectedRoute ||
+        (route && (!route.getAttribute('d') || /NaN|Infinity/.test(route.getAttribute('d'))))) {
+      failures.push({id:journey.id,markers:markers.length,expected:coordinates.length,land:land.length,labels:labels.length,visible,route:Boolean(route),expectedRoute});
+    }
+    assert(element.getAttribute('role') === 'img' && element.getAttribute('aria-label').includes(journey.name) &&
+      element.querySelector('desc').textContent.includes('Current borders'), journey.id + ': overview has no geographic description');
+    assert(JSON.stringify(before) === JSON.stringify(journey.waypoints.map(point => [point.px,point.py])),
+      journey.id + ': the overview mutated the main map points');
+    if (['adam-wally','adler-amek','ferguson-george'].includes(journey.id)) samples.push({id:journey.id,land:land.length,markers:markers.length,labels:labels.length});
+  }
+  assert(!failures.length, 'Unusable account maps: ' + JSON.stringify(failures));
+  assert(camera === zoomState().toString(), 'Drawing account overviews moved the main map');
+
+  const base = store.journeys[0];
+  const point = (canonical,lng,lat) => ({canonical,lng,lat,evidenceScope:'personal',locationPrecision:'city',verified:false});
+  const repeated = point('Toronto, Canada',-79.3832,43.6532);
+  const pacific = [point('Suva, Fiji',178.45,-18.14),point('Apia, Samoa',-171.75,-13.83)];
+  for (const [id,points] of [['single',[repeated]],['same-location',[repeated,{...repeated}]],['date-line',pacific]]) {
+    const journey = {...base,id,name:id,waypoints:points,routeWaypoints:points};
+    atlas.drawMini(element,journey);
+    assert(element.querySelector('.mini-country') && element.querySelector('.mini-place-label'), id + ': missing geography or labels');
+    if (id !== 'date-line') assert(!element.querySelector('.mini-route'), id + ': a repeated location became a route');
+    else {
+      const xs = [...element.querySelectorAll('.mini-map-reference')].map(marker => Number(marker.getAttribute('cx')));
+      assert(Math.abs(xs[0]-xs[1]) > 60 && Math.abs(xs[0]-xs[1]) < 293, 'Date-line neighbours were stretched across a world map');
+    }
+  }
+  return {mapped,unlocated,noRoute,failures,samples};
 }"""
 
 SELECTION = """() => {
@@ -289,6 +353,7 @@ def main():
             page.add_script_tag(url=f"{args.base.rstrip('/')}/vendor/topojson/topojson-client.min.js")
             results = {"accounts": page.evaluate(SETUP)}
             results["desktop"] = page.evaluate(FRAMES)
+            results["miniMaps"] = page.evaluate(MINI_MAPS)
             results["collection"] = page.evaluate(COLLECTION)
             results["selection"] = page.evaluate(SELECTION)
             page.set_viewport_size({"width": 390, "height": 844})

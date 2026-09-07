@@ -105,6 +105,15 @@ an account's undated or other-year references remain in Explore, not on that yea
 Account-map markers also open their matching source entries. Broken account and place
 links show an explanation and recovery actions rather than silently returning home.
 
+Every account with located references has a geographic overview under **Places**,
+including accounts with just one place or no source-supported connecting route.
+The overview reuses the loaded world geography, adds country outlines and place names,
+and identifies its borders as present-day orientation. Its camera is independent of
+the main map and keeps date-line neighbours together. **Open larger map** returns to
+the same account on the interactive map. Broad and unreviewed mentions remain distinct;
+an account without located evidence gets a clear original-source action, not an empty
+route graphic or invented coordinates.
+
 Collection search combines words in any order: **Adler Amek**, **Adler Auschwitz**
 and **Warsaw Toronto** can match a name, a name with a place, or multiple recorded
 places in one account. Every term must match; use double quotes for a phrase such as
