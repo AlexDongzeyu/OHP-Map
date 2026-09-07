@@ -2670,10 +2670,12 @@ async function navigateSource(page, action) {
       if (missing.status() !== 404 || (await publicPage.$eval("body", body => body.innerText.trim())).length < 80) {
         throw new Error("the HTTP 404 is empty or has the wrong status");
       }
+      await navigateSource(publicPage, () => publicPage.click("a[href='/collection']"));
+      if (new URL(publicPage.url()).pathname !== "/collection" ||
+          await publicPage.$$eval(".catalogue-accounts li", rows => rows.length) !== 40) {
+        throw new Error("the server recovery link did not open readable source accounts");
+      }
       await publicPage.setJavaScriptEnabled(true);
-      await publicPage.click("a[href='/#/explore']");
-      await publicPage.waitForSelector(".rail-card", { timeout: 15000 });
-      if (await publicPage.$("#missing-title")) throw new Error("the server recovery link opened an unsupported route");
       await publicPage.goto(BASE + "/survivor/adler-amek", { waitUntil: "domcontentloaded" });
       await publicPage.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
       if (await publicPage.$("#server-profile")) throw new Error("the static fallback remained over the interactive reader");
