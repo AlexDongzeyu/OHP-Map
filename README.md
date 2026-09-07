@@ -184,6 +184,24 @@ across tabs. A saved-view URL refers to the receiving browser's own list, not th
 Blocked storage is reported without pretending a save succeeded. Clearing the list
 requires confirmation and does not change the public archive.
 
+**Saved → Back up or restore** downloads a JSON copy of the entire private saved
+selection, independent of active filters and the visible results page. It contains
+account identifiers only, not biographies, recordings or search history. Nothing
+is uploaded. Keep this file before clearing browser data or moving to another
+browser; citation text is not a restorable backup.
+
+Restoring first previews a supported backup, then adds its identifiers only after
+confirmation. It re-reads the receiving browser's saved list immediately before
+merging, resolves known aliases, removes duplicates and retains identifiers that
+are unavailable in the current archive snapshot. An invalid file or failed storage
+write does not replace existing saved data. Backups are limited to 1 MB and 10,000
+accounts; an oversized file or combined list is rejected rather than truncated.
+Closing the dialog cancels an unconfirmed restore. No account content is cached
+for offline reading, and no automatic cloud synchronization is introduced.
+Unavailable identifiers still count toward **Saved**. The saved view identifies
+them separately from available results and offers **Check again**; a retained list
+with no currently available accounts is not presented as an unused, empty list.
+
 **Filters → Captioned chapters** narrows the collection using recorded caption
 metadata. The filter works with search, communities, places and saved/shared lists,
 and survives account navigation and shared view URLs. Counts refer to accounts,
@@ -353,6 +371,10 @@ Run the tests with `python -m pytest -q`. A headless browser smoke test is in
 `tools/smoke.cjs` (`node tools\smoke.cjs http://127.0.0.1:8124` against a running
 Worker preview; puppeteer-core + Edge). The complete smoke suite requires Worker
 routing, not only a static file server.
+`python tools\saved_list_smoke.py --base http://127.0.0.1:8124` tests real local
+backup downloads, complete cross-browser restoration, unavailable-account recovery,
+file and storage errors, cancellation, and 320/768/1440px keyboard layouts with the
+existing Playwright setup. Pass `--output` to retain the screenshots and test files.
 `python tools\source_print_smoke.py --base http://127.0.0.1:8124` verifies actual
 multi-page account/list PDFs with the existing Playwright and pypdf setup. Pass
 `--output` to keep the PDFs for visual inspection; otherwise temporary output is

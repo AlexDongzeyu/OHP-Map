@@ -11,6 +11,7 @@ import {
   SAVED_ACCOUNTS_KEY, readSavedAccounts, updateSavedAccount, isSavedAccountsFailure, copyText,
   addSavedAccounts, decodeCollectionIds, collectionLink, collectionCitations, CollectionLinkError, CitationError,
   chapterLink, ChapterLinkError,
+  MAX_SAVED_LIST_FILE_BYTES, SavedListFileError, savedListFile, decodeSavedListFile, restoreSavedList,
 } from "./research-tools.js";
 
 const VIEWS = ["landing", "explore", "patterns", "about", "not-found"];
@@ -517,6 +518,7 @@ function refreshResearchTools(message = "") {
     related.innerHTML = ui.relatedReading(store, state);
     wireImages(related);
   }
+  document.getElementById("saved-list-dialog")?.dispatchEvent(new Event("saved-list-updated"));
 }
 
 function toggleSavedAccount(id) {
@@ -608,6 +610,115 @@ function openResearchDialog(markup, returnAction) {
   }, { once: true });
   dialog.showModal();
   return dialog;
+}
+
+function manageSavedList() {
+  loadSavedList();
+  refreshResearchTools();
+  const dialog = openResearchDialog(ui.savedListDialog(state), "manage-saved-list");
+  const input = dialog.querySelector("#saved-backup-file");
+  const download = dialog.querySelector("[data-download-saved-backup]");
+  const restore = dialog.querySelector("[data-restore-saved-backup]");
+  const status = dialog.querySelector("[data-saved-import-status]");
+  let pending = null, request = 0;
+
+  function update() {
+    dialog.querySelector("[data-saved-backup-count]").textContent = state.savedError
+      ? "The current saved list could not be read. Existing saved data has not been changed."
+      : `${state.savedIds.size} saved ${state.savedIds.size === 1 ? "account" : "accounts"}. Includes all saved accounts, regardless of filters.`;
+    download.disabled = !state.savedIds.size || Boolean(state.savedError);
+    if (!pending) return;
+    const added = [...pending].filter(id => !state.savedIds.has(id)).length;
+    status.textContent = !pending.size ? "This backup is empty. Choose another file; no accounts have been changed."
+      : state.savedError ? `${state.savedError} Existing saved data has not been changed.`
+      : added ? `${pending.size} ${pending.size === 1 ? "account" : "accounts"} in this backup. ${added} to add; ${pending.size - added} already saved.`
+      : "All accounts in this backup are already saved. No changes are needed.";
+    dialog.querySelector("[data-saved-import-preview]").innerHTML = ui.savedListFilePreview(pending, store);
+    dialog.querySelector("[data-saved-import-actions]").hidden = !pending.size;
+    restore.disabled = !added || Boolean(state.savedError);
+    restore.textContent = `Add ${added} ${added === 1 ? "account" : "accounts"}`;
+  }
+  dialog.addEventListener("saved-list-updated", update);
+  update();
+
+  download.addEventListener("click", () => {
+    const feedback = dialog.querySelector("[data-saved-backup-status]");
+    try {
+      const ids = readSavedAccounts(window.localStorage, store.byId);
+      if (!ids.size) throw new SavedListFileError("There are no saved accounts to back up. Save an account or choose a backup below.");
+      const text = savedListFile(ids);
+      downloadFile(new Blob([text], { type: "application/json;charset=utf-8" }), "ohp-saved-accounts.json");
+      state.savedIds = ids;
+      state.savedError = "";
+      refreshResearchTools();
+      feedback.textContent = `Backup prepared for all ${ids.size} saved ${ids.size === 1 ? "account" : "accounts"}. Keep the downloaded file somewhere you can find it.`;
+    } catch (error) {
+      if (!(error instanceof SavedListFileError) && !isSavedAccountsFailure(error)) throw error;
+      feedback.textContent = `The backup could not be prepared. ${error.message} Existing saved data has not been changed.`;
+      console.warn("Unable to prepare the saved-list backup:", error.message);
+    }
+  });
+
+  input.addEventListener("change", async () => {
+    const current = ++request;
+    const file = input.files[0];
+    pending = null;
+    restore.disabled = true;
+    dialog.querySelector("[data-saved-import-actions]").hidden = true;
+    dialog.querySelector("[data-saved-import-preview]").innerHTML = "";
+    status.textContent = file ? "Reading the backup on this device..." : "No backup selected. Your saved list has not changed.";
+    dialog.setAttribute("aria-busy", String(Boolean(file)));
+    if (!file) return;
+    try {
+      if (file.size > MAX_SAVED_LIST_FILE_BYTES) {
+        throw new SavedListFileError("This backup is larger than 1 MB. Choose a smaller saved-list backup.");
+      }
+      const text = await file.text();
+      if (!dialog.isConnected || !dialog.open || current !== request) return;
+      pending = decodeSavedListFile(text, store.byId);
+      loadSavedList();
+      refreshResearchTools();
+    } catch (error) {
+      if (!(error instanceof SavedListFileError) && !isSavedAccountsFailure(error) &&
+          !(error instanceof DOMException && ["NotReadableError", "NotFoundError", "AbortError"].includes(error.name))) throw error;
+      if (!dialog.isConnected || !dialog.open || current !== request) return;
+      status.textContent = `This backup could not be read. ${error.message} Your saved list has not changed. Choose the file again or try another backup.`;
+      console.warn("Unable to read the saved-list backup:", error.message);
+      input.value = "";
+    } finally {
+      if (dialog.isConnected && current === request) dialog.setAttribute("aria-busy", "false");
+    }
+  });
+
+  restore.addEventListener("click", () => {
+    if (!pending?.size) {
+      status.textContent = "Choose a non-empty backup before adding accounts.";
+      console.warn("No saved-list backup is ready to restore.");
+      return;
+    }
+    restore.disabled = true;
+    try {
+      const result = restoreSavedList(window.localStorage, store.byId, pending);
+      state.savedIds = result.ids;
+      state.savedError = "";
+      pending = null;
+      input.value = "";
+      dialog.querySelector("[data-saved-import-actions]").hidden = true;
+      dialog.querySelector("[data-saved-import-preview]").innerHTML = "";
+      refreshCollection();
+      const message = result.added ? `${result.added} ${result.added === 1 ? "account added" : "accounts added"} to this browser's saved list. Your other saved accounts have been kept.`
+        : "All accounts in this backup were already saved. No changes were needed.";
+      refreshResearchTools(message);
+      status.textContent = message;
+      input.focus({ preventScroll: true });
+      status.scrollIntoView({ block: "nearest", behavior: "instant" });
+    } catch (error) {
+      if (!(error instanceof SavedListFileError) && !isSavedAccountsFailure(error)) throw error;
+      restore.disabled = false;
+      status.textContent = `This backup could not be added. ${error.message} Your existing saved list has not been changed.`;
+      console.warn("Unable to restore the saved-list backup:", error.message);
+    }
+  });
 }
 
 async function fillBiographyDialog(dialog, journey) {
@@ -1371,8 +1482,7 @@ function refreshRail(resetScroll = false) {
   }
   if (cnt) cnt.textContent = `${shown} of ${total} shown`;
   const hint = document.querySelector("[data-explore-hint]");
-  if (hint) hint.textContent = total ? "Choose an account or a place marker to explore its source references."
-    : "No accounts match these filters. Reset the filters or try a different spelling.";
+  if (hint) hint.textContent = ui.exploreHint(store, state, total);
   wireRail();
 }
 
@@ -2202,6 +2312,7 @@ function onActivate(e) {
     case "reload-collection": return location.reload();
     case "download-review": return downloadReviewSource();
     case "toggle-saved-view": return toggleSavedView();
+    case "manage-saved-list": return manageSavedList();
     case "browse-places": return openPlaceBrowser();
     case "browse-flags": return openFlagBrowser();
     case "close-research-dialog": return t.closest("dialog").close();

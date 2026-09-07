@@ -722,9 +722,9 @@ body[data-view="landing"] :focus-visible { outline-color:var(--on-binding); }
 .saved-view .icon { width:15px; height:15px; }
 .saved-view:hover { text-decoration:underline; text-underline-offset:4px; }
 .saved-view > span { font-variant-numeric:tabular-nums; }
-.saved-privacy { margin:calc(-1 * var(--space-2)) 0 var(--space-3); }
+.saved-privacy { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0 var(--space-2); margin:calc(-1 * var(--space-2)) 0 var(--space-3); }
 .saved-privacy p { margin:0; color:var(--muted); font-size:11px; line-height:1.5; }
-.saved-privacy .link { min-height:36px; font-size:11px; }
+.saved-privacy .link { min-height:44px; font-size:11px; }
 .saved-list-footer { padding:var(--space-3) 0 0; margin-top:var(--space-3); }
 .saved-list-footer .link { min-height:44px; font-size:11px; }
 .saved-feedback { margin:0 0 var(--space-3); color:var(--ink-soft); font-size:12px; line-height:1.5; }
@@ -771,6 +771,12 @@ body[data-view="landing"] :focus-visible { outline-color:var(--on-binding); }
 .research-dialog-actions { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-4); margin-top:var(--space-4); }
 .research-dialog-actions .link { min-height:44px; font-size:12px; }
 .research-dialog .reference-status:empty { display:none; }
+.saved-backup-section + .saved-backup-section { margin-top:var(--space-6); padding-top:var(--space-6); border-top:1px solid var(--line); }
+.saved-backup-section h3 { margin:0 0 var(--space-2); font:400 22px/1.3 var(--serif); }
+.saved-backup-section > p:not(.reference-status) { margin:0 0 var(--space-3); color:var(--muted); font-size:12px; line-height:1.6; }
+.saved-backup-section input[type="file"] { display:block; width:100%; min-height:44px; border:1px solid var(--rule); border-radius:var(--radius-control); background:var(--paper); color:var(--ink); font:400 12px/1.5 var(--sans); }
+.saved-backup-section input::file-selector-button { min-height:44px; margin-right:var(--space-2); padding:var(--space-2) var(--space-3); border:0; border-right:1px solid var(--rule); background:var(--accent-wash); color:var(--ink); font:inherit; cursor:pointer; }
+.saved-backup-section .reading-list-preview { margin-bottom:0; }
 .biography-excerpt-label { margin:0 0 var(--space-2); color:var(--muted); font-size:11px; }
 .biography-open { display:flex; align-items:center; gap:var(--space-2); min-height:44px; margin-top:var(--space-3); font-size:12px; }
 .biography-open .icon { width:15px; height:15px; }

@@ -142,6 +142,7 @@ export function explore(store, state) {
         <button class="saved-view" data-act="toggle-saved-view">${savedViewLabel(store, state)}</button></div>
       <div class="saved-privacy" data-saved-privacy${state.savedOnly ? "" : " hidden"}>
         <p>Saved only in this browser.</p>
+        <button class="link" data-act="manage-saved-list" aria-haspopup="dialog">Back up or restore</button>
       </div>
       <div class="reading-list-tools" data-reading-list-tools${state.savedOnly || state.sharedIds ? "" : " hidden"}>${readingListTools(store, state)}</div>
       <p class="saved-feedback" data-saved-feedback aria-live="${state.selectedId ? "off" : "polite"}"${state.savedError ? "" : " hidden"}>${esc(state.savedError || "")}</p>
@@ -194,9 +195,7 @@ export function explore(store, state) {
       ${boundaryNotice()}
       ${mapLegend("explore")}
     </div>
-    ${!state.selectedId ? `<p class="explore-hint" data-explore-hint>${total
-      ? "Choose an account or a place marker to explore its source references."
-      : "No accounts match these filters. Reset the filters or try a different spelling."}</p>` : ""}
+    ${!state.selectedId ? `<p class="explore-hint" data-explore-hint>${exploreHint(store, state, total)}</p>` : ""}
     <button class="reader-return" data-act="show-reader">${state.selectedId
       ? `Read ${esc(store.byId.get(state.selectedId).name)}'s account` : "Browse the collection"} ${icon("arrow-right")}</button>
   </div>`;
@@ -225,14 +224,17 @@ export function railInner(store, state) {
   }
   if (!html) {
     const emptySaved = state.savedOnly && !savedCount(store, state);
+    const unavailableSaved = emptySaved && state.savedIds.size > 0 && !state.savedError;
     const emptyShared = state.sharedIds && !store.journeys.some(journey => state.sharedIds.has(journey.id));
     const suggestions = state.query ? searchSuggestions(store, state) : [];
     html = `<div class="rail-empty" tabindex="-1" role="region" aria-label="Collection results"><p>${emptyShared ? "These accounts are not available yet" : emptySaved
-      ? (state.savedError ? "Saved accounts are unavailable" : "Keep an account for later")
+      ? (state.savedError ? "Saved accounts are unavailable" : unavailableSaved
+        ? "Saved accounts are not in this snapshot" : "Keep an account for later")
       : state.groupFilter.size ? (state.query ? "No account matches every search term" : "No matching accounts") : "No communities selected"}</p>
       <span>${emptyShared ? "The link has been kept intact. Reload the collection to check for updates, or browse the available accounts."
         : emptySaved ? (state.savedError
         ? "Your existing list has not been changed. You can browse the collection and copy account links instead."
+        : unavailableSaved ? "The saved identifiers have been kept. Check again for archive updates, or use Back up or restore to keep a copy."
         : "Use the bookmark beside a name or Save account in the reader. You can return to your list here.")
         : !state.groupFilter.size ? "Select at least one community to search this collection."
         : state.query ? "Try fewer words or a different spelling. Double quotes keep a phrase together. Search covers names, places, periods and topics, not full biographies or transcripts."
@@ -252,9 +254,19 @@ function savedCount(store, state) {
   return store.journeys.filter((journey) => state.savedIds.has(journey.id)).length;
 }
 
+export function exploreHint(store, state, total) {
+  if (total) return "Choose an account or a place marker to explore its source references.";
+  if (state.savedOnly && !savedCount(store, state)) {
+    if (state.savedError) return "Your saved list could not be read. Browse available accounts or allow browser storage to try again.";
+    if (state.savedIds.size) return "Your saved accounts are not in this snapshot. Their identifiers have been kept. Check again for archive updates.";
+    return "Your saved list is empty. Browse the collection and save an account to map its references.";
+  }
+  return "No accounts match these filters. Reset the filters or try a different spelling.";
+}
+
 export function savedViewLabel(store, state) {
   return state.savedOnly || state.sharedIds ? `${icon("arrow-right")} All accounts`
-    : `${icon("bookmark")} Saved <span>${savedCount(store, state)}</span>`;
+    : `${icon("bookmark")} Saved <span>${state.savedIds.size}</span>`;
 }
 
 export function collectionTitle(state) {
@@ -273,10 +285,12 @@ export function captionedResultCount(store, state) {
 export function readingListTools(store, state) {
   if (!state.savedOnly && !state.sharedIds) return "";
   const results = collectionResults(store, state);
-  const missing = state.sharedIds ? [...state.sharedIds].filter(id => !store.byId.has(id)).length : 0;
+  const listIds = state.sharedIds || (state.savedOnly && !state.savedError ? state.savedIds : null);
+  const missing = listIds ? [...listIds].filter(id => !store.byId.has(id)).length : 0;
   const allSaved = results.length && results.every(journey => state.savedIds.has(journey.id));
   return `${state.sharedIds ? `<p class="shared-list-note">A shared selection of public accounts. Opening this link does not change your saved accounts.</p>` : ""}
     ${missing ? `<p class="shared-list-warning" role="status">${missing} ${missing === 1 ? "account is" : "accounts are"} not available in this archive snapshot.
+      ${state.sharedIds ? "" : `${missing === 1 ? "It remains" : "They remain"} in your saved list and backups.`}
       <button class="link" data-act="reload-collection">Check again</button></p>` : ""}
     <div class="reading-list-actions">
       ${state.sharedIds ? `<button class="link" data-act="save-shared-list"${!results.length || allSaved ? " disabled" : ""}>
@@ -292,6 +306,38 @@ function researchDialog(id, title, body) {
       <button data-act="close-research-dialog" aria-label="Close ${esc(title.toLowerCase())}">${icon("close")}</button></header>
     <div class="research-dialog-body">${body}</div>
   </dialog>`;
+}
+
+export function savedListDialog(state) {
+  return researchDialog("saved-list-dialog", "Your saved list", `
+    <p class="research-dialog-intro">Keep a copy you can restore in another browser. Backups keep your selection, not biographies or videos. Nothing is uploaded.</p>
+    <section class="saved-backup-section" aria-labelledby="saved-backup-heading">
+      <h3 id="saved-backup-heading">Keep a copy</h3>
+      <p data-saved-backup-count>${state.savedIds.size} saved ${state.savedIds.size === 1 ? "account" : "accounts"}. Includes all saved accounts, regardless of filters.</p>
+      <button class="btn btn-ghost" data-download-saved-backup${state.savedIds.size && !state.savedError ? " autofocus" : " disabled"}>Download backup</button>
+      <p class="reference-status" data-saved-backup-status role="status">${esc(state.savedError)}</p>
+    </section>
+    <section class="saved-backup-section" aria-labelledby="saved-restore-heading">
+      <h3 id="saved-restore-heading">Restore from a backup</h3>
+      <p id="saved-backup-help">Preview an OHP backup before adding its accounts. Your current saved accounts stay saved.</p>
+      <label for="saved-backup-file">Choose a saved-list backup</label>
+      <input id="saved-backup-file" type="file" accept=".json,application/json" aria-describedby="saved-backup-help"${!state.savedIds.size || state.savedError ? " autofocus" : ""}>
+      <p class="reference-status" data-saved-import-status role="status"></p>
+      <div data-saved-import-preview></div>
+      <div class="research-dialog-actions" data-saved-import-actions hidden>
+        <button class="btn btn-primary" data-restore-saved-backup disabled>Add accounts</button>
+        <button class="link" data-act="close-research-dialog">Cancel</button>
+      </div>
+    </section>`);
+}
+
+export function savedListFilePreview(ids, store) {
+  const available = [...ids].map(id => store.byId.get(id)).filter(Boolean);
+  const missing = ids.size - available.length;
+  return `${missing ? `<p class="shared-list-warning">${missing} ${missing === 1 ? "account is" : "accounts are"} not available in this archive snapshot.
+      ${missing === 1 ? "Its identifier will" : "Their identifiers will"} stay in your saved list and future backups, but cannot be opened here yet.</p>` : ""}
+    <ul class="reading-list-preview">${available.slice(0, 3).map(journey => `<li>${esc(journey.name)}</li>`).join("")}
+      ${available.length > 3 ? `<li class="reading-list-more">And ${available.length - 3} more available accounts</li>` : ""}</ul>`;
 }
 
 export function biographyContent(journey) {

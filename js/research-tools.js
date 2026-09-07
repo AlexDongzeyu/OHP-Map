@@ -1,13 +1,24 @@
 import { isChapterId } from "./media.js";
 
 export const SAVED_ACCOUNTS_KEY = "ohp-map.saved-accounts.v1";
+export const MAX_SAVED_LIST_FILE_BYTES = 1_000_000;
 const ACCOUNT_ID = /^[a-z0-9][a-z0-9_-]*$/;
 const MAX_COLLECTION_LINK_LENGTH = 7000;
+const MAX_SAVED_LIST_FILE_ACCOUNTS = 10_000;
 
 export class SavedAccountsError extends Error {}
+export class SavedListFileError extends Error {}
 export class CollectionLinkError extends Error {}
 export class CitationError extends Error {}
 export class ChapterLinkError extends Error {}
+
+function savedAccountIds(saved, byId) {
+  if (saved?.version !== 1 || !Array.isArray(saved.ids) ||
+      saved.ids.some((id) => typeof id !== "string" || !ACCOUNT_ID.test(id))) {
+    throw new SavedAccountsError("The saved-account list uses an unsupported format.");
+  }
+  return new Set(saved.ids.map((id) => byId.get(id)?.id || id));
+}
 
 export function decodeSavedAccounts(value, byId) {
   if (value === null) return new Set();
@@ -18,15 +29,51 @@ export function decodeSavedAccounts(value, byId) {
     if (!(error instanceof SyntaxError)) throw error;
     throw new SavedAccountsError("The saved-account list could not be read.");
   }
-  if (saved?.version !== 1 || !Array.isArray(saved.ids) ||
-      saved.ids.some((id) => typeof id !== "string" || !ACCOUNT_ID.test(id))) {
-    throw new SavedAccountsError("The saved-account list uses an unsupported format.");
-  }
-  return new Set(saved.ids.map((id) => byId.get(id)?.id || id));
+  return savedAccountIds(saved, byId);
 }
 
 export function readSavedAccounts(storage, byId) {
   return decodeSavedAccounts(storage.getItem(SAVED_ACCOUNTS_KEY), byId);
+}
+
+export function decodeSavedListFile(text, byId) {
+  if (typeof text !== "string") throw new SavedListFileError("Choose a saved-list backup file.");
+  if (new TextEncoder().encode(text).length > MAX_SAVED_LIST_FILE_BYTES) {
+    throw new SavedListFileError("This backup is larger than 1 MB. Choose a smaller saved-list backup.");
+  }
+  let file;
+  try { file = JSON.parse(text); }
+  catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    throw new SavedListFileError("This file is not valid JSON. Choose a backup downloaded from Saved accounts.");
+  }
+  if (file?.format !== "ohp-saved-accounts" || file.version !== 1 || !Array.isArray(file.ids) ||
+      Object.keys(file).some(key => !["format", "version", "ids"].includes(key))) {
+    throw new SavedListFileError("This is not a supported OHP saved-list backup. Citation and source-review files cannot be restored here.");
+  }
+  if (file.ids.length > MAX_SAVED_LIST_FILE_ACCOUNTS) {
+    throw new SavedListFileError("One backup can contain up to 10,000 accounts. This file has not been added.");
+  }
+  return savedAccountIds(file, byId);
+}
+
+export function savedListFile(accountIds) {
+  const text = JSON.stringify({ format: "ohp-saved-accounts", version: 1, ids: [...new Set(accountIds)] }, null, 2) + "\n";
+  decodeSavedListFile(text, new Map());
+  return text;
+}
+
+export function restoreSavedList(storage, byId, accountIds) {
+  const incoming = decodeSavedListFile(savedListFile(accountIds), byId);
+  const ids = readSavedAccounts(storage, byId);
+  const previous = ids.size;
+  incoming.forEach(id => ids.add(id));
+  // The complete merged list must remain exportable; never truncate a restore.
+  savedListFile(ids);
+  if (ids.size !== previous) {
+    storage.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify({ version: 1, ids: [...ids] }));
+  }
+  return { ids, added: ids.size - previous };
 }
 
 export function updateSavedAccount(storage, byId, id, saved) {
