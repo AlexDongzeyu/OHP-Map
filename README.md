@@ -86,6 +86,19 @@ prefix of both the saved introduction and full source text; arbitrary partial or
 changed excerpts are rejected. Failed loads retain the excerpt and offer retry/OHP exits.
 The full written biography is not presented as an interview transcript.
 
+Selecting an interview chapter keeps its public ID in the account address.
+**Copy chapter link** produces a clean, account-bound link without private
+saved-list/search filters or Vimeo permission tokens. Opening or refreshing that
+link selects the matching chapter, expands its list if needed and waits for the
+reader to choose Play; it never autoplays. Missing or invalid chapter references
+keep the account readable and offer a clear selection reset. Chapter selection
+updates the current history entry, like collection filters, rather than adding
+an entry for every play-button click. The ordinary Back path still returns to
+the preceding account or view. Re-selecting a playing chapter preserves its
+iframe, and closing playback restores visible focus to its chapter row.
+Chapter links use the interactive reader; without JavaScript, the source
+account stays readable and explains how to reach the original interview.
+
 Historical search asks visitors to choose between ambiguous results. If the dated
 geometry fails to load, a visible notice identifies the neutral, present-day basemap and
 offers a retry without resetting the year or layers. About and the year-context sources

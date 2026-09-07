@@ -111,6 +111,8 @@ export function renderProfileHtml(shell, feature, { origin = DEFAULT_ORIGIN, sou
         <p data-server-profile-status role="status">The interactive account opens when the map finishes loading. This source summary remains available if it cannot load.</p>
         <button type="button" data-server-profile-retry hidden>Try the interactive view again</button>
       </div>`}
+      ${sourceOnly ? "" : `<noscript><p class="server-profile-caveat server-profile-js-note">Selecting an interview chapter and playing its video require JavaScript.
+        This source account remains readable; use its original OHP link for the interview.</p></noscript>`}
       <section aria-labelledby="server-source"><h2 id="server-source">From the original OHP biography</h2>
         ${biography ? `<blockquote${source ? ` cite="${esc(source)}"` : ""}>${esc(biography)}</blockquote>` : "<p>No public biography excerpt is available in this snapshot.</p>"}
         ${source ? `<p><a href="${esc(source)}" rel="noopener">Read the original account and interview at OHP</a></p>` : ""}

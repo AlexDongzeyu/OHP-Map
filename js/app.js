@@ -6,10 +6,11 @@ import * as ui from "./ui.js";
 import * as motion from "./motion.js";
 import { isReferenceKey, sourceReferenceTargets, referenceLink, ReferenceLinkError } from "./reference-links.js";
 import { motionEnabled, onMotionPreferenceChange, slug, normalizeSearch } from "./config.js";
-import { playerURL } from "./media.js";
+import { playerURL, isChapterId } from "./media.js";
 import {
   SAVED_ACCOUNTS_KEY, readSavedAccounts, updateSavedAccount, isSavedAccountsFailure, copyText,
   addSavedAccounts, decodeCollectionIds, collectionLink, collectionCitations, CollectionLinkError, CitationError,
+  chapterLink, ChapterLinkError,
 } from "./research-tools.js";
 
 const VIEWS = ["landing", "explore", "patterns", "about", "not-found"];
@@ -24,6 +25,9 @@ const state = {
   referenceKey: null,
   referenceMessage: "",
   referenceResolving: false,
+  chapterId: null,
+  chapterMessage: "",
+  chapterFocusPending: false,
   explorePresentation: "auto",
   missingKind: null,
   query: "",
@@ -280,6 +284,7 @@ function afterExplore() {
     if (journey?.detailState === "ready" && state.referenceResolving && isReferenceKey(state.referenceKey)) {
       void restoreLinkedReference(journey);
     } else void loadSelectedProfile(state.selectedId);
+    if (journey?.detailState === "ready") restoreChapter(journey);
   }
 }
 
@@ -303,6 +308,7 @@ async function loadSelectedProfile(id, retry = false) {
   if (journey.detailState === "ready") {
     if (state.referenceResolving && isReferenceKey(state.referenceKey)) void restoreLinkedReference(journey);
     else if (state.activePlaceIndex != null && !state.referenceKey) void rememberReference(journey, state.activePlaceIndex);
+    restoreChapter(journey);
   } else if (state.referenceKey) {
     state.referenceMessage = "Load this account's details to open the linked source reference.";
     refreshReferenceControls();
@@ -346,6 +352,7 @@ function refreshProfilePanel(journey) {
 
 function filterPlace(canonical) {
   resetReferenceState();
+  resetChapterState();
   state.placeFilter = canonical;
   state.selectedId = null;
   state.activePlaceIndex = null;
@@ -416,6 +423,7 @@ function go(view) {
   if (!VIEWS.includes(view)) view = "landing";
   if (view === "explore" && state.view === "explore" && state.selectedId) return clearSel();
   if (view === state.view) return;
+  resetChapterState();
   stopHistoryPlayback();
   syncHistoryAddress(true);
   if (view === "explore") {
@@ -433,6 +441,7 @@ function go(view) {
 }
 function selectSurvivor(id, keepPresentation = false) {
   resetReferenceState();
+  resetChapterState();
   stopHistoryPlayback();
   syncHistoryAddress(true);
   if (state.view !== "explore") {
@@ -887,6 +896,7 @@ function resetSavedList() {
 }
 function clearSel() {
   resetReferenceState();
+  resetChapterState();
   const id = state.selectedId;
   state.selectedId = null; state.activePlaceIndex = null;
   state.explorePresentation = "auto";
@@ -966,6 +976,7 @@ function collectionAddress(prefix) {
   if (state.savedOnly) params.set("saved", "1");
   if (state.sharedIds) params.set("list", [...state.sharedIds].join(","));
   if (prefix.startsWith("#/survivor/") && state.referenceKey !== null) params.set("ref", state.referenceKey);
+  if (prefix.startsWith("#/survivor/") && state.chapterId !== null) params.set("chapter", state.chapterId);
   if (state.railLimit > RAIL_PAGE) params.set("limit", Math.min(state.railLimit, store.journeys.length));
   const query = params.toString();
   return `${prefix}${query ? `?${query}` : ""}`;
@@ -1021,6 +1032,7 @@ function openOrigin(name) {
   }
   stopHistoryPlayback();
   resetReferenceState();
+  resetChapterState();
   state.originCountry = name;
   state.placeFilter = null;
   state.savedOnly = false;
@@ -1106,14 +1118,14 @@ async function restoreLinkedReference(journey) {
       state.referenceMessage = "";
       focusPlace(target.index, false);
       const button = document.querySelector(`[data-place-step="${target.index}"]`);
-      scrollProfileTo(button.closest(".recorded-place"), button, false);
+      if (!state.chapterId && !state.chapterMessage) scrollProfileTo(button.closest(".recorded-place"), button, false);
     } else {
       state.activePlaceIndex = null;
       state.referenceMessage = "This linked mention is now kept as source context, not this person's mapped journey.";
       const context = document.querySelector("details.contextual-places");
       context.open = true;
       const entry = context.querySelector(`[data-context-places~="${target.index}"]`);
-      scrollProfileTo(entry, entry, false);
+      if (!state.chapterId && !state.chapterMessage) scrollProfileTo(entry, entry, false);
       atlas.render("explore", atlasCtx());
     }
     refreshReferenceControls();
@@ -1199,6 +1211,89 @@ function showInterviews() {
   scrollProfileTo(document.getElementById("profile-interviews"), document.getElementById("interviews-title"));
 }
 
+function resetChapterState() {
+  state.chapterId = null;
+  state.chapterMessage = "";
+  state.chapterFocusPending = false;
+}
+
+function refreshChapterTools(journey = store.byId.get(state.selectedId)) {
+  const tools = document.querySelector("[data-chapter-tools]");
+  if (!journey || !tools) return;
+  tools.innerHTML = ui.chapterTools(journey, state);
+  document.querySelectorAll("[data-chapter-id]").forEach(button => {
+    if (button.dataset.chapterId === state.chapterId) button.setAttribute("aria-current", "true");
+    else button.removeAttribute("aria-current");
+  });
+}
+
+function restoreChapter(journey) {
+  if (!state.chapterFocusPending || journey.detailState !== "ready" ||
+      state.view !== "explore" || state.selectedId !== journey.id) return;
+  const id = state.chapterId;
+  const video = journey.media.videos.find(entry => entry.id === id);
+  if (video) {
+    const index = journey.media.videos.indexOf(video) + 1;
+    state.chapterMessage = playerURL(video)
+      ? `Chapter ${index} is selected below. Choose its play button to load the recording.`
+      : `Chapter ${index} is selected below. Inline playback is unavailable; its link opens the original OHP page.`;
+  } else if (!state.chapterMessage) {
+    state.chapterMessage = "This chapter is no longer listed in this account. Choose an available chapter or open the original OHP page.";
+  }
+  state.chapterFocusPending = false;
+  refreshChapterTools(journey);
+  updateDocumentTitle();
+  const button = video && document.querySelector(`[data-chapter-id="${CSS.escape(id)}"]`);
+  if (button?.closest("details")) button.closest("details").open = true;
+  const target = button || document.querySelector("[data-chapter-notice]");
+  requestAnimationFrame(() => {
+    if (state.view !== "explore" || state.selectedId !== journey.id || state.chapterId !== id ||
+        !target?.isConnected || document.querySelector("[data-player]")?.dataset.playing === id) return;
+    scrollProfileTo(button ? button.closest("li") : target, target, false);
+  });
+}
+
+async function copyChapterLink() {
+  const journey = store.byId.get(state.selectedId);
+  const id = state.chapterId, tools = document.querySelector("[data-chapter-tools]");
+  if (!journey || journey.detailState !== "ready" || !tools) {
+    console.warn("Load the account's chapters before copying a chapter link.");
+    return;
+  }
+  const status = tools.querySelector("[data-chapter-copy-status]");
+  try {
+    const url = chapterLink(journey, id, location.href);
+    const copied = await copyText(url, navigator.clipboard);
+    if (!tools.isConnected || state.selectedId !== journey.id || state.chapterId !== id) return;
+    status.textContent = copied ? "Chapter link copied. Playback starts only when its reader chooses Play."
+      : "Copying is unavailable. The chapter link is selected below.";
+    const field = tools.querySelector("[data-chapter-address]");
+    field.hidden = copied;
+    if (!copied) { field.value = url; field.focus(); field.select(); }
+  } catch (error) {
+    if (!(error instanceof ChapterLinkError)) throw error;
+    console.warn("The chapter link could not be copied:", error.message);
+    if (tools.isConnected) status.textContent = error.message;
+  }
+}
+
+function clearChapterSelection() {
+  const player = document.querySelector("[data-player]");
+  if (player && !player.hidden) closeVideo(false);
+  resetChapterState();
+  refreshChapterTools();
+  syncCollectionAddress();
+  showInterviews();
+}
+
+function rememberChapter(journey, id, message = "") {
+  state.chapterId = id;
+  state.chapterMessage = message;
+  state.chapterFocusPending = false;
+  refreshChapterTools(journey);
+  syncCollectionAddress();
+}
+
 function playVideo(id) {
   const journey = store.byId.get(state.selectedId);
   const video = journey?.media.videos.find((entry) => entry.id === id);
@@ -1207,7 +1302,14 @@ function playVideo(id) {
     console.warn("This interview chapter is not available for embedded playback.");
     return;
   }
+  rememberChapter(journey, id);
   const player = document.querySelector("[data-player]");
+  const existing = player.querySelector("[data-player-frame] iframe");
+  if (player.dataset.playing === id && existing?.src === url) {
+    player.hidden = false;
+    scrollProfileTo(player, player.querySelector("[data-player-title]"));
+    return;
+  }
   const frame = document.createElement("iframe");
   frame.src = url;
   frame.title = `${journey.name}: ${video.title}`;
@@ -1227,13 +1329,23 @@ function playVideo(id) {
   scrollProfileTo(player, title);
 }
 
-function closeVideo() {
+function closeVideo(restoreFocus = true) {
   const player = document.querySelector("[data-player]");
   const id = player.dataset.playing;
   player.querySelector("[data-player-frame]").replaceChildren();
   player.hidden = true;
+  delete player.dataset.playing;
   document.querySelectorAll("[data-video]").forEach((button) => button.setAttribute("aria-pressed", "false"));
-  document.querySelector(`[data-video="${CSS.escape(id || "")}"]`)?.focus({ preventScroll: true });
+  if (!restoreFocus) return;
+  const chapter = document.querySelector(`[data-video="${CSS.escape(id || "")}"]`);
+  if (chapter) {
+    const disclosure = chapter.closest("details");
+    if (disclosure) disclosure.open = true;
+    scrollProfileTo(chapter.closest("li"), chapter, false);
+  } else {
+    console.warn("The previously playing chapter is no longer in the account; returning to the interview.");
+    showInterviews();
+  }
 }
 
 function onSearch(value) {
@@ -1652,6 +1764,8 @@ function updateDocumentTitle() {
         : state.captionedOnly ? "Accounts with captioned chapters" : state.originCountry
         ? `Routes starting in ${state.originCountry}` : state.groupFilter.size === 1
           ? [...state.groupFilter][0] : "The collection");
+    const chapter = store.byId.get(state.selectedId)?.media.videos.findIndex(video => video.id === state.chapterId);
+    if (chapter >= 0) label += `, chapter ${chapter + 1}`;
   } else if (state.view === "patterns") {
     const event = eventsForYear().find((entry) => entry.key === state.patternEventKey);
     label = state.patternsLayer === "origins" ? "Route origins"
@@ -2009,7 +2123,7 @@ function wireImages(host) {
   });
 }
 function onActivate(e) {
-  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match],[data-save-id],[data-copy-account],[data-search-suggestion],[data-browse-place],[data-copy-reference],[data-related-account],[data-flag-controller]");
+  const t = e.target.closest("[data-act],[data-view],[data-survivor],[data-layer],[data-event],[data-place-step],[data-video],[data-profile-section],[data-origin],[data-history-match],[data-save-id],[data-copy-account],[data-search-suggestion],[data-browse-place],[data-copy-reference],[data-related-account],[data-flag-controller],[data-chapter-id]");
   if (!t || !e.currentTarget.contains(t)) return;
   if (t.dataset.view) return go(t.dataset.view);
   if (t.dataset.layer) return setLayer(t.dataset.layer);
@@ -2056,6 +2170,20 @@ function onActivate(e) {
   }
   if (t.dataset.event != null) return setPatternEvent(t.dataset.event);
   if (t.dataset.placeStep != null) return focusPlace(Number(t.dataset.placeStep));
+  if (t.matches("a[data-chapter-id]")) {
+    const journey = store.byId.get(state.selectedId);
+    if (!journey?.media.videos.some(video => video.id === t.dataset.chapterId)) {
+      e.preventDefault();
+      console.warn("The selected chapter is no longer in the account.");
+      state.chapterMessage = "This chapter is no longer listed. Reload the account or open its original OHP page.";
+      refreshChapterTools(journey);
+      return;
+    }
+    const player = document.querySelector("[data-player]");
+    if (player && !player.hidden) closeVideo(false);
+    rememberChapter(journey, t.dataset.chapterId, "This chapter opens at OHP. Its account-bound link is available to copy here.");
+    return;
+  }
   if (t.dataset.video != null) return playVideo(t.dataset.video);
   switch (t.dataset.act) {
     case "explore": return go("explore");
@@ -2107,6 +2235,8 @@ function onActivate(e) {
     case "show-explore-map": return setExplorePresentation("map");
     case "show-reader": return setExplorePresentation("reader");
     case "close-video": return closeVideo();
+    case "copy-chapter-link": return copyChapterLink();
+    case "clear-chapter": return clearChapterSelection();
     case "zoom-in": state.pendingHistoryCamera = null; return atlas.zoomBy(1.5);
     case "zoom-out": state.pendingHistoryCamera = null; return atlas.zoomBy(1 / 1.5);
     case "reset-map":
@@ -2152,6 +2282,7 @@ function setHash(h) {
     const fragment = currentFragment();
     const query = new URLSearchParams(location.search);
     query.delete("ref");
+    query.delete("chapter");
     history.replaceState(history.state, "", `/${query.size ? `?${query}` : ""}${fragment}`);
   }
   programmatic = true;
@@ -2169,6 +2300,7 @@ function route() {
   if (programmatic) { programmatic = false; return; }
   stopHistoryPlayback();
   resetReferenceState();
+  resetChapterState();
   const fragment = currentFragment();
   const separator = fragment.indexOf("?");
   const hash = separator < 0 ? fragment : fragment.slice(0, separator);
@@ -2176,6 +2308,7 @@ function route() {
   const params = new URLSearchParams(query);
   const [, kind, value] = hash.split("/");
   if (params.has("ref") && kind !== "survivor") return showMissing("place");
+  if (params.has("chapter") && kind !== "survivor") return showMissing("page");
   if (kind === "guided" || hash === "#map" || hash === "#overlay") {
     if (!restoreCollectionAddress(params)) return showMissing("filter");
     history.replaceState(null, "", exploreHash());
@@ -2192,6 +2325,11 @@ function route() {
     state.activePlaceIndex = null;
     state.explorePresentation = "auto";
     state.view = "explore";
+    if (params.has("chapter")) {
+      state.chapterFocusPending = true;
+      if (params.getAll("chapter").length === 1 && isChapterId(params.get("chapter"))) state.chapterId = params.get("chapter");
+      else state.chapterMessage = "This chapter link is invalid. The account remains available; choose a listed chapter below.";
+    }
     if (params.has("ref")) {
       state.referenceKey = params.get("ref");
       state.referenceResolving = isReferenceKey(state.referenceKey);

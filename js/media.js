@@ -2,6 +2,10 @@ const SOURCE_HOSTS = new Set(["ohp.crestwood.on.ca", "crestwood.on.ca", "www.cre
 const VIDEO_HOSTS = new Set(["vimeo.com", "www.vimeo.com", "player.vimeo.com"]);
 const PLAYER_HOSTS = new Set(["player.vimeo.com"]);
 
+export function isChapterId(value) {
+  return typeof value === "string" && /^\d{1,20}$/.test(value);
+}
+
 function mediaURL(value, hosts, local = false) {
   if (!value) return null;
   if (typeof value !== "string") {

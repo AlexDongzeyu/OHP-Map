@@ -518,7 +518,7 @@ export function panel(store, state) {
   const sections = [
     ["profile-story", "Account"],
     ...(j.media.images.length || j.media.imageReferences.length ? [["profile-photographs", "Photographs"]] : []),
-    ...(ready && (j.videoCount || j.media.videos.length) ? [["profile-interviews", "Interview"]] : []),
+    ...(ready && (j.videoCount || j.media.videos.length || state.chapterId || state.chapterMessage) ? [["profile-interviews", "Interview"]] : []),
     ["profile-places", "Places"],
   ];
   return `
@@ -562,7 +562,7 @@ export function panel(store, state) {
           </div>`}
       </section>
       ${ready ? profileGallery(j) : ""}
-      ${ready ? profileInterviews(j) : ""}
+      ${ready ? profileInterviews(j, state) : ""}
       ${j.serviceYear ? `<details class="related-context"><summary>Historical context and maps ${icon("chevron")}</summary>
         <p class="section-note">These sources describe the period. They are separate from ${esc(j.name)}'s own account.</p>
         ${contextResources(j.serviceYear)}</details>` : ""}
@@ -794,16 +794,29 @@ function profileGallery(journey) {
   </section>`;
 }
 
-function profileInterviews(journey) {
-  if (!journey.videoCount && !journey.media.videos.length) return "";
+export function chapterTools(journey, state) {
+  const video = journey.media.videos.find(entry => entry.id === state.chapterId);
+  const message = state.chapterMessage || (state.chapterId && !video
+    ? "This chapter is no longer listed in this account. The biography and other interview material remain available." : "");
+  return `${message ? `<p class="chapter-notice" data-chapter-notice tabindex="-1" role="status">${esc(message)}</p>` : ""}
+    ${video || message ? `<div class="chapter-actions">
+      ${video ? `<button class="link" data-act="copy-chapter-link">${icon("share")} Copy chapter link</button>` : ""}
+      <button class="link" data-act="clear-chapter">Clear chapter selection</button>
+    </div>` : ""}
+    <p class="reference-status" data-chapter-copy-status role="status"></p>
+    <input class="chapter-address" data-chapter-address aria-label="Link to the selected interview chapter" readonly hidden>`;
+}
+
+function profileInterviews(journey, state) {
+  if (!journey.videoCount && !journey.media.videos.length && !state.chapterId && !state.chapterMessage) return "";
   const chapters = journey.media.videos.map((video, index) => {
     const playable = playerURL(video);
     const chapterTitle = video.title.replace(new RegExp(`^${index + 1}[.)]\\s*`), "");
     const title = `<span class="video-order">${index + 1}</span><span>${esc(chapterTitle)}
       <small>${esc(captionStatus(video))}</small></span>${icon(playable ? "play" : "external-link")}`;
     return `<li>${playable
-      ? `<button class="video-chapter" data-video="${esc(video.id)}">${title}</button>`
-      : `<a class="video-chapter" href="${esc(journey.archiveUrl)}" target="_blank" rel="noopener">${title}</a>`}</li>`;
+      ? `<button class="video-chapter" data-video="${esc(video.id)}" data-chapter-id="${esc(video.id)}"${state.chapterId === video.id ? ' aria-current="true"' : ""}>${title}</button>`
+      : `<a class="video-chapter" data-chapter-id="${esc(video.id)}"${state.chapterId === video.id ? ' aria-current="true"' : ""} href="${esc(journey.archiveUrl)}" target="_blank" rel="noopener">${title}</a>`}</li>`;
   });
   const inlineCount = journey.media.videos.filter((video) => playerURL(video)).length;
   return `<section class="profile-interviews" id="profile-interviews" tabindex="-1" aria-labelledby="interviews-title">
@@ -818,6 +831,7 @@ function profileInterviews(journey) {
       <div class="player-frame" data-player-frame></div>
       <p class="player-note">If Vimeo cannot play this recording here, <a href="${esc(journey.archiveUrl)}" target="_blank" rel="noopener">open it on the OHP page</a>.</p>
     </div>
+    <div class="chapter-tools" data-chapter-tools>${chapterTools(journey, state)}</div>
     ${chapters.length ? `<ol class="video-chapters">${chapters.slice(0, 5).join("")}</ol>
       ${chapters.length > 5 ? `<details class="more-videos"><summary>View all ${chapters.length} chapters ${icon("chevron")}</summary>
         <ol class="video-chapters" start="6">${chapters.slice(5).join("")}</ol></details>` : ""}`

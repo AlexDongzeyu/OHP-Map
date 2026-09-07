@@ -42,7 +42,7 @@ body:has(#no-js-fallback) #server-profile .server-profile-loading { display:none
   body:has(#server-profile) #stage { display:none !important; }
   #server-profile { position:static; height:auto; overflow:visible; background:white; font-size:10.5pt; }
   #server-profile .server-profile-inner { max-width:none; padding:0; }
-  #server-profile nav, #server-profile .server-profile-loading { display:none; }
+  #server-profile nav, #server-profile .server-profile-loading, #server-profile .server-profile-js-note { display:none; }
   #server-profile h1 { font-size:28pt; }
   #server-profile h2 { font-size:16pt; break-after:avoid; }
   #server-profile li { break-inside:avoid-page; }

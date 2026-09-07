@@ -1277,7 +1277,12 @@ body[data-view="landing"] :focus-visible { outline-color:var(--on-binding); }
 .original-gallery a { display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); min-height:40px; padding:var(--space-2) 0; color:var(--accent-deep); font-size:12px; line-height:1.45; text-underline-offset:3px; }
 .video-chapters { margin:0; padding:0; list-style:none; }
 .video-chapter { width:100%; display:grid; grid-template-columns:22px minmax(0, 1fr) 16px; align-items:center; gap:var(--space-3); padding:var(--space-4) 0; border:0; border-bottom:1px solid var(--line-soft); background:none; color:var(--ink); font-size:13px; line-height:1.5; text-align:left; text-decoration:none; cursor:pointer; }
-.video-chapter:hover, .video-chapter[aria-pressed="true"] { color:var(--accent-deep); background:var(--accent-wash); }
+.video-chapter:hover, .video-chapter[aria-pressed="true"], .video-chapter[aria-current="true"] { color:var(--accent-deep); background:var(--accent-wash); }
+.chapter-notice { margin:var(--space-3) 0; color:var(--ink-soft); font-size:12px; line-height:1.6; }
+.chapter-actions { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-3); }
+.chapter-actions .link { display:flex; align-items:center; gap:var(--space-2); min-height:44px; font-size:12px; }
+.chapter-address { width:100%; min-height:44px; padding:var(--space-2); border:1px solid var(--line); border-radius:var(--radius-control); background:var(--paper-soft); color:var(--ink); font:12px var(--sans); }
+.chapter-tools .reference-status:empty { display:none; }
 .video-chapter small { display:block; margin-top:4px; color:var(--muted); font-size:11px; line-height:1.45; }
 .video-order { color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
 .interview-player { margin:var(--space-5) 0; }

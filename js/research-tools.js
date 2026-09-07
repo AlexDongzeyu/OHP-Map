@@ -1,3 +1,5 @@
+import { isChapterId } from "./media.js";
+
 export const SAVED_ACCOUNTS_KEY = "ohp-map.saved-accounts.v1";
 const ACCOUNT_ID = /^[a-z0-9][a-z0-9_-]*$/;
 const MAX_COLLECTION_LINK_LENGTH = 7000;
@@ -5,6 +7,7 @@ const MAX_COLLECTION_LINK_LENGTH = 7000;
 export class SavedAccountsError extends Error {}
 export class CollectionLinkError extends Error {}
 export class CitationError extends Error {}
+export class ChapterLinkError extends Error {}
 
 export function decodeSavedAccounts(value, byId) {
   if (value === null) return new Set();
@@ -85,6 +88,16 @@ export function accountLink(journey, address) {
   url.search = "";
   url.hash = "";
   url.pathname = `/survivor/${journey.id}`;
+  return url.href;
+}
+
+export function chapterLink(journey, id, address) {
+  if (typeof journey?.id !== "string" || !ACCOUNT_ID.test(journey.id) ||
+      !isChapterId(id) || !Array.isArray(journey.media?.videos) || !journey.media.videos.some(video => video.id === id)) {
+    throw new ChapterLinkError("That chapter is not listed in this account. Open the original OHP page or choose an available chapter.");
+  }
+  const url = new URL(accountLink(journey, address));
+  url.searchParams.set("chapter", id);
   return url.href;
 }
 

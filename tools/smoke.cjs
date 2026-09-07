@@ -4156,6 +4156,225 @@ async function navigateSource(page, action) {
     } finally { await context.close(); }
   });
 
+  await check("reselecting a playing interview preserves its frame and buffer", async () => {
+    const context = await browser.createBrowserContext();
+    const interview = await context.newPage();
+    interview.on("pageerror", error => errors.push("repeat chapter: " + error.message));
+    let requests = 0;
+    await interview.setRequestInterception(true);
+    interview.on("request", request => {
+      if (request.url().startsWith("https://player.vimeo.com/video/")) {
+        requests++;
+        return request.respond({ status: 200, contentType: "text/html", body: "<html><body>Playback fixture</body></html>" });
+      }
+      request.continue();
+    });
+    try {
+      await interview.goto(BASE + "/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await interview.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await interview.click("[data-act='show-interviews']");
+      const id = await interview.$eval(".video-chapter[data-video]", button => button.dataset.video);
+      await interview.click(`[data-video='${id}']`);
+      await interview.waitForSelector("[data-player-frame] iframe");
+      await interview.$eval("[data-player-frame] iframe", frame => { frame.dataset.retained = "yes"; });
+      await interview.click(`[data-video='${id}']`);
+      if (requests !== 1 || await interview.$eval("[data-player-frame] iframe", frame => frame.dataset.retained) !== "yes") {
+        throw new Error("reselecting the current chapter restarted its player");
+      }
+    } finally { await context.close(); }
+  });
+
+  await check("closing a later interview chapter restores visible keyboard focus", async () => {
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 }]) {
+      const context = await browser.createBrowserContext();
+      const interview = await context.newPage();
+      interview.on("pageerror", error => errors.push("chapter return: " + error.message));
+      await interview.setViewport(viewport);
+      await interview.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+      await interview.setRequestInterception(true);
+      interview.on("request", request => request.url().startsWith("https://player.vimeo.com/video/")
+        ? request.respond({ status: 200, contentType: "text/html", body: "<html><body>Playback fixture</body></html>" })
+        : request.continue());
+      try {
+        await interview.goto(BASE + "/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+        await interview.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+        await interview.click("[data-act='show-interviews']");
+        await interview.click(".more-videos > summary");
+        const id = await interview.$eval(".more-videos [data-video]", button => button.dataset.video);
+        await interview.click(`[data-video='${id}']`);
+        await interview.waitForSelector("[data-player-frame] iframe");
+        await interview.click(".more-videos > summary");
+        await interview.focus("[data-act='close-video']");
+        await interview.keyboard.press("Enter");
+        await interview.waitForFunction(() => !document.querySelector("[data-player-frame] iframe"));
+        const restored = await interview.evaluate(expected => {
+          const active = document.activeElement, panel = document.querySelector(".panel").getBoundingClientRect();
+          const toolbar = document.querySelector(".profile-toolbar").getBoundingClientRect(), box = active.getBoundingClientRect();
+          return active.dataset.video === expected && document.querySelector(".more-videos").open &&
+            box.top >= toolbar.bottom && box.bottom <= panel.bottom;
+        }, id);
+        if (!restored) throw new Error("closing playback left focus hidden or outside its chapter list");
+      } finally { await context.close(); }
+    }
+  });
+
+  await check("chapter links restore the exact later chapter without autoplay or private filters", async () => {
+    const context = await browser.createBrowserContext();
+    const interview = await context.newPage();
+    interview.on("pageerror", error => errors.push("chapter link: " + error.message));
+    await interview.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+    await interview.setRequestInterception(true);
+    let playerRequests = 0;
+    interview.on("request", request => {
+      if (request.url().startsWith("https://player.vimeo.com/video/")) {
+        playerRequests++;
+        return request.respond({ status: 200, contentType: "text/html", body: "<html><body>Playback fixture</body></html>" });
+      }
+      request.continue();
+    });
+    try {
+      await interview.goto(BASE + "/survivor/adam-wally?q=Adam&groups=military-veterans&saved=1", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await interview.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await interview.click("[data-act='show-interviews']");
+      await interview.click(".more-videos > summary");
+      const id = await interview.$eval(".more-videos [data-video]", button => button.dataset.video);
+      await interview.click(`[data-video='${id}']`);
+      await interview.waitForSelector("[data-player-frame] iframe");
+      const address = new URL(interview.url());
+      if (address.searchParams.get("chapter") !== id || address.searchParams.get("q") !== "Adam" || address.searchParams.get("saved") !== "1") {
+        throw new Error("selecting the chapter lost the existing collection address");
+      }
+      await interview.evaluate(() => Object.defineProperty(navigator, "clipboard", {
+        configurable: true, value: { writeText: async value => { window.chapterCopied = value; } },
+      }));
+      await interview.click("[data-act='copy-chapter-link']");
+      await interview.waitForFunction(() => Boolean(window.chapterCopied));
+      const link = new URL(await interview.evaluate(() => window.chapterCopied));
+      if (link.pathname !== "/survivor/adam-wally" || link.search !== `?chapter=${id}` || link.hash) throw new Error("chapter sharing copied private filters or provider tokens");
+      const before = playerRequests;
+      await interview.reload({ waitUntil: "domcontentloaded" });
+      await interview.waitForSelector(`.video-chapter[data-chapter-id='${id}'][aria-current='true']`, { timeout: 15000 });
+      await interview.waitForFunction(expected => document.activeElement.dataset.chapterId === expected, {}, id);
+      if (await interview.$("[data-player-frame] iframe") || playerRequests !== before ||
+          !await interview.$eval(".more-videos", details => details.open)) throw new Error("refresh auto-played or hid the linked chapter");
+      await interview.goto(link.href, { waitUntil: "domcontentloaded" });
+      await interview.waitForSelector(`.video-chapter[data-chapter-id='${id}'][aria-current='true']`, { timeout: 15000 });
+      if (await interview.$("[data-player-frame] iframe")) throw new Error("a clean shared chapter link auto-played");
+      const number = await interview.$eval(".video-chapter[aria-current='true'] .video-order", order => order.textContent);
+      if (!(await interview.title()).includes(`chapter ${number}`)) throw new Error("the selected chapter is absent from the browser title");
+    } finally { await context.close(); }
+  });
+
+  await check("invalid and changed chapter links keep the account readable and recover cleanly", async () => {
+    const context = await browser.createBrowserContext();
+    const interview = await context.newPage();
+    interview.on("pageerror", error => errors.push("chapter recovery: " + error.message));
+    try {
+      await interview.setViewport({ width: 320, height: 568 });
+      for (const query of ["chapter=1", "chapter=not-a-video", "chapter=1&chapter=2"]) {
+        await interview.goto(BASE + "/survivor/adam-wally?" + query, { waitUntil: "domcontentloaded", timeout: 40000 });
+        await interview.waitForSelector("[data-chapter-notice]", { timeout: 15000 });
+        if (await interview.$eval("#profile-name", name => name.textContent) !== "Wally Adam" ||
+            await interview.$(".video-chapter[aria-current='true']") || await interview.$("[data-player-frame] iframe")) {
+          throw new Error("an invalid chapter replaced the account or selected a different video");
+        }
+        await interview.click("[data-act='clear-chapter']");
+        if (new URL(interview.url()).searchParams.has("chapter") || await interview.$("[data-chapter-notice]")) throw new Error("clearing an invalid chapter did not remove its stale selection");
+      }
+      const id = await interview.$eval(".more-videos [data-video]", button => button.dataset.video);
+      await interview.goto(BASE + `/survivor/adam-wally?chapter=${id}`, { waitUntil: "domcontentloaded" });
+      await interview.waitForSelector("[data-act='copy-chapter-link']", { timeout: 15000 });
+      await interview.evaluate(() => Object.defineProperty(navigator, "clipboard", {
+        configurable: true, value: { writeText: async () => { throw new DOMException("Blocked", "NotAllowedError"); } },
+      }));
+      await interview.click("[data-act='copy-chapter-link']");
+      await interview.waitForSelector("[data-chapter-address]:not([hidden])");
+      const field = await interview.$eval("[data-chapter-address]", input => ({
+        value: input.value, focused: input === document.activeElement, selected: input.selectionEnd === input.value.length,
+        width: input.getBoundingClientRect().width,
+      }));
+      if (!field.value.endsWith(`?chapter=${id}`) || !field.focused || !field.selected || field.width > 320) {
+        throw new Error("blocked clipboard access left no usable chapter link");
+      }
+    } finally { await context.close(); }
+  });
+
+  await check("chapter restoration preserves a linked map reference and Back navigation", async () => {
+    const context = await browser.createBrowserContext();
+    const interview = await context.newPage();
+    interview.on("pageerror", error => errors.push("chapter and reference: " + error.message));
+    await interview.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+    await interview.setRequestInterception(true);
+    interview.on("request", request => request.url().startsWith("https://player.vimeo.com/video/")
+      ? request.respond({ status: 200, contentType: "text/html", body: "<html><body>Playback fixture</body></html>" }) : request.continue());
+    try {
+      await interview.goto(BASE + "/survivor/adam-wally", { waitUntil: "domcontentloaded", timeout: 40000 });
+      await interview.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      await interview.click("[data-profile-section='profile-places']");
+      await interview.click("[data-place-step='0']");
+      await interview.waitForFunction(() => new URL(location.href).searchParams.has("ref"));
+      const reference = new URL(interview.url()).searchParams.get("ref");
+      await interview.click("[data-act='show-interviews']");
+      const id = await interview.$eval(".video-chapter[data-video]", button => button.dataset.video);
+      await interview.click(`[data-video='${id}']`);
+      await interview.reload({ waitUntil: "domcontentloaded" });
+      await interview.waitForSelector("[data-place-step='0'][aria-pressed='true']", { timeout: 15000 });
+      await interview.waitForFunction(expected => document.activeElement.dataset.chapterId === expected, {}, id);
+      if (new URL(interview.url()).searchParams.get("ref") !== reference || await interview.$("[data-player-frame] iframe")) {
+        throw new Error("chapter restoration lost source-reference context or auto-played");
+      }
+      await interview.click("#topbar [data-view='about']");
+      await interview.waitForSelector(".ov-about");
+      await interview.goBack({ waitUntil: "domcontentloaded" });
+      await interview.waitForSelector(`.video-chapter[data-chapter-id='${id}'][aria-current='true']`, { timeout: 15000 });
+      if (await interview.$("[data-player-frame] iframe")) throw new Error("Back restarted interview playback");
+    } finally { await context.close(); }
+  });
+
+  await check("chapter restoration survives detail retry and unavailable chapters remain shareable", async () => {
+    const context = await browser.createBrowserContext();
+    const interview = await context.newPage();
+    const index = await (await fetch(BASE + "/data/index.json")).json();
+    const entry = index.features.find(feature => feature.properties.survivor_id === "adam-wally");
+    const profile = await (await fetch(BASE + entry.properties.detail_url)).json();
+    const unavailable = profile.properties.profile_media.videos[0];
+    unavailable.status = "unavailable";
+    let fail = true;
+    await interview.setRequestInterception(true);
+    interview.on("request", request => {
+      const path = new URL(request.url()).pathname;
+      if (path === "/data/index.json") return request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(index) });
+      if (path === entry.properties.detail_url) return request.respond({
+        status: fail ? 500 : 200, contentType: "application/json", body: fail ? "{}" : JSON.stringify(profile),
+      });
+      if (request.url().startsWith("https://player.vimeo.com/video/")) return request.respond({
+        status: 200, contentType: "text/html", body: "<html><body>Playback fixture</body></html>",
+      });
+      request.continue();
+    });
+    try {
+      await interview.goto(BASE + `/#/survivor/adam-wally?chapter=${unavailable.id}`, { waitUntil: "domcontentloaded", timeout: 40000 });
+      await interview.waitForSelector(".panel[data-profile-state='error']", { timeout: 15000 });
+      fail = false;
+      await interview.click("[data-act='retry-profile']");
+      await interview.waitForSelector(`a[data-chapter-id='${unavailable.id}'][aria-current='true']`, { timeout: 15000 });
+      if (await interview.$("[data-player-frame] iframe") || !await interview.$eval("[data-chapter-notice]", notice => notice.textContent.includes("Inline playback is unavailable"))) {
+        throw new Error("retry invented a player or lost the unavailable chapter");
+      }
+      await interview.click(".video-chapter[data-video]");
+      await interview.waitForSelector("[data-player-frame] iframe");
+      await interview.$eval(`a[data-chapter-id='${unavailable.id}']`, link => {
+        link.addEventListener("click", event => event.preventDefault(), { once: true });
+      });
+      await interview.click(`a[data-chapter-id='${unavailable.id}']`);
+      await interview.waitForFunction(() => !document.querySelector("[data-player-frame] iframe"));
+      if (!await interview.$(`a[data-chapter-id='${unavailable.id}'][aria-current='true']`) ||
+          !await interview.$("[data-act='copy-chapter-link']")) {
+        throw new Error("an external-only chapter did not retain its source-bound selection and sharing action");
+      }
+    } finally { await context.close(); }
+  });
+
   for (const transfer of dataTransfers.values()) {
     if (transfer.failed < 0) continue;
     if (transfer.completed <= transfer.failed) errors.push(`unrecovered data request: ${transfer.url} (${transfer.reasons.join(", ")})`);
