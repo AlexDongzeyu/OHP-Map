@@ -65,7 +65,7 @@ function recordedPlaces(properties) {
   }).join("") + "</ul>";
 }
 
-export function renderProfileHtml(shell, feature, { origin = DEFAULT_ORIGIN, sourceText } = {}) {
+export function renderProfileHtml(shell, feature, { origin = DEFAULT_ORIGIN, sourceText, sourceOnly = false } = {}) {
   const base = siteOrigin(origin);
   const properties = feature.properties;
   const name = properties.name || properties.survivor_id;
@@ -100,15 +100,17 @@ export function renderProfileHtml(shell, feature, { origin = DEFAULT_ORIGIN, sou
   const article = `
   <main id="server-profile" data-survivor-id="${esc(properties.survivor_id)}" aria-labelledby="server-profile-name">
     <div class="server-profile-inner">
-      <nav aria-label="Archive navigation"><a href="/collection">Source catalogue</a> <a href="/#/explore">Interactive collection</a></nav>
+      <nav aria-label="Archive navigation"><a href="/collection">Source catalogue</a> ${sourceOnly
+        ? `<a href="/survivor/${esc(properties.survivor_id)}">Open interactive account</a>`
+        : '<a href="/#/explore">Interactive collection</a>'}</nav>
       <p class="server-profile-kicker">Crestwood Oral History Project · ${esc(properties.group || "Recorded account")}</p>
       <h1 id="server-profile-name">${esc(name)}</h1>
       ${portrait ? `<figure><img src="${esc(portrait)}" alt="${esc(name)}" width="192" height="192" /><figcaption>${esc(properties.portrait_rights)}</figcaption></figure>` : ""}
       <p class="server-profile-caveat">${esc(caveat)}</p>
-      <div class="server-profile-loading">
+      ${sourceOnly ? "" : `<div class="server-profile-loading">
         <p data-server-profile-status role="status">The interactive account opens when the map finishes loading. This source summary remains available if it cannot load.</p>
         <button type="button" data-server-profile-retry hidden>Try the interactive view again</button>
-      </div>
+      </div>`}
       <section aria-labelledby="server-source"><h2 id="server-source">From the original OHP biography</h2>
         ${biography ? `<blockquote${source ? ` cite="${esc(source)}"` : ""}>${esc(biography)}</blockquote>` : "<p>No public biography excerpt is available in this snapshot.</p>"}
         ${source ? `<p><a href="${esc(source)}" rel="noopener">Read the original account and interview at OHP</a></p>` : ""}
@@ -117,7 +119,10 @@ export function renderProfileHtml(shell, feature, { origin = DEFAULT_ORIGIN, sou
       <p><a href="/collection">Return to the collection</a></p>
     </div>
   </main>`;
-  const html = rootAssetReferences(shell)
+  const pageShell = sourceOnly ? `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/css/tokens.css"></head><body></body></html>` : shell;
+  const html = rootAssetReferences(pageShell)
     .replace(/<title\b[^>]*>[\s\S]*?<\/title\s*>/gi, "")
     .replace(/<meta\b[^>]*(?:name|property)=["'](?:description|og:[^"']+|twitter:[^"']+)["'][^>]*>/gi, "")
     .replace(/<link\b[^>]*rel=["']canonical["'][^>]*>/gi, "")
@@ -127,13 +132,13 @@ export function renderProfileHtml(shell, feature, { origin = DEFAULT_ORIGIN, sou
 }
 
 export function renderErrorHtml(status = 404, message = "This page is not in the public archive.") {
-  const title = status === 404 ? "Page not found" : "The archive is temporarily unavailable";
+  const title = status === 404 ? "Page not found" : status === 400 ? "Unsupported address" : "The archive is temporarily unavailable";
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex"><title>${esc(title)} | Crestwood Oral History Project</title>
 <link rel="stylesheet" href="/server-profile.css"></head><body>
 <main id="server-profile"><div class="server-profile-inner"><p>Crestwood Oral History Project</p>
-<h1>${esc(title)}</h1><p>${esc(message)}</p><p><a href="/#/explore">Explore the collection</a> ·
+<h1>${esc(title)}</h1><p>${esc(message)}</p><p><a href="/collection">Browse source accounts</a> ·
 <a href="/">Return to Journeys</a> · <a href="https://ohp.crestwood.on.ca/">Visit the original OHP archive</a></p>
 </div></main></body></html>`;
 }

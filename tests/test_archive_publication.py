@@ -218,7 +218,7 @@ def test_assembler_emits_source_led_html_sitemap_and_retained_immutable_details(
     assert result["sitemap"].count("<url>") == 3
     assert "/survivor/first" in result["sitemap"] and "/survivor/second" in result["sitemap"]
     assert "earlier-name" not in result["sitemap"] and "private" not in result["sitemap"]
-    assert "Page not found" in result["notFound"] and 'href="/#/explore"' in result["notFound"]
+    assert "Page not found" in result["notFound"] and 'href="/collection"' in result["notFound"]
     assert "Sitemap: https://archive.test/sitemap.xml" in result["robots"]
     assert result["previous"]["properties"]["bio_excerpt"] == "An older public snapshot."
 
@@ -866,7 +866,7 @@ def test_live_profile_routes_render_real_metadata_alias_redirects_and_nonempty_4
     assert result["location"] == "/survivor/canonical"
     for missing in result["statuses"]:
         assert missing["status"] == 404
-        assert "Page not found" in missing["body"] and 'href="/#/explore"' in missing["body"]
+        assert "Page not found" in missing["body"] and 'href="/collection"' in missing["body"]
         assert missing["cache"] == "no-store"
 
 

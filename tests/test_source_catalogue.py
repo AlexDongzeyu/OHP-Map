@@ -30,8 +30,8 @@ const html=await response.text();
 console.log(JSON.stringify({status:response.status,html,requested}));
 """)
     assert result["status"] == 200
-    assert 'href="/survivor/adler-amek"' in result["html"]
-    assert 'href="/survivor/ferguson-george"' not in result["html"]
+    assert 'href="/survivor/adler-amek?reader=source"' in result["html"]
+    assert 'href="/survivor/ferguson-george?reader=source"' not in result["html"]
     assert "published snapshot" in result["html"]
     assert result["requested"] == ["/data/source-catalogue.json"]
     assert "<script" not in result["html"]
@@ -44,7 +44,7 @@ const responses=[];
 for(const query of ['lodz','Łódź','Adler Amek','"Adler Amek"']){
  const response=await entry.fetch(new Request('https://test.local/collection?q='+encodeURIComponent(query)),env,{});
  const html=await response.text();
- responses.push({query,status:response.status,adler:html.includes('href="/survivor/adler-amek"')});
+ responses.push({query,status:response.status,adler:html.includes('href="/survivor/adler-amek?reader=source"')});
 }
 console.log(JSON.stringify(responses));
 """)
@@ -152,3 +152,42 @@ console.log(JSON.stringify({html}));
     assert '<main id="server-profile"' in result["html"]
     assert 'aria-labelledby="server-profile-name"' in result["html"]
     assert 'href="/collection">Return to the collection' in result["html"]
+
+
+def test_source_only_reader_keeps_full_text_without_scripts_or_map_resources():
+    result = _worker(SETUP + r"""
+const response=await entry.fetch(new Request('https://test.local/survivor/adler-amek?reader=source'),env,{});
+const html=await response.text();
+const head=await entry.fetch(new Request('https://test.local/survivor/adler-amek?reader=source',{method:'HEAD'}),env,{});
+const cached=await entry.fetch(new Request('https://test.local/survivor/adler-amek?reader=source',{
+ headers:{'if-none-match':response.headers.get('etag')},
+}),env,{});
+console.log(JSON.stringify({status:response.status,html,head:head.status,headBody:await head.text(),cached:cached.status}));
+""")
+    assert result["status"] == result["head"] == 200
+    assert result["cached"] == 304 and result["headBody"] == ""
+    assert '<main id="server-profile"' in result["html"]
+    assert "An original public source excerpt." in result["html"]
+    assert "Open interactive account" in result["html"]
+    assert "<script" not in result["html"] and 'id="stage"' not in result["html"]
+    assert "server-profile-loading" not in result["html"]
+    assert "vendor/gsap" not in result["html"] and "js/app.js" not in result["html"]
+
+
+def test_source_only_reader_survives_alias_and_slash_redirects():
+    result = _worker(PUBLICATION_SETUP + r"""
+const env=await bindings(archive([makeFeature('canonical',{source_aliases:['old-name']})]));
+const rows=[];
+for(const path of ['/survivor/old-name?reader=source','/survivor/canonical/?reader=source']){
+ const response=await entry.fetch(new Request('https://test.local'+path),env,{});
+ rows.push({status:response.status,location:response.headers.get('location')});
+}
+for(const suffix of ['reader=unknown','reader=source&reader=source']){
+ const response=await entry.fetch(new Request('https://test.local/survivor/canonical?'+suffix),env,{});
+ rows.push({status:response.status,location:response.headers.get('location'),html:await response.text()});
+}
+console.log(JSON.stringify(rows));
+""")
+    assert all(row["status"] == 301 and row["location"] == "/survivor/canonical?reader=source" for row in result[:2])
+    assert all(row["status"] == 400 for row in result[2:])
+    assert all("Unsupported address" in row["html"] and 'href="/collection"' in row["html"] for row in result[2:])

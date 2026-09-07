@@ -96,6 +96,28 @@ def verify(base, output, executable):
             assert source_characters(source) in source_characters(text)
             assert all(source_characters(place) in source_characters(text) for place in places)
             results.append({"without_javascript": True, "pages": len(document.pages), "references": len(places), "complete": True})
+            source_reader = browser.new_page()
+            source_reader.goto(f"{base}/survivor/ferguson-george?reader=source", wait_until="networkidle")
+            source = source_reader.locator("#server-profile blockquote").inner_text()
+            places = source_reader.locator("#server-profile li strong").all_text_contents()
+            assert source_reader.locator("script,#stage").count() == 0
+            path = output / "source-only-reader.pdf"
+            source_reader.pdf(path=str(path), format="A4", print_background=True)
+            document, text = pdf_text(path)
+            assert source_characters(source) in source_characters(text), "The script-free PDF lost source text"
+            assert all(source_characters(place) in source_characters(text) for place in places)
+            positions = []
+
+            def record_position(text, matrix, text_matrix, _font, _size):
+                if text.strip():
+                    positions.append(text_matrix[4] * matrix[0] + text_matrix[5] * matrix[2] + matrix[4])
+
+            for sheet in document.pages:
+                sheet.extract_text(visitor_text=record_position)
+            assert positions and min(positions) >= 12 * 72 / 25.4, "The source-only reader lost its print margins"
+            results.append({"source_only_javascript_enabled": True, "pages": len(document.pages),
+                            "references": len(places), "minimum_text_margin_mm": round(min(positions) * 25.4 / 72, 2),
+                            "complete": True})
             assert not errors, errors
         finally:
             browser.close()

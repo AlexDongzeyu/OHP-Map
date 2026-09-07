@@ -211,16 +211,21 @@ async function biographyResponse(request, env, id, hash) {
 
 async function profileResponse(request, env, ctx, match) {
   if (!["GET", "HEAD"].includes(request.method)) return methodNotAllowed();
+  const url = new URL(request.url);
+  const sourceOnly = url.searchParams.get("reader") === "source";
+  if (url.searchParams.has("reader") && (!sourceOnly || url.searchParams.getAll("reader").length !== 1)) {
+    return errorResponse(400, "That reading mode is not supported. Use the source catalogue or open the interactive account.");
+  }
   const requested = match[1];
   const catalog = await currentCatalog(env, ctx);
   const id = Object.hasOwn(catalog.aliases, requested) ? catalog.aliases[requested] : requested;
   const hash = Object.hasOwn(catalog.profiles, id) ? catalog.profiles[id] : null;
   if (!hash) return errorResponse();
   const canonicalPath = `/survivor/${id}`;
-  if (new URL(request.url).pathname !== canonicalPath) {
-    return new Response(null, { status: 301, headers: { location: canonicalPath, "cache-control": "public, max-age=300" } });
+  if (url.pathname !== canonicalPath) {
+    return new Response(null, { status: 301, headers: { location: canonicalPath + url.search, "cache-control": "public, max-age=300" } });
   }
-  const bundled = await asset(env, request, `/data/profile-pages/${id}.${hash}.html`);
+  const bundled = await asset(env, request, `/data/profile-pages/${id}.${hash}${sourceOnly ? ".source" : ""}.html`);
   if (bundled.status === 200 || bundled.status === 304) {
     const headers = new Headers(bundled.headers);
     headers.set("cache-control", "public, max-age=0, must-revalidate");
@@ -235,7 +240,7 @@ async function profileResponse(request, env, ctx, match) {
     await shell.body?.cancel();
     throw new Error("The application shell is unavailable");
   }
-  const body = renderProfileHtml(await shell.text(), feature, { origin: env.SITE_ORIGIN, sourceText });
+  const body = renderProfileHtml(await shell.text(), feature, { origin: env.SITE_ORIGIN, sourceText, sourceOnly });
   // The profile hash alone is not an HTML content hash: the shell and original
   // biography can also change. Live HTML must revalidate, not claim immutability.
   return streamResponse(request, new Response(body).body, {

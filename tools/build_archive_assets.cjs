@@ -64,6 +64,8 @@ async function buildArchiveAssets({
     }));
     write(out, `/data/profile-pages/${id}.${hash}.html`,
       pages.renderProfileHtml(shell, feature, { origin: base, sourceText: text }));
+    write(out, `/data/profile-pages/${id}.${hash}.source.html`,
+      pages.renderProfileHtml(shell, feature, { origin: base, sourceText: text, sourceOnly: true }));
   });
   let retained = 0;
   for (const previous of previousDocuments) {

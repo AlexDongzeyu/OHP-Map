@@ -4128,6 +4128,32 @@ async function navigateSource(page, action) {
     } finally { await context.close(); }
   });
 
+  await check("source-catalogue accounts stay script-free until the reader chooses the interactive account", async () => {
+    const context = await browser.createBrowserContext();
+    const source = await context.newPage();
+    const mapRequests = [];
+    source.on("request", request => {
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith("/data/index.json") || path.endsWith("/data/atlas-world.json")) mapRequests.push(path);
+    });
+    source.on("pageerror", error => errors.push("source-only reader: " + error.message));
+    try {
+      await source.goto(BASE + "/collection?q=Adler+Amek", { waitUntil: "networkidle0", timeout: 40000 });
+      await navigateSource(source, () => source.click(".catalogue-accounts a"));
+      if (new URL(source.url()).searchParams.get("reader") !== "source" ||
+          mapRequests.length || await source.$("script, #stage, .panel")) {
+        throw new Error("reading a source account automatically initialized the interactive map");
+      }
+      const biography = await source.$eval("#server-profile blockquote", text => text.textContent);
+      if (biography.length < 800) throw new Error("the full public source was replaced with its short excerpt");
+      await navigateSource(source, () => source.click("#server-profile nav a[href='/survivor/adler-amek']"));
+      await source.waitForSelector(".panel[data-profile-state='ready']", { timeout: 15000 });
+      if (!mapRequests.length || await source.$eval("#profile-name", heading => heading.textContent) !== "Amek Adler") {
+        throw new Error("opting into the interactive account lost the source selection");
+      }
+    } finally { await context.close(); }
+  });
+
   for (const transfer of dataTransfers.values()) {
     if (transfer.failed < 0) continue;
     if (transfer.completed <= transfer.failed) errors.push(`unrecovered data request: ${transfer.url} (${transfer.reasons.join(", ")})`);

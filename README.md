@@ -113,6 +113,10 @@ is explicitly a published snapshot, so new hourly source arrivals may appear in 
 interactive collection before the next published catalogue. Source readers return to
 this catalogue instead of a JavaScript-only route. Loading and failure screens keep
 the same escape route when the map or application scripts cannot start.
+Catalogue links use `?reader=source` to retain the full written account without loading
+application scripts or map data, even when JavaScript is enabled. **Open interactive
+account** is an explicit choice to enter the map; ordinary profile links keep their
+existing interactive behavior.
 
 Every account with located references has a geographic overview under **Places**,
 including accounts with just one place or no source-supported connecting route.

@@ -76,7 +76,7 @@ the interactive collection may include more recent source updates.</p>
 ${status !== 200 ? `<p>${invalid ? "Use a search of at most 200 characters, one listed community and a positive whole page number."
     : "The selected page is outside these results."}</p><a href="${esc(catalogueAddress(query.length <= 200 ? query : "", groups.includes(group) ? group : ""))}">Return to the first results page</a>`
     : entries.length ? `<ul class="catalogue-accounts">${entries.map(entry =>
-      `<li><a href="/survivor/${esc(entry.id)}"><span>${esc(entry.name)}</span><small>${esc(entry.group)}</small></a></li>`).join("")}</ul>`
+      `<li><a href="/survivor/${esc(entry.id)}?reader=source"><span>${esc(entry.name)}</span><small>${esc(entry.group)}</small></a></li>`).join("")}</ul>`
       : '<p>No accounts match every term in this snapshot. Try fewer words, another spelling or a different community.</p>'}
 ${status === 200 && pages > 1 ? `<nav class="catalogue-pages" aria-label="Results pages">
 ${page > 1 ? `<a rel="prev" href="${esc(catalogueAddress(query, group, page - 1))}#catalogue-results">Previous</a>` : "<span></span>"}

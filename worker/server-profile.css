@@ -34,7 +34,11 @@ body:has(#no-js-fallback) #server-profile .server-profile-loading { display:none
 }
 #server-profile [data-server-profile-retry]:focus-visible { outline: 3px solid #175366; outline-offset: 4px; }
 @media print {
-  body:has(#server-profile) { height:auto !important; overflow:visible !important; background:white; }
+  @page {
+    margin:16mm;
+    @bottom-right { content:counter(page); font:8pt "Public Sans", sans-serif; }
+  }
+  body:has(#server-profile) { height:auto !important; margin:0 !important; overflow:visible !important; background:white; }
   body:has(#server-profile) #stage { display:none !important; }
   #server-profile { position:static; height:auto; overflow:visible; background:white; font-size:10.5pt; }
   #server-profile .server-profile-inner { max-width:none; padding:0; }
